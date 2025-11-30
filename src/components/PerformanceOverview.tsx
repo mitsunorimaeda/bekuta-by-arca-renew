@@ -1,0 +1,207 @@
+import React, { useState } from 'react';
+import { Trophy, TrendingUp, Calendar, Shield } from 'lucide-react';
+import { PerformanceRecordWithTest, PersonalBest } from '../hooks/usePerformanceData';
+import { PerformanceTestType } from '../lib/supabase';
+import { PerformanceChart } from './PerformanceChart';
+import { getCalculatedUnit, getCalculatedValueLabel } from '../lib/performanceCalculations';
+
+interface PerformanceOverviewProps {
+  testTypes: PerformanceTestType[];
+  records: PerformanceRecordWithTest[];
+  personalBests: PersonalBest[];
+  getRecordsByTestType: (testTypeId: string) => PerformanceRecordWithTest[];
+  getPersonalBest: (testTypeId: string) => PersonalBest | undefined;
+}
+
+export function PerformanceOverview({
+  testTypes,
+  records,
+  personalBests,
+  getRecordsByTestType,
+  getPersonalBest
+}: PerformanceOverviewProps) {
+  const [selectedTestTypeId, setSelectedTestTypeId] = useState<string | null>(null);
+
+  if (records.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-8 text-center transition-colors">
+        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-full mb-4">
+          <Trophy className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+          測定を始めましょう！
+        </h3>
+        <p className="text-gray-600 dark:text-gray-400">
+          最初のジャンプ測定を記録して、成長を追跡しましょう。
+        </p>
+      </div>
+    );
+  }
+
+  const selectedTestType = selectedTestTypeId
+    ? testTypes.find(t => t.id === selectedTestTypeId)
+    : null;
+
+  const selectedRecords = selectedTestTypeId
+    ? getRecordsByTestType(selectedTestTypeId)
+    : [];
+
+  const selectedPB = selectedTestTypeId
+    ? getPersonalBest(selectedTestTypeId)
+    : undefined;
+
+  return (
+    <div className="space-y-6">
+      {/* Personal Bests Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {testTypes.map(testType => {
+          const pb = getPersonalBest(testType.id);
+          const testRecords = getRecordsByTestType(testType.id);
+          const latestRecord = testRecords[0];
+
+          return (
+            <button
+              key={testType.id}
+              onClick={() => setSelectedTestTypeId(testType.id)}
+              className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 text-left transition-all hover:shadow-md ${
+                selectedTestTypeId === testType.id
+                  ? 'ring-2 ring-blue-500 dark:ring-blue-400'
+                  : ''
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+                  {testType.display_name}
+                </h4>
+                {pb && (
+                  <Trophy className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+                )}
+              </div>
+
+              {pb ? (
+                <>
+                  <div className="mb-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">パーソナルベスト</p>
+                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                      {pb.value.toFixed(testType.name.includes('rsi') ? 2 : 1)}
+                      <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{testType.unit}</span>
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {new Date(pb.date).toLocaleDateString('ja-JP')}
+                    </p>
+                  </div>
+
+                  {latestRecord && latestRecord.date !== pb.date && (
+                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">最新記録</p>
+                      <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                        {(() => {
+                          const rawValue = latestRecord.values.primary_value;
+                          const numValue = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+                          return numValue.toFixed(testType.name.includes('rsi') ? 2 : 1);
+                        })()}
+                        <span className="text-xs ml-1 text-gray-600 dark:text-gray-400">{testType.unit}</span>
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : testRecords.length > 0 ? (
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">最新記録</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {(() => {
+                      const rawValue = latestRecord.values.primary_value;
+                      const numValue = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+                      return numValue.toFixed(testType.name.includes('rsi') ? 2 : 1);
+                    })()}
+                    <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{testType.unit}</span>
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {new Date(latestRecord.date).toLocaleDateString('ja-JP')}
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-gray-400 dark:text-gray-500">未測定</p>
+                </div>
+              )}
+
+              {testRecords.length > 0 && (
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span className="flex items-center">
+                    <Calendar className="w-3 h-3 mr-1" />
+                    {testRecords.length}回測定
+                  </span>
+                  {testRecords.length > 1 && (
+                    <span className="flex items-center text-blue-600 dark:text-blue-400">
+                      <TrendingUp className="w-3 h-3 mr-1" />
+                      グラフを見る
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected Test Type Chart */}
+      {selectedTestType && selectedRecords.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {selectedTestType.display_name} の成長グラフ
+            </h3>
+            <button
+              onClick={() => setSelectedTestTypeId(null)}
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+            >
+              閉じる
+            </button>
+          </div>
+          <PerformanceChart
+            records={selectedRecords}
+            personalBest={selectedPB}
+            testTypeName={selectedTestType.display_name}
+          />
+        </div>
+      )}
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mb-1">総測定回数</p>
+              <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">{records.length}</p>
+            </div>
+            <Calendar className="w-10 h-10 text-blue-600 dark:text-blue-400 opacity-50" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-1">パーソナルベスト</p>
+              <p className="text-3xl font-bold text-yellow-900 dark:text-yellow-100">{personalBests.length}</p>
+            </div>
+            <Trophy className="w-10 h-10 text-yellow-600 dark:text-yellow-400 opacity-50" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-green-700 dark:text-green-300 mb-1">測定種目</p>
+              <p className="text-3xl font-bold text-green-900 dark:text-green-100">
+                {testTypes.filter(t => getRecordsByTestType(t.id).length > 0).length}
+              </p>
+              <p className="text-xs text-green-600 dark:text-green-400">/ {testTypes.length}</p>
+            </div>
+            <TrendingUp className="w-10 h-10 text-green-600 dark:text-green-400 opacity-50" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
