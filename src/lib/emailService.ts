@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Alert } from './alerts';
+import type { Alert } from './alerts';
 
 interface SendEmailParams {
   to: string;
@@ -7,69 +7,88 @@ interface SendEmailParams {
   data: Record<string, any>;
 }
 
-export async function sendEmail(params: SendEmailParams): Promise<{ success: boolean; message?: string; error?: string }> {
+interface SendEmailResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * 共通メール送信関数
+ */
+export async function sendEmail(
+  params: SendEmailParams
+): Promise<SendEmailResult> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     if (!session) {
-      return {
-        success: false,
-        error: 'Not authenticated'
-      };
+      console.error('[sendEmail] No auth session found');
+      return { success: false, error: 'Not authenticated' };
     }
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/send-email`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(params),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
+    if (!supabaseUrl) {
+      console.error('[sendEmail] VITE_SUPABASE_URL is not set');
       return {
         success: false,
-        error: result.error || 'Failed to send email'
+        error: 'Supabase URL is not configured',
+      };
+    }
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    let result: any = {};
+    try {
+      result = await response.json();
+    } catch (e) {
+      // JSON で返らない場合もあるので念のため
+      console.warn('[sendEmail] Failed to parse JSON response', e);
+    }
+
+    if (!response.ok) {
+      console.error('[sendEmail] Failed response:', response.status, result);
+      return {
+        success: false,
+        error: result?.error || 'Failed to send email',
       };
     }
 
     return {
       success: true,
-      message: result.message
+      message: result?.message || 'Email sent successfully',
     };
   } catch (error: any) {
     console.error('Email sending error:', error);
     return {
       success: false,
-      error: error.message || 'Unexpected error while sending email'
+      error: error?.message || 'Unexpected error while sending email',
     };
   }
 }
 
+/**
+ * ACWR アラートメール
+ */
 export async function sendAlertEmail(
   userEmail: string,
   userName: string,
-  alert: Alert
-): Promise<{ success: boolean; message?: string; error?: string }> {
-  const roleLabels = {
-    athlete: '選手',
-    staff: 'スタッフ',
-    admin: '管理者'
-  };
-
-  const priorityLabels = {
-    high: '高',
-    medium: '中',
-    low: '低'
-  };
+  alert: Alert & { recommendations?: string[] }
+): Promise<SendEmailResult> {
+  const acwrValue =
+    typeof (alert as any).acwr_value === 'number'
+      ? (alert as any).acwr_value.toFixed(2)
+      : undefined;
 
   return sendEmail({
     to: userEmail,
@@ -78,15 +97,19 @@ export async function sendAlertEmail(
       userName,
       alertTitle: alert.title,
       alertMessage: alert.message,
-      priority: alert.priority,
-      acwrValue: alert.acwr_value?.toFixed(2),
+      priority: (alert as any).priority,
+      acwrValue,
       recommendedRange: '0.8-1.3',
-      recommendations: alert.recommendations,
-      appUrl: window.location.origin
-    }
+      recommendations: alert.recommendations ?? [],
+      appUrl: window.location.origin,
+    },
   });
 }
 
+/**
+ * 週次サマリーメール
+ * ※ 今は「機能停止中」。メールは送らずログだけ出す。
+ */
 export async function sendWeeklySummaryEmail(
   userEmail: string,
   userName: string,
@@ -98,30 +121,35 @@ export async function sendWeeklySummaryEmail(
     alertCount: number;
     insights?: string[];
   }
-): Promise<{ success: boolean; message?: string; error?: string }> {
-  return sendEmail({
-    to: userEmail,
-    type: 'weekly_summary',
-    data: {
-      userName,
-      ...summaryData,
-      appUrl: window.location.origin
-    }
+): Promise<SendEmailResult> {
+  console.info('[sendWeeklySummaryEmail] 現在この機能は停止中です', {
+    userEmail,
+    userName,
+    summaryData,
   });
+
+  // sendEmail は呼ばないので、実際のメール送信は発生しない
+  return {
+    success: true,
+    message: 'Weekly summary email feature is currently disabled.',
+  };
 }
 
+/**
+ * 一時パスワードメール（初回ログイン用など）
+ */
 export async function sendPasswordResetEmail(
   userEmail: string,
   userName: string,
   temporaryPassword: string
-): Promise<{ success: boolean; message?: string; error?: string }> {
+): Promise<SendEmailResult> {
   return sendEmail({
     to: userEmail,
     type: 'password_reset',
     data: {
       userName,
       temporaryPassword,
-      appUrl: window.location.origin
-    }
+      appUrl: window.location.origin,
+    },
   });
 }

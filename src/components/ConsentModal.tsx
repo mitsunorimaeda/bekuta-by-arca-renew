@@ -10,16 +10,14 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const [isMinor, setIsMinor] = useState<boolean | null>(null);
-  const [showMinorWarning, setShowMinorWarning] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // すべての条件が揃ったら同意ボタンを有効化
   const canAccept = agreedToTerms && agreedToPrivacy && isMinor !== null;
 
+  // ✅ 1タップで進むシンプル仕様
   const handleAccept = () => {
-    if (isMinor && !showMinorWarning) {
-      setShowMinorWarning(true);
-      return;
-    }
+    if (!canAccept || isLoggingOut) return;
     onAccept();
   };
 
@@ -36,7 +34,7 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
           <div className="flex items-center space-x-3">
             <Shield className="w-8 h-8" />
             <div>
-              <h2 className="text-2xl font-bold">ACWR Monitorへようこそ</h2>
+              <h2 className="text-2xl font-bold">Bekuta へようこそ</h2>
               <p className="text-blue-100 text-sm mt-1">ご利用前に必ずお読みください</p>
             </div>
           </div>
@@ -81,7 +79,11 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
                       : 'border-gray-300 dark:border-gray-600 hover:border-green-400'
                   }`}
                 >
-                  <CheckCircle className={`w-5 h-5 mx-auto mb-1 ${isMinor === false ? 'text-green-500' : 'text-gray-400'}`} />
+                  <CheckCircle
+                    className={`w-5 h-5 mx-auto mb-1 ${
+                      isMinor === false ? 'text-green-500' : 'text-gray-400'
+                    }`}
+                  />
                   <span className="text-sm font-medium">18歳以上です</span>
                 </button>
                 <button
@@ -92,11 +94,16 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
                       : 'border-gray-300 dark:border-gray-600 hover:border-yellow-400'
                   }`}
                 >
-                  <AlertCircle className={`w-5 h-5 mx-auto mb-1 ${isMinor === true ? 'text-yellow-500' : 'text-gray-400'}`} />
+                  <AlertCircle
+                    className={`w-5 h-5 mx-auto mb-1 ${
+                      isMinor === true ? 'text-yellow-500' : 'text-gray-400'
+                    }`}
+                  />
                   <span className="text-sm font-medium">18歳未満です</span>
                 </button>
               </div>
 
+              {/* 未成年の注意ボックス（18歳未満を選んだら表示） */}
               {isMinor !== null && isMinor && (
                 <div className="mt-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-600 rounded-lg p-4">
                   <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium mb-2">
@@ -124,14 +131,17 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
                     onChange={(e) => setAgreedToTerms(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className={`
+                  <div
+                    className={`
                     w-6 h-6 border-2 rounded-md transition-all duration-200 flex items-center justify-center
-                    ${agreedToTerms
-                      ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500'
-                      : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 group-hover:border-blue-400 dark:group-hover:border-blue-500'
+                    ${
+                      agreedToTerms
+                        ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 group-hover:border-blue-400 dark:group-hover:border-blue-500'
                     }
                     peer-focus:ring-2 peer-focus:ring-blue-500 peer-focus:ring-offset-2 dark:peer-focus:ring-offset-gray-800
-                  `}>
+                  `}
+                  >
                     {agreedToTerms && (
                       <CheckCircle className="w-4 h-4 text-white" strokeWidth={3} />
                     )}
@@ -166,14 +176,17 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
                     onChange={(e) => setAgreedToPrivacy(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className={`
+                  <div
+                    className={`
                     w-6 h-6 border-2 rounded-md transition-all duration-200 flex items-center justify-center
-                    ${agreedToPrivacy
-                      ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500'
-                      : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 group-hover:border-blue-400 dark:group-hover:border-blue-500'
+                    ${
+                      agreedToPrivacy
+                        ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 group-hover:border-blue-400 dark:group-hover:border-blue-500'
                     }
                     peer-focus:ring-2 peer-focus:ring-blue-500 peer-focus:ring-offset-2 dark:peer-focus:ring-offset-gray-800
-                  `}>
+                  `}
+                  >
                     {agreedToPrivacy && (
                       <CheckCircle className="w-4 h-4 text-white" strokeWidth={3} />
                     )}
@@ -218,8 +231,12 @@ export function ConsentModal({ onAccept, onDecline }: ConsentModalProps) {
           {isLoggingOut ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-700 dark:text-gray-300 font-medium mb-2">保護者の同意承認を得てから利用してください</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">ログイン画面に戻ります...</p>
+              <p className="text-gray-700 dark:text-gray-300 font-medium mb-2">
+                保護者の同意承認を得てから利用してください
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                ログイン画面に戻ります...
+              </p>
             </div>
           ) : (
             <>

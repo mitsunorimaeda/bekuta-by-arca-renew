@@ -1,3 +1,4 @@
+// lib/supabase.ts
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 import { getEnvironmentName, PRODUCTION_URL, DEVELOPMENT_URL } from './supabase.config';
@@ -8,8 +9,8 @@ const envAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 if (!envUrl || !envAnonKey) {
   throw new Error(
     '❌ Missing Supabase configuration!\n' +
-    'Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.\n' +
-    'Run: npm run env:dev (for development) or npm run env:prod (for production)'
+      'Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.\n' +
+      'Run: npm run env:dev (for development) or npm run env:prod (for production)',
   );
 }
 
@@ -35,21 +36,21 @@ const supabaseAnonKey = envAnonKey;
 // Custom fetch implementation to handle refresh token errors
 const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
   const response = await fetch(url, options);
-  
+
   // Check if this is a refresh token error
   if (response.status === 400) {
     try {
       const body = await response.clone().text();
       const errorData = JSON.parse(body);
-      
+
       if (errorData.code === 'refresh_token_not_found') {
         return response;
       }
-    } catch (e) {
+    } catch {
       // If we can't parse the response, just return the original response
     }
   }
-  
+
   return response;
 };
 
@@ -59,7 +60,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export type User = Database['public']['Tables']['users']['Row'];
+// ---- 型定義 ----
+type UserBase = Database['public']['Tables']['users']['Row'];
+
+// DB 側に term_accepted / term_accepted_at がある前提で拡張
+export type User = UserBase & {
+  term_accepted?: boolean | null;
+  term_accepted_at?: string | null;
+};
+
 export type Team = Database['public']['Tables']['teams']['Row'];
 export type TrainingRecord = Database['public']['Tables']['training_records']['Row'];
 export type StaffTeamLink = Database['public']['Tables']['staff_team_links']['Row'];

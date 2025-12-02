@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizeGoalMetadata } from '../lib/goalMetadata';
+import { getGoalProgress } from '../lib/goalUtils';
 
 export interface Goal {
   id: string;
@@ -24,29 +26,19 @@ export function useGoals(userId: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
+    if (!userId) return;
+  
     fetchGoals();
-
+  
     const subscription = supabase
-      .channel('user_goals_changes')
+      .channel('goals_changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_goals',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchGoals();
-        }
+        { event: '*', schema: 'public', table: 'user_goals', filter: `user_id=eq.${userId}` },
+        fetchGoals
       )
       .subscribe();
-
+  
     return () => {
       subscription.unsubscribe();
     };
@@ -55,6 +47,7 @@ export function useGoals(userId: string) {
   const fetchGoals = async () => {
     try {
       setLoading(true);
+
       const { data, error } = await supabase
         .from('user_goals')
         .select('*')
@@ -63,25 +56,31 @@ export function useGoals(userId: string) {
 
       if (error) throw error;
 
-      setGoals(data || []);
+      const normalized = (data || []).map(g => ({
+        ...g,
+        metadata: normalizeGoalMetadata(g.metadata),
+      }));
+
+      setGoals(normalized);
       setError(null);
     } catch (err) {
-      console.error('Error fetching goals:', err);
-      setError(err instanceof Error ? err.message : '目標の取得に失敗しました');
+      console.error(err);
+      setError('目標の取得に失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
-  const createGoal = async (goalData: Omit<Goal, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'completed_at' | 'current_value' | 'status'>) => {
+  const createGoal = async (goalData: Partial<Goal>) => {
     try {
       const { data, error } = await supabase
         .from('user_goals')
         .insert({
           user_id: userId,
           ...goalData,
-          current_value: 0,
+          current_value: goalData.current_value ?? 0,
           status: 'active',
+          metadata: normalizeGoalMetadata(goalData.metadata),
         })
         .select()
         .single();
@@ -91,11 +90,8 @@ export function useGoals(userId: string) {
       await fetchGoals();
       return { data, error: null };
     } catch (err) {
-      console.error('Error creating goal:', err);
-      return {
-        data: null,
-        error: err instanceof Error ? err.message : '目標の作成に失敗しました',
-      };
+      console.error(err);
+      return { data: null, error: '目標の作成に失敗しました' };
     }
   };
 
@@ -103,7 +99,10 @@ export function useGoals(userId: string) {
     try {
       const { error } = await supabase
         .from('user_goals')
-        .update(updates)
+        .update({
+          ...updates,
+          metadata: updates.metadata ? normalizeGoalMetadata(updates.metadata) : undefined,
+        })
         .eq('id', goalId)
         .eq('user_id', userId);
 
@@ -111,48 +110,28 @@ export function useGoals(userId: string) {
 
       await fetchGoals();
       return { error: null };
-    } catch (err) {
-      console.error('Error updating goal:', err);
-      return {
-        error: err instanceof Error ? err.message : '目標の更新に失敗しました',
-      };
+    } catch {
+      return { error: '目標の更新に失敗しました' };
     }
   };
 
   const updateGoalProgress = async (goalId: string, currentValue: number) => {
-    try {
-      const goal = goals.find((g) => g.id === goalId);
-      if (!goal) return { error: '目標が見つかりません' };
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return { error: '目標が見つかりません' };
 
-      const updates: Partial<Goal> = {
-        current_value: currentValue,
-      };
+    const progress = getGoalProgress({ ...goal, current_value: currentValue });
 
-      if (goal.target_value && currentValue >= goal.target_value) {
-        updates.status = 'completed';
-        updates.completed_at = new Date().toISOString();
-      }
+    const updates: Partial<Goal> = {
+      current_value: currentValue,
+      ...(progress.is_completed
+        ? {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          }
+        : {}),
+    };
 
-      return await updateGoal(goalId, updates);
-    } catch (err) {
-      console.error('Error updating goal progress:', err);
-      return {
-        error: err instanceof Error ? err.message : '進捗の更新に失敗しました',
-      };
-    }
-  };
-
-  const completeGoal = async (goalId: string) => {
-    return await updateGoal(goalId, {
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-    });
-  };
-
-  const abandonGoal = async (goalId: string) => {
-    return await updateGoal(goalId, {
-      status: 'abandoned',
-    });
+    return await updateGoal(goalId, updates);
   };
 
   const deleteGoal = async (goalId: string) => {
@@ -167,61 +146,59 @@ export function useGoals(userId: string) {
 
       await fetchGoals();
       return { error: null };
-    } catch (err) {
-      console.error('Error deleting goal:', err);
-      return {
-        error: err instanceof Error ? err.message : '目標の削除に失敗しました',
-      };
+    } catch {
+      return { error: '目標の削除に失敗しました' };
     }
   };
 
-  const getActiveGoals = () => {
-    return goals.filter((g) => g.status === 'active');
-  };
+    // 進行中の目標
+  function getActiveGoals() {
+    return goals.filter(g => g.status === 'active');
+  }
 
-  const getCompletedGoals = () => {
-    return goals.filter((g) => g.status === 'completed');
-  };
+  // 進捗計算（goalUtils のラッパー）
+  function calculateGoalProgress(goal: Goal) {
+    return getGoalProgress(goal);
+  }
 
-  const getGoalsByType = (type: Goal['goal_type']) => {
-    return goals.filter((g) => g.goal_type === type && g.status === 'active');
-  };
-
-  const getGoalProgress = (goal: Goal) => {
-    if (!goal.target_value) return 0;
-    return Math.min(100, (goal.current_value / goal.target_value) * 100);
-  };
-
-  const isGoalOverdue = (goal: Goal) => {
-    if (!goal.deadline || goal.status !== 'active') return false;
-    return new Date(goal.deadline) < new Date();
-  };
-
-  const getDaysUntilDeadline = (goal: Goal) => {
+  // 締切までの日数
+  function getDaysUntilDeadline(goal: Goal) {
     if (!goal.deadline) return null;
+    const now = new Date();
     const deadline = new Date(goal.deadline);
-    const today = new Date();
-    const diffTime = deadline.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
+    const diff = deadline.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  }
 
-  return {
+  // 締切超過しているか
+  function isGoalOverdue(goal: Goal) {
+    if (!goal.deadline) return false;
+    return new Date(goal.deadline) < new Date() && goal.status !== 'completed';
+  }
+
+  // 完了処理
+  async function completeGoal(goalId: string) {
+    return await updateGoal(goalId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+return {
     goals,
     loading,
     error,
     createGoal,
     updateGoal,
     updateGoalProgress,
-    completeGoal,
-    abandonGoal,
     deleteGoal,
-    getActiveGoals,
-    getCompletedGoals,
-    getGoalsByType,
-    getGoalProgress,
-    isGoalOverdue,
-    getDaysUntilDeadline,
     refresh: fetchGoals,
+  
+    // 🔥 GamificationView が必要とする関数
+    getActiveGoals,
+    getGoalProgress: calculateGoalProgress,
+    getDaysUntilDeadline,
+    isGoalOverdue,
+    completeGoal,
   };
 }

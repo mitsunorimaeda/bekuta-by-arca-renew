@@ -1,5 +1,6 @@
+// hooks/useAuth.ts
 import { useState, useEffect } from 'react';
-import { User as AuthUser } from '@supabase/supabase-js';
+import type { User as AuthUser } from '@supabase/supabase-js';
 import { supabase, User } from '../lib/supabase';
 
 export function useAuth() {
@@ -8,8 +9,9 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
+  // 初期ロード
   useEffect(() => {
-    // Get initial session
+    // 初回セッション取得
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -20,35 +22,31 @@ export function useAuth() {
       }
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          checkPasswordChangeRequired(session.user);
-          fetchUserProfile(session.user.id);
-        } else {
-          setUserProfile(null);
-          setRequiresPasswordChange(false);
-          setLoading(false);
-        }
+    // 認証状態変化の監視
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        checkPasswordChangeRequired(session.user);
+        fetchUserProfile(session.user.id);
+      } else {
+        setUserProfile(null);
+        setRequiresPasswordChange(false);
+        setLoading(false);
       }
-    );
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // --- パスワード変更が必要かチェック ---
   const checkPasswordChangeRequired = (authUser: AuthUser) => {
-    console.log('🔍 Checking password change requirement for user:', authUser.id);
-    console.log('📋 User metadata:', authUser.user_metadata);
-    console.log('🔍 App metadata:', authUser.app_metadata);
-    console.log('🔍 Email confirmed:', authUser.email_confirmed_at);
-    console.log('🔍 Created at:', authUser.created_at);
     const requiresChange = authUser.user_metadata?.requires_password_change === true;
-    console.log('🔄 Password change required:', requiresChange);
     setRequiresPasswordChange(requiresChange);
   };
 
+  // --- ユーザープロフィール読込 (users テーブル) ---
   const fetchUserProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -61,44 +59,32 @@ export function useAuth() {
         console.error('Error fetching user profile:', error);
         setUserProfile(null);
       } else if (data) {
-        setUserProfile(data);
+        setUserProfile(data as User);
       } else {
-        console.warn(`No user profile found for user ID: ${userId}. User may need to be set up by an administrator.`);
         setUserProfile(null);
       }
     } catch (error) {
       console.error('Unexpected error fetching user profile:', error);
       setUserProfile(null);
     } finally {
-      console.log('🏁 Final auth state - requiresPasswordChange:', requiresPasswordChange);
-      console.log('👤 User profile loaded:', userProfile?.name || 'None');
       setLoading(false);
     }
   };
 
+  // --- ログイン ---
   const signIn = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      
-      if (error) {
-        if (error.message === 'Invalid login credentials') {
-          throw new Error('メールアドレスまたはパスワードが正しくありません。');
-        } else if (error.message === 'Email not confirmed') {
-          throw new Error('メールアドレスが確認されていません。');
-        } else if (error.message === 'Too many requests') {
-          throw new Error('ログイン試行回数が多すぎます。しばらく待ってから再試行してください。');
-        } else {
-          throw new Error(`ログインエラー: ${error.message}`);
-        }
-      }
-      
+
+      if (error) throw error;
+
       if (data.user?.user_metadata?.requires_password_change) {
         setRequiresPasswordChange(true);
       }
-      
+
       return data;
     } catch (error) {
       console.error('Sign in error:', error);
@@ -106,60 +92,60 @@ export function useAuth() {
     }
   };
 
+  // --- パスワード変更 ---
   const changePassword = async (newPassword: string) => {
-    try {
-      console.log('🔐 Starting password change process...');
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+      data: { requires_password_change: false },
+    });
 
-      // Update password and clear the requires_password_change flag in one call
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-        data: { requires_password_change: false }
-      });
+    if (error) throw error;
 
-      if (updateError) {
-        console.error('❌ Password update error:', updateError);
-        throw updateError;
-      }
-
-      console.log('✅ Password updated successfully');
-
-      // Clear local state
-      setRequiresPasswordChange(false);
-
-      // Force a session refresh to ensure the updated metadata is loaded
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        console.log('🔄 Session refreshed, verifying metadata...');
-        console.log('📋 Updated metadata:', session.user.user_metadata);
-      }
-    } catch (error) {
-      console.error('❌ Error changing password:', error);
-      throw error;
-    }
+    setRequiresPasswordChange(false);
   };
 
-  const signOut = async () => {
-    // First try to logout from Supabase
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Logout error:', error.message);
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
+  // --- ✅ 利用規約の同意を保存（terms_accepted / terms_accepted_at） ---
+  const acceptTerms = async () => {
+    if (!user) throw new Error('User not logged in');
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        terms_accepted: true,
+        terms_accepted_at: now,
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Failed to update terms_accepted:', error);
+      throw error;
     }
 
-    // Then try to clear client-side session regardless of logout success/failure
+    // ローカルの状態も更新
+    setUserProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            terms_accepted: true,
+            terms_accepted_at: now,
+          }
+        : prev,
+    );
+  };
+
+  // --- ログアウト ---
+  const signOut = async () => {
     try {
-      await supabase.auth.setSession({ access_token: '', refresh_token: '' });
+      await supabase.auth.signOut();
     } catch (error) {
-      console.error('Session clear error:', error);
+      console.error('Logout error:', error);
     } finally {
-      // Always reset all client-side state regardless of any errors
       setUser(null);
       setUserProfile(null);
-      setLoading(false);
       setRequiresPasswordChange(false);
+      setLoading(false);
     }
   };
 
@@ -171,5 +157,6 @@ export function useAuth() {
     signIn,
     signOut,
     changePassword,
+    acceptTerms, // ← App から使う
   };
 }

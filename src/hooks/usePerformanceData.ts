@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
-import { supabase, PerformanceCategory, PerformanceTestType, PerformanceRecord } from '../lib/supabase';
+import {
+  supabase,
+  PerformanceCategory,
+  PerformanceTestType,
+  PerformanceRecord
+} from '../lib/supabase';
 
 export interface PerformanceRecordWithTest extends PerformanceRecord {
   test_type?: PerformanceTestType;
@@ -14,7 +19,17 @@ export interface PersonalBest {
   record: PerformanceRecord;
 }
 
-export function usePerformanceData(userId: string, categoryName?: string) {
+/**
+ * usePerformanceData
+ * @param userId string
+ * @param categoryName string | undefined
+ * @param updateGoalFromLatestTest optional callback (testTypeId: string) => Promise<void>
+ */
+export function usePerformanceData(
+  userId: string,
+  categoryName?: string,
+  updateGoalFromLatestTest?: (testTypeId: string) => Promise<void>
+) {
   const [categories, setCategories] = useState<PerformanceCategory[]>([]);
   const [testTypes, setTestTypes] = useState<PerformanceTestType[]>([]);
   const [records, setRecords] = useState<PerformanceRecordWithTest[]>([]);
@@ -22,6 +37,9 @@ export function usePerformanceData(userId: string, categoryName?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /* --------------------------
+   * Initial fetch
+   * -------------------------- */
   useEffect(() => {
     fetchCategories();
   }, []);
@@ -36,6 +54,9 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   }, [userId, categoryName]);
 
+  /* --------------------------
+   * Fetch: Categories
+   * -------------------------- */
   const fetchCategories = async () => {
     try {
       const { data, error } = await supabase
@@ -52,35 +73,38 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Fetch: Test Types
+   * -------------------------- */
   const fetchTestTypes = async () => {
     try {
       let query = supabase
         .from('performance_test_types')
-        .select(`
+        .select(
+          `
           *,
           performance_categories:category_id (
             id,
             name,
             display_name
           )
-        `)
+        `
+        )
         .eq('is_active', true);
 
       if (categoryName) {
-        const { data: categories } = await supabase
+        const { data: cat } = await supabase
           .from('performance_categories')
           .select('id')
           .eq('name', categoryName)
           .single();
 
-        if (categories) {
-          query = query.eq('category_id', categories.id);
-        }
+        if (cat) query = query.eq('category_id', cat.id);
       }
 
       const { data, error } = await query.order('sort_order');
-
       if (error) throw error;
+
       setTestTypes(data || []);
     } catch (err) {
       console.error('Error fetching test types:', err);
@@ -88,13 +112,17 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Fetch: Records
+   * -------------------------- */
   const fetchRecords = async () => {
     try {
       setLoading(true);
 
       let query = supabase
         .from('performance_records')
-        .select(`
+        .select(
+          `
           *,
           performance_test_types:test_type_id (
             id,
@@ -109,48 +137,43 @@ export function usePerformanceData(userId: string, categoryName?: string) {
             is_active,
             created_at
           )
-        `)
+      `
+        )
         .eq('user_id', userId)
         .order('date', { ascending: false });
 
       if (categoryName) {
-        const { data: categories } = await supabase
+        const { data: cat } = await supabase
           .from('performance_categories')
           .select('id')
           .eq('name', categoryName)
           .maybeSingle();
 
-        if (categories) {
-          const { data: testTypeIds } = await supabase
+        if (cat) {
+          const { data: testList } = await supabase
             .from('performance_test_types')
             .select('id')
-            .eq('category_id', categories.id);
+            .eq('category_id', cat.id);
 
-          if (testTypeIds && testTypeIds.length > 0) {
-            const ids = testTypeIds.map(t => t.id);
-            query = query.in('test_type_id', ids);
+          if (testList && testList.length > 0) {
+            query = query.in(
+              'test_type_id',
+              testList.map(t => t.id)
+            );
           }
         }
       }
 
       const { data, error } = await query;
+      if (error) throw error;
 
-      if (error) {
-        console.error('Supabase query error:', error);
-        throw error;
-      }
-
-      console.log('Fetched performance records:', data);
-
-      const recordsWithTest = (data || []).map(record => ({
-        ...record,
-        test_type: record.performance_test_types as unknown as PerformanceTestType
+      const mapped = (data || []).map(r => ({
+        ...r,
+        test_type: r.performance_test_types as PerformanceTestType
       }));
 
-      console.log('Records with test types:', recordsWithTest);
-
-      setRecords(recordsWithTest);
-      calculatePersonalBests(recordsWithTest);
+      setRecords(mapped);
+      calculatePersonalBests(mapped);
     } catch (err) {
       console.error('Error fetching records:', err);
       setError('記録の取得に失敗しました');
@@ -159,46 +182,39 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Calculate PB
+   * -------------------------- */
   const calculatePersonalBests = (allRecords: PerformanceRecordWithTest[]) => {
-    const bestsByTest = new Map<string, PersonalBest>();
-
-    console.log('Calculating personal bests for records:', allRecords);
+    const bestByTest = new Map<string, PersonalBest>();
 
     allRecords.forEach(record => {
-      if (!record.test_type) {
-        console.warn('Record missing test_type:', record);
-        return;
-      }
+      if (!record.test_type) return;
 
-      const rawValue = record.values.primary_value;
-      const primaryValue = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
+      const raw = record.values.primary_value;
+      const value = typeof raw === 'string' ? parseFloat(raw) : raw;
+      if (value === null || value === undefined || isNaN(value)) return;
 
-      if (primaryValue === undefined || primaryValue === null || isNaN(primaryValue)) {
-        console.warn('Record missing or invalid primary_value:', record);
-        return;
-      }
-
-      const existing = bestsByTest.get(record.test_type_id);
-      const isNewBest = !existing ||
+      const existing = bestByTest.get(record.test_type_id);
+      const better =
+        !existing ||
         (record.test_type.higher_is_better
-          ? primaryValue > existing.value
-          : primaryValue < existing.value);
+          ? value > existing.value
+          : value < existing.value);
 
-      if (isNewBest) {
-        bestsByTest.set(record.test_type_id, {
+      if (better) {
+        bestByTest.set(record.test_type_id, {
           test_type_id: record.test_type_id,
           test_name: record.test_type.name,
           test_display_name: record.test_type.display_name,
-          value: primaryValue,
+          value,
           date: record.date,
-          record: record
+          record
         });
       }
     });
 
-    const bests = Array.from(bestsByTest.values());
-    console.log('Calculated personal bests:', bests);
-    setPersonalBests(bests);
+    setPersonalBests(Array.from(bestByTest.values()));
   };
 
   const checkExistingRecord = async (
@@ -208,7 +224,8 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     try {
       const { data, error } = await supabase
         .from('performance_records')
-        .select(`
+        .select(
+          `
           *,
           performance_test_types:test_type_id (
             id,
@@ -218,21 +235,22 @@ export function usePerformanceData(userId: string, categoryName?: string) {
             higher_is_better,
             fields
           )
-        `)
+        `
+        )
         .eq('user_id', userId)
         .eq('test_type_id', testTypeId)
         .eq('date', date)
         .maybeSingle();
-
+  
       if (error) throw error;
-
+  
       if (data) {
         return {
           ...data,
-          test_type: data.performance_test_types as unknown as PerformanceTestType
+          test_type: data.performance_test_types as PerformanceTestType
         };
       }
-
+  
       return null;
     } catch (err) {
       console.error('Error checking existing record:', err);
@@ -240,6 +258,9 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Add Record（ゴール自動更新つき）
+   * -------------------------- */
   const addRecord = async (recordData: {
     test_type_id: string;
     date: string;
@@ -262,25 +283,31 @@ export function usePerformanceData(userId: string, categoryName?: string) {
 
       if (error) throw error;
 
+      // 1) 記録を再取得
       await fetchRecords();
 
-      const testType = testTypes.find(t => t.id === recordData.test_type_id);
-      if (testType) {
-        const isNewPersonalBest = checkIfPersonalBest(
-          recordData.test_type_id,
-          recordData.values.primary_value,
-          testType.higher_is_better
-        );
-        return { data, isNewPersonalBest };
+      // 2) ゴール更新（注入されたコールバックを実行）
+      if (updateGoalFromLatestTest) {
+        await updateGoalFromLatestTest(recordData.test_type_id);
       }
 
-      return { data, isNewPersonalBest: false };
+      // 3) PB 判定
+      const tt = testTypes.find(t => t.id === recordData.test_type_id);
+      const newValue = recordData.values.primary_value;
+
+      const isNewPB =
+        tt && checkIfPersonalBest(recordData.test_type_id, newValue, tt.higher_is_better);
+
+      return { data, isNewPersonalBest: isNewPB ?? false };
     } catch (err) {
       console.error('Error adding record:', err);
       throw err;
     }
   };
 
+  /* --------------------------
+   * Update Record
+   * -------------------------- */
   const updateRecord = async (
     recordId: string,
     updates: {
@@ -310,6 +337,9 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Delete Record
+   * -------------------------- */
   const deleteRecord = async (recordId: string) => {
     try {
       const { error } = await supabase
@@ -327,42 +357,48 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     }
   };
 
+  /* --------------------------
+   * Utils
+   * -------------------------- */
   const checkIfPersonalBest = (
     testTypeId: string,
     newValue: number,
     higherIsBetter: boolean
   ): boolean => {
-    const existingBest = personalBests.find(pb => pb.test_type_id === testTypeId);
-
-    if (!existingBest) return true;
-
-    return higherIsBetter
-      ? newValue > existingBest.value
-      : newValue < existingBest.value;
+    const pb = personalBests.find(p => p.test_type_id === testTypeId);
+    if (!pb) return true;
+    return higherIsBetter ? newValue > pb.value : newValue < pb.value;
   };
 
   const getRecordsByTestType = (testTypeId: string) => {
     return records
       .filter(r => r.test_type_id === testTypeId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
   };
 
-  const getPersonalBest = (testTypeId: string) => {
-    return personalBests.find(pb => pb.test_type_id === testTypeId);
+  const getPersonalBest = (testTypeId: string) =>
+    personalBests.find(pb => pb.test_type_id === testTypeId);
+
+  const getImprovementPercentage = (
+    testTypeId: string,
+    currentValue: number
+  ): number | null => {
+    const rec = getRecordsByTestType(testTypeId);
+    if (rec.length < 2) return null;
+
+    const first = rec[rec.length - 1];
+    const base = first.values.primary_value as number;
+
+    if (!base || base === 0) return null;
+
+    return ((currentValue - base) / Math.abs(base)) * 100;
   };
 
-  const getImprovementPercentage = (testTypeId: string, currentValue: number): number | null => {
-    const recordsForTest = getRecordsByTestType(testTypeId);
-    if (recordsForTest.length < 2) return null;
-
-    const firstRecord = recordsForTest[recordsForTest.length - 1];
-    const firstValue = firstRecord.values.primary_value as number;
-
-    if (!firstValue || firstValue === 0) return null;
-
-    return ((currentValue - firstValue) / Math.abs(firstValue)) * 100;
-  };
-
+  /* --------------------------
+   * Return API
+   * -------------------------- */
   return {
     categories,
     testTypes,
@@ -370,14 +406,17 @@ export function usePerformanceData(userId: string, categoryName?: string) {
     personalBests,
     loading,
     error,
+
     addRecord,
     updateRecord,
     deleteRecord,
+
+    checkIfPersonalBest,
     checkExistingRecord,
     getRecordsByTestType,
     getPersonalBest,
     getImprovementPercentage,
-    checkIfPersonalBest,
+
     refresh: fetchRecords
   };
 }
