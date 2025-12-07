@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Moon, Star, Clock } from 'lucide-react';
+import { Moon, Star } from 'lucide-react';
 import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 
@@ -8,8 +8,6 @@ interface SleepFormProps {
     sleep_hours: number;
     date: string;
     sleep_quality?: number;
-    bedtime?: string;
-    waketime?: string;
     notes?: string;
   }) => Promise<void>;
   onCheckExisting: (date: string) => Promise<SleepRecord | null>;
@@ -17,12 +15,15 @@ interface SleepFormProps {
   loading?: boolean;
 }
 
-export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false }: SleepFormProps) {
+export function SleepForm({
+  onSubmit,
+  onCheckExisting,
+  onUpdate,
+  loading = false,
+}: SleepFormProps) {
   const [sleepHours, setSleepHours] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [sleepQuality, setSleepQuality] = useState<number>(3);
-  const [bedtime, setBedtime] = useState('');
-  const [waketime, setWaketime] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -43,12 +44,10 @@ export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false
       sleep_hours: hours,
       date,
       sleep_quality: sleepQuality,
-      bedtime: bedtime || undefined,
-      waketime: waketime || undefined,
-      notes: notes || undefined
+      notes: notes || undefined,
     };
 
-    // Check for existing record
+    // 既存レコードチェック
     const existing = await onCheckExisting(date);
     if (existing) {
       setExistingRecord(existing);
@@ -60,11 +59,10 @@ export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false
     try {
       await onSubmit(data);
 
+      // フォームリセット
       setSleepHours('');
       setDate(new Date().toISOString().split('T')[0]);
       setSleepQuality(3);
-      setBedtime('');
-      setWaketime('');
       setNotes('');
     } catch (err) {
       setError('睡眠記録の追加に失敗しました');
@@ -83,8 +81,6 @@ export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false
       setSleepHours('');
       setDate(new Date().toISOString().split('T')[0]);
       setSleepQuality(3);
-      setBedtime('');
-      setWaketime('');
       setNotes('');
       setExistingRecord(null);
       setPendingData(null);
@@ -134,11 +130,11 @@ export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false
         date={date}
         existingValues={[
           { label: '睡眠時間', value: `${existingRecord?.sleep_hours || 0}時間` },
-          { label: '睡眠の質', value: `${existingRecord?.sleep_quality || 0}/5` }
+          { label: '睡眠の質', value: `${existingRecord?.sleep_quality || 0}/5` },
         ]}
         newValues={[
           { label: '睡眠時間', value: `${pendingData?.sleep_hours || 0}時間` },
-          { label: '睡眠の質', value: `${pendingData?.sleep_quality || 0}/5` }
+          { label: '睡眠の質', value: `${pendingData?.sleep_quality || 0}/5` },
         ]}
       />
 
@@ -149,109 +145,81 @@ export function SleepForm({ onSubmit, onCheckExisting, onUpdate, loading = false
           </div>
         )}
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          日付
-        </label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-          required
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          睡眠時間（時間）
-        </label>
-        <input
-          type="number"
-          step="0.5"
-          min="0"
-          max="24"
-          value={sleepHours}
-          onChange={(e) => setSleepHours(e.target.value)}
-          placeholder="例: 7.5"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-          required
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          推奨: 7-9時間
-        </p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          睡眠の質
-        </label>
-        {renderStars()}
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-          {sleepQuality === 5 && '最高の睡眠'}
-          {sleepQuality === 4 && '良い睡眠'}
-          {sleepQuality === 3 && '普通'}
-          {sleepQuality === 2 && 'やや不足'}
-          {sleepQuality === 1 && '睡眠不足'}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            <Clock className="w-4 h-4 inline mr-1" />
-            就寝時刻
+            日付
           </label>
           <input
-            type="time"
-            value={bedtime}
-            onChange={(e) => setBedtime(e.target.value)}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            required
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            <Clock className="w-4 h-4 inline mr-1" />
-            起床時刻
+            睡眠時間（時間）
           </label>
           <input
-            type="time"
-            value={waketime}
-            onChange={(e) => setWaketime(e.target.value)}
+            type="number"
+            step="0.5"
+            min="0"
+            max="24"
+            value={sleepHours}
+            onChange={(e) => setSleepHours(e.target.value)}
+            placeholder="例: 7.5"
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            required
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            推奨: 7-9時間
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            睡眠の質
+          </label>
+          {renderStars()}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+            {sleepQuality === 5 && '最高の睡眠'}
+            {sleepQuality === 4 && '良い睡眠'}
+            {sleepQuality === 3 && '普通'}
+            {sleepQuality === 2 && 'やや不足'}
+            {sleepQuality === 1 && '睡眠不足'}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            メモ（任意）
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="夜中に目が覚めた、寝つきが悪かった など..."
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
           />
         </div>
-      </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          メモ（任意）
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="夜中に目が覚めた、夢を見たなど..."
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
-        />
-      </div>
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-      >
-        {loading ? (
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-        ) : (
-          <>
-            <Moon className="w-5 h-5 mr-2" />
-            睡眠記録を追加
-          </>
-        )}
-      </button>
-    </form>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          {loading ? (
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+          ) : (
+            <>
+              <Moon className="w-5 h-5 mr-2" />
+              睡眠記録を追加
+            </>
+          )}
+        </button>
+      </form>
     </>
   );
 }

@@ -1,12 +1,14 @@
-// 日本時間の今日 YYYY-MM-DD を返す
-export function getTodayJSTString() {
-    const now = new Date();
-    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    return jst.toISOString().split('T')[0];
-  }
-  
-  // Date オブジェクトで今日(JST)が欲しいとき
-  export function getTodayJST() {
-    const now = new Date();
-    return new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  }
+// YYYY-MM-DD（日本時間ローカル）の今日を返す
+export function getTodayJSTString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Dateオブジェクトで今日(JST)が欲しいとき
+// ※実際は new Date() がそのまま JST の現在日時になるのでこれでOK
+export function getTodayJST(): Date {
+  return new Date();
+}

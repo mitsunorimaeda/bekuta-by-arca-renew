@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, Zap, AlertCircle, Smile, Meh, Frown } from 'lucide-react';
+import { Heart, Zap, AlertCircle } from 'lucide-react';
 
 interface MotivationFormProps {
   onSubmit: (data: {
@@ -7,26 +7,16 @@ interface MotivationFormProps {
     energy_level: number;
     stress_level: number;
     date: string;
-    mood?: string;
     notes?: string;
   }) => Promise<void>;
   loading?: boolean;
 }
-
-const moodOptions = [
-  { value: 'great', label: '最高', icon: Smile, color: 'text-green-500' },
-  { value: 'good', label: '良い', icon: Smile, color: 'text-blue-500' },
-  { value: 'ok', label: '普通', icon: Meh, color: 'text-yellow-500' },
-  { value: 'bad', label: '悪い', icon: Frown, color: 'text-orange-500' },
-  { value: 'terrible', label: '最悪', icon: Frown, color: 'text-red-500' },
-];
 
 export function MotivationForm({ onSubmit, loading = false }: MotivationFormProps) {
   const [motivationLevel, setMotivationLevel] = useState(5);
   const [energyLevel, setEnergyLevel] = useState(5);
   const [stressLevel, setStressLevel] = useState(5);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [mood, setMood] = useState('ok');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
@@ -40,15 +30,13 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         energy_level: energyLevel,
         stress_level: stressLevel,
         date,
-        mood,
-        notes: notes || undefined
+        notes: notes || undefined,
       });
 
       setMotivationLevel(5);
       setEnergyLevel(5);
       setStressLevel(5);
       setDate(new Date().toISOString().split('T')[0]);
-      setMood('ok');
       setNotes('');
     } catch (err) {
       setError('モチベーション記録の追加に失敗しました');
@@ -81,17 +69,23 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
           className={`flex-1 h-2 rounded-lg appearance-none cursor-pointer ${color}`}
           style={{
             background: `linear-gradient(to right, ${
-              color.includes('blue') ? '#3b82f6' :
-              color.includes('green') ? '#10b981' :
-              '#ef4444'
+              color.includes('blue')
+                ? '#3b82f6'
+                : color.includes('green')
+                ? '#10b981'
+                : '#ef4444'
             } 0%, ${
-              color.includes('blue') ? '#3b82f6' :
-              color.includes('green') ? '#10b981' :
-              '#ef4444'
-            } ${(value - 1) * 11.11}%, #9ca3af ${(value - 1) * 11.11}%, #9ca3af 100%)`
+              color.includes('blue')
+                ? '#3b82f6'
+                : color.includes('green')
+                ? '#10b981'
+                : '#ef4444'
+            } ${(value - 1) * 11.11}%, #9ca3af ${(value - 1) * 11.11}%, #9ca3af 100%)`,
           }}
         />
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right">{highLabel}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right">
+          {highLabel}
+        </span>
       </div>
       <div className="text-center mt-2">
         <span className={`text-2xl font-bold ${color}`}>{value}</span>
@@ -150,32 +144,6 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         '高ストレス',
         'text-red-500'
       )}
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          今日の気分
-        </label>
-        <div className="grid grid-cols-5 gap-2">
-          {moodOptions.map((option) => {
-            const Icon = option.icon;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setMood(option.value)}
-                className={`p-3 rounded-lg border-2 transition-all ${
-                  mood === option.value
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                    : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-                }`}
-              >
-                <Icon className={`w-6 h-6 mx-auto mb-1 ${option.color}`} />
-                <p className="text-xs text-gray-700 dark:text-gray-300">{option.label}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
