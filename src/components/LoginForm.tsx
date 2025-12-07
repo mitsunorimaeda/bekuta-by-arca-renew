@@ -380,6 +380,10 @@ export function LoginForm({ onLogin }: LoginFormProps) {
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <p className="text-gray-600 dark:text-gray-300 text-sm">
                   登録されているメールアドレスを入力してください。パスワードリセット用のリンクをお送りします。
+                  <br />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    ※以前と同じパスワードには変更できません。
+                  </span>
                 </p>
 
                 <div>

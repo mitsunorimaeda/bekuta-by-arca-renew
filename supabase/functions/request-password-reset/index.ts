@@ -28,7 +28,7 @@ function generatePasswordResetEmailHTML(data: {
 }) {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>パスワードリセット</title></head><body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#f3f4f6;"><div style="max-width:600px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.1);"><div style="background:#3b82f6;color:white;padding:30px;text-align:center;"><h1 style="margin:0;font-size:24px;">🔑 パスワードリセット</h1></div><div style="padding:30px;"><p style="font-size:18px;color:#1f2937;margin:0 0 20px 0;">こんにちは、${
     data.userName || "ユーザー"
-  }さん</p><p style="color:#4b5563;line-height:1.6;">Bekutaのパスワードリセットのリクエストを受け付けました。<br>以下のボタンからパスワードの再設定を行ってください。</p><a href="${
+  }さん</p><p style="color:#4b5563;line-height:1.6;">Bekutaのパスワードリセットのリクエストを受け付けました。<br>以下のボタンからパスワードの再設定を行ってください。<br>※以前と同じパスワードは使用できません。</p><a href="${
     data.resetUrl
   }" style="display:inline-block;background:#3b82f6;color:white;text-decoration:none;padding:12px 30px;border-radius:8px;margin:20px 0;font-weight:600;">パスワードを再設定する</a><p style="color:#6b7280;font-size:12px;">※このリンクは一定時間後に無効になります。<br>※このメールに心当たりがない場合は破棄してください。</p></div><div style="padding:20px;text-align:center;background:#f9fafb;border-top:1px solid #e5e7eb;color:#6b7280;font-size:14px;"><p style="margin:0;">© ${new Date().getFullYear()} Bekuta</p></div></div></body></html>`;
 }
@@ -44,6 +44,7 @@ function generatePasswordResetEmailText(data: {
 
 Bekutaのパスワードリセットのリクエストを受け付けました。
 以下のリンクからパスワードの再設定を行ってください。
+※以前と同じパスワードは使用できません。
 
 ${data.resetUrl}
 
