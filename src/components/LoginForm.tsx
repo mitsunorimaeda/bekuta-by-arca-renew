@@ -11,6 +11,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -41,16 +42,24 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       console.error('Error message:', err.message);
       console.error('Error details:', err);
 
-      if (err.message.includes('Invalid login credentials') || err.message.includes('メールアドレスまたはパスワードが正しくありません')) {
-        setError('メールアドレスまたはパスワードが正しくありません。\n\n考えられる原因：\n• アカウントが作成されていない\n• パスワードが間違っている\n• メールアドレスが間違っている\n\n管理者にアカウント作成を依頼してください。');
-      } else if (err.message.includes('Email not confirmed')) {
+      if (
+        err.message?.includes('Invalid login credentials') ||
+        err.message?.includes('メールアドレスまたはパスワードが正しくありません')
+      ) {
+        setError(
+          'メールアドレスまたはパスワードが正しくありません。\n\n考えられる原因：\n• アカウントが作成されていない\n• パスワードが間違っている\n• メールアドレスが間違っている\n\n管理者にアカウント作成を依頼してください。'
+        );
+      } else if (err.message?.includes('Email not confirmed')) {
         setError('メールアドレスが確認されていません。管理者にお問い合わせください。');
-      } else if (err.message.includes('Too many requests')) {
+      } else if (err.message?.includes('Too many requests')) {
         setError('ログイン試行回数が多すぎます。5分程度待ってから再試行してください。');
-      } else if (err.message.includes('Missing Supabase environment variables')) {
+      } else if (err.message?.includes('Missing Supabase environment variables')) {
         setError('システム設定エラー：データベース接続が設定されていません。管理者に連絡してください。');
       } else {
-        setError(err.message || 'ログインに失敗しました。しばらく待ってから再試行するか、管理者にお問い合わせください。');
+        setError(
+          err.message ||
+            'ログインに失敗しました。しばらく待ってから再試行するか、管理者にお問い合わせください。'
+        );
       }
     } finally {
       setLoading(false);
@@ -59,32 +68,77 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
   const togglePasswordVisibility = (e: React.MouseEvent) => {
     e.preventDefault();
-    setShowPassword(!showPassword);
+    setShowPassword((prev) => !prev);
   };
 
+  /**
+   * 🔐 パスワードリセット：
+   *   Supabase の Edge Function `request-password-reset`
+   *   ＋ Resend 経由でメール送信
+   */
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetError('');
+    setResetSent(false);
 
-    if (!resetEmail.trim() || !resetEmail.includes('@')) {
+    const trimmedEmail = resetEmail.trim();
+
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
       setResetError('有効なメールアドレスを入力してください。');
+      return;
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('❌ VITE_SUPABASE_URL is not set');
+      setResetError(
+        'システム設定エラー：パスワードリセットが現在利用できません。管理者に連絡してください。'
+      );
       return;
     }
 
     setLoading(true);
 
     try {
-      const { supabase } = await import('../lib/supabase');
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
+      console.log('🔐 Requesting password reset for:', trimmedEmail);
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/request-password-reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          // Supabase の hosted パスワード変更ページ → 完了後にここへ戻る
+          redirectUrl: window.location.origin,
+        }),
       });
 
-      if (error) throw error;
+      const result = await response.json().catch(() => ({}));
 
+      if (!response.ok) {
+        console.error('❌ request-password-reset error:', response.status, result);
+
+        if (response.status === 404) {
+          setResetError(
+            'このメールアドレスは登録されていない可能性があります。入力内容を確認するか、管理者にお問い合わせください。'
+          );
+        } else {
+          setResetError(
+            result?.error ||
+              'パスワードリセットメールの送信に失敗しました。時間をおいて再度お試しください。'
+          );
+        }
+        return;
+      }
+
+      console.log('✅ Password reset request accepted:', result);
       setResetSent(true);
     } catch (err: any) {
-      console.error('Password reset error:', err);
-      setResetError('パスワードリセットメールの送信に失敗しました。メールアドレスを確認してください。');
+      console.error('❌ Password reset request failed:', err);
+      setResetError(
+        'パスワードリセットメールの送信に失敗しました。ネットワーク環境を確認するか、管理者にお問い合わせください。'
+      );
     } finally {
       setLoading(false);
     }
@@ -93,15 +147,26 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-md transition-colors">
+        {/* Header */}
         <div className="text-center mb-8">
           <div className="bg-blue-100 dark:bg-blue-900 rounded-full p-3 w-16 h-16 mx-auto mb-4 transition-colors">
             <LogIn className="w-10 h-10 text-blue-600 dark:text-blue-400" />
           </div>
           <h1 className="flex items-baseline justify-center space-x-2 mb-2 transition-colors">
-            <span className="text-2xl font-bold text-gray-900 dark:text-white" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', letterSpacing: '-0.02em' }}>
+            <span
+              className="text-2xl font-bold text-gray-900 dark:text-white"
+              style={{
+                fontFamily:
+                  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                letterSpacing: '-0.02em',
+              }}
+            >
               Bekuta
             </span>
-            <span className="text-sm font-medium text-gray-500 dark:text-gray-400" style={{ letterSpacing: '0.05em' }}>
+            <span
+              className="text-sm font-medium text-gray-500 dark:text-gray-400"
+              style={{ letterSpacing: '0.05em' }}
+            >
               by ARCA
             </span>
           </h1>
@@ -110,9 +175,14 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           </p>
         </div>
 
+        {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Email */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors"
+            >
               メールアドレス
             </label>
             <input
@@ -131,21 +201,25 @@ export function LoginForm({ onLogin }: LoginFormProps) {
               required
               disabled={loading}
               autoComplete="email"
-              style={{ 
+              style={{
                 fontSize: '16px',
                 WebkitAppearance: 'none',
-                WebkitBorderRadius: '0.5rem'
+                WebkitBorderRadius: '0.5rem',
               }}
             />
           </div>
 
+          {/* Password */}
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors"
+            >
               パスワード
             </label>
             <div className="relative">
               <input
-                type={showPassword ? "text" : "password"}
+                type={showPassword ? 'text' : 'password'}
                 id="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -160,10 +234,10 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                 required
                 disabled={loading}
                 autoComplete="current-password"
-                style={{ 
+                style={{
                   fontSize: '16px',
                   WebkitAppearance: 'none',
-                  WebkitBorderRadius: '0.5rem'
+                  WebkitBorderRadius: '0.5rem',
                 }}
               />
               <button
@@ -175,9 +249,9 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                   transition-colors touch-target
                 "
                 disabled={loading}
-                style={{ 
+                style={{
                   WebkitTapHighlightColor: 'transparent',
-                  touchAction: 'manipulation'
+                  touchAction: 'manipulation',
                 }}
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -185,6 +259,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             </div>
           </div>
 
+          {/* Login Error */}
           {error && (
             <div className="flex items-start space-x-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 transition-colors">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -195,6 +270,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             </div>
           )}
 
+          {/* Login Button */}
           <button
             type="submit"
             disabled={loading}
@@ -206,18 +282,21 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             "
             style={{
               WebkitTapHighlightColor: 'transparent',
-              touchAction: 'manipulation'
+              touchAction: 'manipulation',
             }}
           >
             {loading ? 'ログイン中...' : 'ログイン'}
           </button>
 
+          {/* Forgot password link */}
           <div className="mt-4 text-center">
             <button
               type="button"
               onClick={() => {
                 setShowForgotPassword(true);
                 setResetEmail(email);
+                setResetError('');
+                setResetSent(false);
               }}
               className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
             >
@@ -226,21 +305,24 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           </div>
         </form>
 
+        {/* Info blocks */}
         <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400 transition-colors">
+          {/* 初回利用案内（招待メール＋パスワード設定リンク版） */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 transition-colors">
             <div className="flex items-start space-x-2">
               <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
               <div>
                 <h3 className="font-medium text-blue-900 dark:text-blue-300 mb-2">初回利用の方へ</h3>
                 <div className="text-blue-700 dark:text-blue-400 space-y-1 text-left text-xs">
-                  <p>1. 管理者から招待メールまたは招待情報を受け取る</p>
-                  <p>2. 提供されたメールアドレスと仮パスワードでログイン</p>
-                  <p>3. 初回ログイン時にパスワードを変更</p>
+                  <p>1. 管理者から「Bekuta 招待メール」を受け取る</p>
+                  <p>2. メール内の「パスワードを設定する」ボタンを押す</p>
+                  <p>3. 表示される画面でパスワードを設定し、その後この画面からログイン</p>
                 </div>
               </div>
             </div>
           </div>
-          
+
+          {/* トラブルシュート */}
           <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg transition-colors">
             <div className="flex items-start space-x-2">
               <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
@@ -249,18 +331,19 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                 <p>管理者に以下の情報をお伝えください：</p>
                 <ul className="list-disc list-inside mt-1 space-y-1">
                   <li>使用しているメールアドレス</li>
-                  <li>ログイン情報（仮パスワード）を受け取ったかどうか</li>
-                  <li>初回ログイン時にパスワード変更画面が表示されるかどうか</li>
+                  <li>「招待メール」または「パスワードリセットメール」を受け取っているか</li>
+                  <li>パスワード設定（変更）画面が表示されるかどうか</li>
                   <li>エラーメッセージの内容</li>
                 </ul>
               </div>
             </div>
           </div>
-          
+
           <p className="mt-4 text-xs">ログイン情報が不明な場合は管理者にお問い合わせください</p>
         </div>
       </div>
 
+      {/* Forgot Password Modal */}
       {showForgotPassword && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-md">
@@ -272,10 +355,10 @@ export function LoginForm({ onLogin }: LoginFormProps) {
               <div className="space-y-4">
                 <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                   <p className="text-green-800 dark:text-green-300 text-sm">
-                    パスワードリセットのメールを送信しました。
+                    パスワードリセット用のメールを送信しました。
                   </p>
                   <p className="text-green-700 dark:text-green-400 text-sm mt-2">
-                    メールに記載されたリンクをクリックして、新しいパスワードを設定してください。
+                    メールに記載されたリンクを押して、表示された画面で新しいパスワードを設定してください。
                   </p>
                 </div>
                 <button
@@ -312,7 +395,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                 {resetError && (
                   <div className="flex items-start space-x-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400">
                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm">{resetError}</p>
+                    <p className="text-sm whitespace-pre-line">{resetError}</p>
                   </div>
                 )}
 

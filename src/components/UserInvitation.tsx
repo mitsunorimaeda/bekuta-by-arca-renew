@@ -508,10 +508,10 @@ export function UserInvitation({ teams, onUserInvited, restrictToOrganizationId,
                 <h3 className="font-medium text-blue-900 mb-2">ユーザー招待について</h3>
                 <div className="text-sm text-blue-700 space-y-2">
                   <p>1. ユーザーのメールアドレスにウェルカムメールが送信されます。</p>
-                  <p>2. メールには初回ログイン用のパスワードが記載されています。</p>
-                  <p>3. 初回ログイン後、必ずパスワードを変更してください。</p>
-                  <p>4. ユーザーIDは自動的に連番で生成されます（例: USER0001）。</p>
-                  <p className="text-yellow-700 font-medium">⚠️ 初回パスワードは招待履歴に表示されます。安全に管理してください。</p>
+                  <p>2. メールには「パスワード設定用リンク」が記載されています。</p>
+                  <p>3. ユーザーはリンク先で自分のパスワードを設定します。</p>
+                  <p>4.  パスワードはシステム上にも表示されません。再発行は再度「パスワードリセット」を行ってください。</p>
+                  <p>5. 招待リンクの有効期限は24時間です。有効期限切れの場合は再度招待してください。</p>
                 </div>
               </div>
             </div>
