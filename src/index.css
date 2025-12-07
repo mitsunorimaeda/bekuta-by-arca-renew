@@ -1,0 +1,250 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Safari-specific fixes */
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  
+  button {
+    -webkit-appearance: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  
+  input, select, textarea {
+    -webkit-appearance: none;
+    -webkit-border-radius: 0;
+    border-radius: 0;
+  }
+  
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: #d1d5db;
+    height: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-track {
+    background: #d1d5db !important;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  input[type="range"]::-moz-range-track {
+    background: #d1d5db !important;
+    height: 8px;
+    border-radius: 4px;
+    border: none;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* ダークモード用のスライダー */
+  .dark input[type="range"] {
+    background: #4b5563;
+  }
+
+  .dark input[type="range"]::-webkit-slider-track {
+    background: #4b5563;
+  }
+
+  .dark input[type="range"]::-webkit-slider-thumb {
+    background: #60a5fa;
+    border: 2px solid #1f2937;
+  }
+
+  .dark input[type="range"]::-moz-range-track {
+    background: #4b5563;
+  }
+
+  .dark input[type="range"]::-moz-range-thumb {
+    background: #60a5fa;
+    border: 2px solid #1f2937;
+  }
+}
+
+/* Safari mobile viewport fix */
+@supports (-webkit-touch-callout: none) {
+  .min-h-screen {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* Prevent zoom on input focus in Safari iOS */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  select,
+  textarea,
+  input[type="text"],
+  input[type="password"],
+  input[type="datetime"],
+  input[type="datetime-local"],
+  input[type="date"],
+  input[type="month"],
+  input[type="time"],
+  input[type="week"],
+  input[type="number"],
+  input[type="email"],
+  input[type="url"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="color"] {
+    font-size: 16px;
+  }
+}
+
+/* Fix for Safari button styling */
+button {
+  background-color: transparent;
+  border: none;
+  outline: none;
+}
+
+/* Ensure proper touch targets for Safari */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Safari-specific scrolling improvements */
+.overflow-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ダークモード用のスムーズトランジション */
+@layer base {
+  html {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  * {
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+}
+
+/* カスタムスクロールバー（ダークモード対応） */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(156 163 175);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(107 114 128);
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: rgb(75 85 99) transparent;
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(75 85 99);
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(107 114 128);
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* グラデーション背景のダークモード対応 */
+@layer utilities {
+  .bg-gradient-dark {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  }
+  
+  .bg-gradient-light {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  }
+}
+
+/* アニメーション用のユーティリティ */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  .animate-bounce-subtle {
+    animation: bounceSubtle 2s infinite;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* フォーカス状態の改善 */
+@layer utilities {
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900;
+  }
+  
+  .focus-ring-inset {
+    @apply focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 dark:focus:ring-blue-400;
+  }
+}
