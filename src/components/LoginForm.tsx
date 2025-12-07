@@ -80,32 +80,36 @@ export function LoginForm({ onLogin }: LoginFormProps) {
     e.preventDefault();
     setResetError('');
     setResetSent(false);
-
+  
     const trimmedEmail = resetEmail.trim();
-
+  
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
       setResetError('有効なメールアドレスを入力してください。');
       return;
     }
-
+  
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error('❌ VITE_SUPABASE_URL is not set');
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY is not set');
       setResetError(
         'システム設定エラー：パスワードリセットが現在利用できません。管理者に連絡してください。'
       );
       return;
     }
-
+  
     setLoading(true);
-
+  
     try {
       console.log('🔐 Requesting password reset for:', trimmedEmail);
-
+  
       const response = await fetch(`${supabaseUrl}/functions/v1/request-password-reset`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
           email: trimmedEmail,
@@ -113,12 +117,12 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           redirectUrl: window.location.origin,
         }),
       });
-
+  
       const result = await response.json().catch(() => ({}));
-
+  
       if (!response.ok) {
         console.error('❌ request-password-reset error:', response.status, result);
-
+  
         if (response.status === 404) {
           setResetError(
             'このメールアドレスは登録されていない可能性があります。入力内容を確認するか、管理者にお問い合わせください。'
@@ -131,7 +135,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         }
         return;
       }
-
+  
       console.log('✅ Password reset request accepted:', result);
       setResetSent(true);
     } catch (err: any) {
