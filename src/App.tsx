@@ -11,6 +11,8 @@ import { WelcomePage } from './components/WelcomePage';
 import { AthleteView } from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
+// 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
+// import { PasswordResetConfirm } from './components/PasswordResetConfirm';
 
 // Lazy load heavy components for better performance
 const OrganizationAdminView = lazy(() =>
@@ -33,6 +35,9 @@ import { CommercialTransactions } from './pages/CommercialTransactions';
 import { HelpPage } from './pages/HelpPage';
 import { TeamAchievementNotification } from './components/TeamAchievementNotification';
 
+// 🔽 Supabase クライアントを使う
+import { supabase } from './lib/supabase';
+
 type AppUserRole = 'athlete' | 'staff' | 'admin';
 
 function App() {
@@ -49,7 +54,6 @@ function App() {
     acceptTerms,
   } = useAuth();
 
-  // role を union 型に絞る
   const effectiveRole: AppUserRole =
     userProfile?.role === 'staff' ||
     userProfile?.role === 'admin' ||
@@ -79,9 +83,8 @@ function App() {
   const [welcomeToken, setWelcomeToken] = React.useState<string | null>(null);
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [showMobileMenu, setShowMobileMenu] = React.useState(false);
-  const [isRecoveryMode, setIsRecoveryMode] = React.useState(false);
 
-  // 🔹 ローカルでの「同意済み」フラグ（DB 反映のタイミングに依存しない保険）
+  // 🔹 ローカルでの「同意済み」フラグ
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
 
   // パスワード変更フラグを同期
@@ -89,41 +92,76 @@ function App() {
     setRequiresPasswordChange(authRequiresPasswordChange);
   }, [authRequiresPasswordChange]);
 
-  // URL（token / recovery）チェック
+  // URL（token / reset-password）チェック
   React.useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
+    const url = new URL(window.location.href);
+    const urlParams = url.searchParams;
     const token = urlParams.get('token');
     if (token) {
       setWelcomeToken(token);
     }
 
-    // パスワードリセット（recovery）リンクから来た場合
-    const hash = window.location.hash;
-    if (hash.includes('type=recovery') || hash.includes('access_token')) {
-      console.log('🔐 Recovery mode detected from URL');
-      setIsRecoveryMode(true);
-      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    // パスワードリセット用の専用パス
+    if (url.pathname.startsWith('/reset-password')) {
+      console.log('🔐 /reset-password route detected');
+      setCurrentPage('reset-password');
     }
   }, []);
 
-  // Recovery モードのときはパスワード変更画面を強制
+  // ✅ recovery リンク（ハッシュ）からセッションを貼る
   React.useEffect(() => {
-    if (isRecoveryMode && user && !authLoading) {
-      console.log('🔐 Recovery mode active, forcing password change');
-      setRequiresPasswordChange(true);
-    }
-  }, [isRecoveryMode, user, authLoading]);
+    // 例: #access_token=xxx&refresh_token=yyy&type=recovery
+    const hash = window.location.hash;
+    if (!hash) return;
 
-  // ログアウト / セッション切れ時に recovery モード解除
-  React.useEffect(() => {
-    if (!user && isRecoveryMode) {
-      console.log('🔐 Clearing recovery mode - no active user');
-      setIsRecoveryMode(false);
+    const params = new URLSearchParams(hash.replace('#', ''));
+    const type = params.get('type');
+
+    if (type !== 'recovery') return;
+
+    console.log('🔐 Recovery hash detected in URL');
+
+    const access_token = params.get('access_token');
+    const refresh_token = params.get('refresh_token');
+
+    if (!access_token || !refresh_token) {
+      console.warn('⚠️ recovery URL に access_token または refresh_token がありません');
+      return;
     }
-  }, [user, isRecoveryMode]);
+
+    (async () => {
+      const { data, error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+
+      if (error) {
+        console.error('❌ Failed to set recovery session:', error);
+        return;
+      }
+
+      if (data.session?.user) {
+        console.log('👤 Recovery session user set');
+
+        // パスワード変更フローに入る想定なのでフラグをオン
+        setRequiresPasswordChange(true);
+
+        // URL の # 以下を消す
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname + window.location.search,
+        );
+
+        // 念のため reset-password ページであることを保証
+        setCurrentPage('reset-password');
+      } else {
+        console.log('⚠️ No user found after setSession');
+      }
+    })();
+  }, []);
 
   // ✅ DB の terms_accepted を見て同意モーダルを制御
-  //    ＋ 一度「同意」したセッションでは再表示しないためのローカルフラグも考慮
   React.useEffect(() => {
     console.log('👀 Checking terms consent state:', {
       hasUser: !!user,
@@ -172,6 +210,44 @@ function App() {
     );
   }
 
+  // 🔐 パスワードリセット専用ページ
+  if (currentPage === 'reset-password') {
+    console.log('🔐 Showing reset password flow');
+
+    // まだセッションが立っていない間はローディング表示
+    if (!user || !userProfile) {
+      return (
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              パスワードリセットリンクを確認しています…
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // セッションがある → 新しいパスワードを入力してもらう
+    return (
+      <PasswordChangeForm
+        onPasswordChange={async (password: string) => {
+          try {
+            await changePassword(password);
+            setRequiresPasswordChange(false);
+            setCurrentPage('app');
+            window.history.replaceState({}, '', '/');
+            console.log('✅ Password changed successfully (from recovery link)');
+          } catch (error) {
+            console.error('❌ Password change failed:', error);
+            throw error;
+          }
+        }}
+        userName={userProfile.name}
+      />
+    );
+  }
+
   // Welcome トークンがある場合（初回セットアップフロー）
   if (welcomeToken) {
     return (
@@ -196,18 +272,17 @@ function App() {
     );
   }
 
-  // パスワード変更が必要な場合
+  // パスワード変更が必要な場合（通常ログイン後の強制変更など）
   if (requiresPasswordChange) {
-    console.log('🔑 Showing password change form');
+    console.log('🔑 Showing password change form (authRequiresPasswordChange)');
     return (
       <PasswordChangeForm
         onPasswordChange={async (password: string) => {
           try {
             await changePassword(password);
-            setIsRecoveryMode(false);
             setRequiresPasswordChange(false);
             window.history.replaceState({}, '', '/');
-            console.log('✅ Password changed successfully, recovery mode cleared');
+            console.log('✅ Password changed successfully');
           } catch (error) {
             console.error('❌ Password change failed:', error);
             throw error;
@@ -224,13 +299,11 @@ function App() {
       <ConsentModal
         onAccept={async () => {
           try {
-            await acceptTerms(); // terms_accepted / terms_accepted_at を更新
-            // 🔥 このセッションでは「同意済み」とみなす（DB 反映が一瞬遅れても再表示させない）
+            await acceptTerms();
             setTermsAcceptedLocally(true);
-            setShowConsentModal(false); // モーダルを閉じる
+            setShowConsentModal(false);
           } catch (error) {
             console.error('❌ acceptTerms failed:', error);
-            // 必要ならここでエラートーストなども出せる
           }
         }}
         onDecline={async () => {
@@ -337,7 +410,7 @@ function App() {
                   </span>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{userProfile.name}さん</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text:white">{userProfile.name}さん</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{userProfile.email}</p>
                 </div>
               </div>
