@@ -142,7 +142,7 @@ export function generateInvitationEmailHTML(data: InvitationEmailData): string {
       line-height: 1.5;
     }
     .cta-button {
-      display: inline-block;
+      display: block;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       text-decoration: none;
@@ -154,7 +154,6 @@ export function generateInvitationEmailHTML(data: InvitationEmailData): string {
       box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
       transition: all 0.3s ease;
       text-align: center;
-      display: block;
     }
     .cta-button:hover {
       transform: translateY(-2px);
@@ -264,7 +263,7 @@ export function generateInvitationEmailHTML(data: InvitationEmailData): string {
         <p class="greeting">Bekuta への招待</p>
 
         <p class="message">
-          ${data.inviterName ? `${data.inviterName}から、` : ''}Bekuta（怪我予防システム）へご招待します。
+          ${data.inviterName ? `${data.inviterName}から、` : ''}Bekuta（トレーニング負荷管理システム）へご招待します。<br/>
           このシステムで、トレーニング負荷を科学的に管理し、怪我のリスクを最小限に抑えることができます。
         </p>
 
@@ -286,35 +285,39 @@ export function generateInvitationEmailHTML(data: InvitationEmailData): string {
         </div>
 
         <div class="setup-box">
-          <div class="setup-label">🔐 パスワードを設定してください</div>
+          <div class="setup-label">🔐 まずはパスワードを設定してください</div>
           <div class="setup-note">
-            セキュリティのため、まずパスワードを設定していただきます。<br>
-            下のボタンをクリックして、あなただけのパスワードを作成してください。
+            セキュリティのため、最初に「Bekutaで使うパスワード」を自分で設定していただきます。<br>
+            下のボタンからパスワード設定ページを開き、設定が終わったら Bekuta のログイン画面で
+            <br>「メールアドレス」と「設定したパスワード」でログインしてください。
           </div>
         </div>
 
         <div class="urgency">
           <div class="urgency-icon">⏰</div>
-          <p class="urgency-text">このリンクは ${data.expiresInHours}時間後に期限切れになります</p>
+          <p class="urgency-text">
+            このリンクは ${data.expiresInHours}時間後に期限切れになります。<br/>
+            期限が切れた場合は、管理者に新しい招待またはパスワードリセットを依頼してください。
+          </p>
         </div>
 
         <a href="${data.passwordSetupLink}" class="cta-button">
-          🔑 パスワードを設定してログイン
+          🔑 パスワードを設定する
         </a>
 
         <div class="steps">
           <h3>次のステップ</h3>
           <div class="step">
             <div class="step-number">1</div>
-            <div>上のボタンをクリックしてパスワード設定ページへ</div>
+            <div>上のボタンをクリックしてパスワード設定ページを開く</div>
           </div>
           <div class="step">
             <div class="step-number">2</div>
-            <div>あなた専用のパスワードを設定</div>
+            <div>あなた専用のパスワードを設定して保存する</div>
           </div>
           <div class="step">
             <div class="step-number">3</div>
-            <div>自動的にログインされます</div>
+            <div>Bekuta のログイン画面を開き、メールアドレスと設定したパスワードでログイン</div>
           </div>
           <div class="step">
             <div class="step-number">4</div>
@@ -672,7 +675,10 @@ Bekuta への招待
 
 ようこそ、${data.name}さん！
 
-${data.inviterName ? `${data.inviterName}から、` : ''}Bekuta（怪我予防システム）へご招待します。
+${data.inviterName ? `${data.inviterName}から、` : ''}Bekuta（トレーニング負荷管理システム）へご招待します。
+
+このシステムで、トレーニング負荷を科学的に管理し、
+怪我のリスクを最小限に抑えることができます。
 
 ━━━━━━━━━━━━━━━━━━━━━━
 招待情報
@@ -680,30 +686,35 @@ ${data.inviterName ? `${data.inviterName}から、` : ''}Bekuta（怪我予防�
 
 あなたの役割: ${roleDisplay}
 メールアドレス: ${data.email}
-${data.teamName ? `チーム: ${data.teamName}` : ''}
+${data.teamName ? `チーム: ${data.teamName}\n` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━
 パスワード設定
 ━━━━━━━━━━━━━━━━━━━━━━
 
-🔐 セキュリティのため、まずパスワードを設定していただきます。
+🔐 セキュリティのため、まず Bekuta で使うパスワードを設定してください。
+設定後は、Bekuta のログイン画面で
+「メールアドレス」と「設定したパスワード」でログインします。
 
 ━━━━━━━━━━━━━━━━━━━━━━
 次のステップ
 ━━━━━━━━━━━━━━━━━━━━━━
 
-1. 以下のURLにアクセスしてパスワードを設定
+1. 以下のURLにアクセスしてパスワード設定ページを開く
    ${data.passwordSetupLink}
 
-2. あなた専用のパスワードを入力
+2. あなた専用のパスワードを設定し、「保存」する
 
-3. 自動的にログインされます
+3. Bekuta のログイン画面を開き、
+   メールアドレスと設定したパスワードでログインする
 
-4. チームに参加完了！
+4. チームに参加完了！トレーニング記録を開始
 
 ━━━━━━━━━━━━━━━━━━━━━━
 
-⏰ このリンクは ${data.expiresInHours}時間後に期限切れになります
+⏰ このリンクは ${data.expiresInHours}時間後に期限切れになります。
+   期限が切れた場合は、招待を送った管理者に
+   新しい招待またはパスワードリセットの発行を依頼してください。
 
 このメールに心当たりがない場合は、無視していただいて構いません。
 質問がある場合は、招待を送った管理者にお問い合わせください。
