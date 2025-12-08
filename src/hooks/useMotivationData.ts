@@ -65,13 +65,12 @@ export function useMotivationData(userId: string) {
     notes?: string;
   }) => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        throw new Error('認証が必要です');
+      if (!userId) {
+        throw new Error('ユーザーIDがありません');
       }
 
       const insertData: MotivationInsert = {
-        user_id: authData.user.id,
+        user_id: userId,
         date: data.date,
         motivation_level: data.motivation_level,
         energy_level: data.energy_level,
@@ -80,17 +79,28 @@ export function useMotivationData(userId: string) {
         notes: data.notes || null
       };
 
-      const { data: newRecord, error: insertError } = await supabase
+      // 🔁 INSERT → UPSERT に変更
+      //  ユニーク制約 motivation_records_user_id_date_key
+      //  = user_id + date に合わせて onConflict を指定
+      const { data: newRecord, error: upsertError } = await supabase
         .from('motivation_records')
-        .insert(insertData)
+        .upsert(insertData, {
+          onConflict: 'user_id,date'
+        })
         .select()
         .single();
 
-      if (insertError) throw insertError;
+      if (upsertError) throw upsertError;
 
-      setRecords(prev => [newRecord, ...prev].sort((a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      ));
+      // ローカル state も「同じ user_id + date のものは置き換え」にする
+      setRecords(prev => {
+        const filtered = prev.filter(
+          r => !(r.user_id === newRecord.user_id && r.date === newRecord.date)
+        );
+        return [newRecord, ...filtered].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+      });
     } catch (err) {
       console.error('Error adding motivation record:', err);
       throw err;
@@ -221,9 +231,9 @@ export function useMotivationData(userId: string) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const recentRecords = records.filter(
-      record => new Date(record.date) >= cutoffDate
-    ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const recentRecords = records
+      .filter(record => new Date(record.date) >= cutoffDate)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     if (recentRecords.length < 2) return null;
 
@@ -231,8 +241,12 @@ export function useMotivationData(userId: string) {
     const firstHalf = recentRecords.slice(0, midPoint);
     const secondHalf = recentRecords.slice(midPoint);
 
-    const firstAvg = firstHalf.reduce((sum, r) => sum + r.motivation_level, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((sum, r) => sum + r.motivation_level, 0) / secondHalf.length;
+    const firstAvg =
+      firstHalf.reduce((sum, r) => sum + r.motivation_level, 0) /
+      firstHalf.length;
+    const secondAvg =
+      secondHalf.reduce((sum, r) => sum + r.motivation_level, 0) /
+      secondHalf.length;
 
     const diff = secondAvg - firstAvg;
 
