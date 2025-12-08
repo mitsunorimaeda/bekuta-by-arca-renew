@@ -178,6 +178,9 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
   }, [shouldShowTutorial, startTutorial, loading]);
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
+  const latestMotivation = getLatestMotivation();
+  const latestWeight = getLatestWeight();
+  const lastSleepRecord = sleepRecords.length > 0 ? sleepRecords[0] : null;
 
   // gender をコンポーネント用に正規化
   const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null =
@@ -201,7 +204,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
   // 今日の日付（JST）
   const today = getTodayJSTString();
   const todayWeight = weightRecords.find(r => r.date === today);
-  const latestWeight = getLatestWeight();
+  
 
   // Get last records for quick record suggestions
   const lastTrainingRecord = records.length > 0 ? records[records.length - 1] : null;
@@ -889,6 +892,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                   onCheckExisting={checkExistingWeightRecord}
                   onUpdate={updateWeightRecord}
                   loading={weightLoading}
+                  lastRecord={lastWeightRecord}   // ★ ここを追加
                 />
               </div>
             </div>
@@ -1085,6 +1089,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                     onCheckExisting={checkExistingSleepRecord}
                     onUpdate={updateSleepRecord}
                     loading={sleepLoading}
+                    lastRecord={lastSleepRecord}
                   />
                 </div>
 
@@ -1123,7 +1128,20 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">モチベーション記録</h2>
                     <Heart className="w-6 h-6 text-blue-500" />
                   </div>
-                  <MotivationForm onSubmit={addMotivationRecord} loading={motivationLoading} />
+                  <MotivationForm
+                    onSubmit={addMotivationRecord}
+                    loading={motivationLoading}
+                    lastRecord={
+                      latestMotivation
+                        ? {
+                            date: latestMotivation.date,
+                            motivation_level: latestMotivation.motivation_level,
+                            energy_level: latestMotivation.energy_level,
+                            stress_level: latestMotivation.stress_level,
+                          }
+                        : undefined
+                    }
+                  />
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">

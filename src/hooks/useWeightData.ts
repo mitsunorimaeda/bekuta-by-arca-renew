@@ -154,6 +154,7 @@ export function useWeightData(userId: string) {
 
     return lastWeight - firstWeight;
   };
+    
 
   return {
     records,

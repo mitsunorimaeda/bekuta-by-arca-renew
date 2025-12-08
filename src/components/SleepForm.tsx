@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Moon, Star } from 'lucide-react';
 import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
@@ -14,6 +14,8 @@ interface SleepFormProps {
   onCheckExisting: (date: string) => Promise<SleepRecord | null>;
   onUpdate: (id: string, data: any) => Promise<void>;
   loading?: boolean;
+  /** 前回の睡眠記録（あれば） */
+  lastRecord?: SleepRecord | null;
 }
 
 export function SleepForm({
@@ -21,6 +23,7 @@ export function SleepForm({
   onCheckExisting,
   onUpdate,
   loading = false,
+  lastRecord,
 }: SleepFormProps) {
   const [sleepHours, setSleepHours] = useState('');
   const [date, setDate] = useState(getTodayJSTString());
@@ -31,12 +34,24 @@ export function SleepForm({
   const [existingRecord, setExistingRecord] = useState<SleepRecord | null>(null);
   const [pendingData, setPendingData] = useState<any>(null);
 
+  // ✅ 前回記録が変わったときに初期値を前回値に合わせる
+  useEffect(() => {
+    if (lastRecord) {
+      if (lastRecord.sleep_hours != null) {
+        setSleepHours(String(lastRecord.sleep_hours));
+      }
+      if (lastRecord.sleep_quality != null) {
+        setSleepQuality(lastRecord.sleep_quality);
+      }
+    }
+  }, [lastRecord]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     const hours = parseFloat(sleepHours);
-    if (isNaN(hours) || hours <= 0 || hours > 24) {
+    if (isNaN(hours) || hours < 0 || hours > 24) {
       setError('睡眠時間は0〜24時間の範囲で入力してください');
       return;
     }
@@ -60,7 +75,7 @@ export function SleepForm({
     try {
       await onSubmit(data);
 
-      // フォームリセット
+      // フォームリセット（デフォルト値に戻す）
       setSleepHours('');
       setDate(getTodayJSTString());
       setSleepQuality(3);
@@ -146,6 +161,7 @@ export function SleepForm({
           </div>
         )}
 
+        {/* 日付 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             日付
@@ -159,10 +175,16 @@ export function SleepForm({
           />
         </div>
 
+        {/* 睡眠時間（前回値のチラ見せ付き） */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             睡眠時間（時間）
           </label>
+          {lastRecord && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+              前回（{lastRecord.date}）：{lastRecord.sleep_hours}時間
+            </p>
+          )}
           <input
             type="number"
             step="0.5"
@@ -179,10 +201,16 @@ export function SleepForm({
           </p>
         </div>
 
+        {/* 睡眠の質（前回値のチラ見せ＋星） */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             睡眠の質
           </label>
+          {lastRecord && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+              前回の質：{lastRecord.sleep_quality ?? '-'} / 5
+            </p>
+          )}
           {renderStars()}
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
             {sleepQuality === 5 && '最高の睡眠'}
@@ -193,6 +221,7 @@ export function SleepForm({
           </p>
         </div>
 
+        {/* メモ */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             メモ（任意）
@@ -206,6 +235,7 @@ export function SleepForm({
           />
         </div>
 
+        {/* 送信ボタン */}
         <button
           type="submit"
           disabled={loading}

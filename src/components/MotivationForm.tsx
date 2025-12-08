@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Zap, AlertCircle } from 'lucide-react';
 import { getTodayJSTString } from '../lib/date';
+
+interface LastRecordInfo {
+  date: string;
+  motivation_level: number;
+  energy_level: number;
+  stress_level: number;
+}
 
 interface MotivationFormProps {
   onSubmit: (data: {
@@ -11,15 +18,33 @@ interface MotivationFormProps {
     notes?: string;
   }) => Promise<void>;
   loading?: boolean;
+  /** 前回の記録（任意） */
+  lastRecord?: LastRecordInfo | null;
 }
 
-export function MotivationForm({ onSubmit, loading = false }: MotivationFormProps) {
+export function MotivationForm({
+  onSubmit,
+  loading = false,
+  lastRecord,
+}: MotivationFormProps) {
   const [motivationLevel, setMotivationLevel] = useState(5);
   const [energyLevel, setEnergyLevel] = useState(5);
   const [stressLevel, setStressLevel] = useState(5);
   const [date, setDate] = useState(getTodayJSTString());
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [initializedFromLast, setInitializedFromLast] = useState(false);
+
+  // 🔁 前回記録が入ってきたタイミングで、一度だけスライダー初期値に反映
+  useEffect(() => {
+    if (lastRecord && !initializedFromLast) {
+      setMotivationLevel(lastRecord.motivation_level);
+      setEnergyLevel(lastRecord.energy_level);
+      setStressLevel(lastRecord.stress_level);
+      // 日付は「今日」のまま
+      setInitializedFromLast(true);
+    }
+  }, [lastRecord, initializedFromLast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,11 +59,13 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         notes: notes || undefined,
       });
 
+      // ここは今まで通り、送信後はリセット
       setMotivationLevel(5);
       setEnergyLevel(5);
       setStressLevel(5);
       setDate(getTodayJSTString());
       setNotes('');
+      setInitializedFromLast(false); // 次回マウント時にまた lastRecord から初期化できるように
     } catch (err) {
       setError('モチベーション記録の追加に失敗しました');
       console.error('Error submitting motivation record:', err);
@@ -52,15 +79,29 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
     icon: React.ReactNode,
     lowLabel: string,
     highLabel: string,
-    color: string
+    color: string,
+    previousValue?: number
   ) => (
     <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
         {icon}
         {label}
       </label>
+
+      {/* 🧊 ここが「うっすら前回表示」 */}
+      {previousValue !== undefined && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+          前回: <span className="font-semibold">{previousValue}</span> / 10
+          {lastRecord?.date && (
+            <span className="ml-1">（{lastRecord.date}）</span>
+          )}
+        </p>
+      )}
+
       <div className="flex items-center space-x-3">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">{lowLabel}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">
+          {lowLabel}
+        </span>
         <input
           type="range"
           min="1"
@@ -123,7 +164,8 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         <Heart className="w-4 h-4 inline mr-2 text-blue-500" />,
         '低い',
         '高い',
-        'text-blue-500'
+        'text-blue-500',
+        lastRecord?.motivation_level
       )}
 
       {renderSlider(
@@ -133,7 +175,8 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         <Zap className="w-4 h-4 inline mr-2 text-green-500" />,
         '疲労',
         '充実',
-        'text-green-500'
+        'text-green-500',
+        lastRecord?.energy_level
       )}
 
       {renderSlider(
@@ -143,7 +186,8 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
         <AlertCircle className="w-4 h-4 inline mr-2 text-red-500" />,
         'リラックス',
         '高ストレス',
-        'text-red-500'
+        'text-red-500',
+        lastRecord?.stress_level
       )}
 
       <div>
