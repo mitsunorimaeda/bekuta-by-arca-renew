@@ -1,13 +1,34 @@
 import React, { useState, useEffect } from 'react';
+// PerformanceRecordForm.tsx の先頭あたり
+import { getTodayJSTString } from '../lib/date';
 import { Plus, Calendar, AlertCircle, TrendingUp, Lock, Scale } from 'lucide-react';
-import { PerformanceTestType } from '../lib/supabase';
 import { calculatePrimaryValue, getCalculatedUnit, getCalculatedValueLabel } from '../lib/performanceCalculations';
 import { useWeightData } from '../hooks/useWeightData';
 import { PerformanceRecordWithTest } from '../hooks/usePerformanceData';
 import { DuplicateRecordModal } from './DuplicateRecordModal';
 
+interface PerformanceTestField {
+  name: string;
+  label: string;
+  unit?: string;
+  type?: 'number' | 'select' | string;
+  required?: boolean;
+  options?: { value: string; label: string }[];
+}
+
+interface PerformanceTestType {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string;
+  unit: string;
+  user_can_input?: boolean;
+  fields: PerformanceTestField[] | any[];
+}
+
 interface PerformanceRecordFormProps {
   userId: string;
+  userRole?: string;
   testTypes: PerformanceTestType[];
   onSubmit: (data: {
     test_type_id: string;
@@ -17,7 +38,7 @@ interface PerformanceRecordFormProps {
     is_official?: boolean;
   }) => Promise<{ data: any; isNewPersonalBest: boolean }>;
   onCheckExisting: (testTypeId: string, date: string) => Promise<PerformanceRecordWithTest | null>;
-  onUpdate: (recordId: string, updates: any) => Promise<void>;
+  onUpdate: (recordId: string, updates: any) => Promise<any>;
   loading: boolean;
   lastRecords?: Map<string, any>;
   personalBests?: Map<string, any>;
@@ -25,6 +46,7 @@ interface PerformanceRecordFormProps {
 
 export function PerformanceRecordForm({
   userId,
+  userRole: _userRole,
   testTypes,
   onSubmit,
   onCheckExisting,
@@ -35,7 +57,7 @@ export function PerformanceRecordForm({
 }: PerformanceRecordFormProps) {
   const { getLatestWeight } = useWeightData(userId);
   const [selectedTestTypeId, setSelectedTestTypeId] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayJSTString());
   const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
@@ -148,7 +170,7 @@ export function PerformanceRecordForm({
       setFormValues({});
       setNotes('');
       setSelectedTestTypeId('');
-      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(getTodayJSTString());
     } catch (error) {
       console.error('Error submitting performance record:', error);
       setError('記録の追加に失敗しました');
@@ -159,20 +181,20 @@ export function PerformanceRecordForm({
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
-
+  
     setSubmitting(true);
     setShowDuplicateModal(false);
-
+  
     try {
-      await onUpdate(existingRecord.id, {
+      await onUpdate((existingRecord as any).id, {  // ★ ここを修正
         values: pendingData.values,
         notes: pendingData.notes
       });
-
+  
       setFormValues({});
       setNotes('');
       setSelectedTestTypeId('');
-      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(getTodayJSTString());
       setExistingRecord(null);
       setPendingData(null);
     } catch (error) {
@@ -272,7 +294,7 @@ export function PerformanceRecordForm({
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
-          max={new Date().toISOString().split('T')[0]}
+          max={getTodayJSTString()}
           className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
           style={{ fontSize: '16px' }}
         />

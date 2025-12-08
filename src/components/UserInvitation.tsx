@@ -3,6 +3,7 @@ import { Team, supabase } from '../lib/supabase';
 import { UserPlus, Mail, CheckCircle, AlertCircle, Download, Info, Eye, EyeOff, Copy, Link as LinkIcon, Building2 } from 'lucide-react';
 import { generateInvitationEmailHTML, generateInvitationEmailText } from '../lib/emailTemplates';
 import { organizationQueries } from '../lib/organizationQueries';
+import { getTodayJSTString } from '../lib/date';
 
 interface UserInvitationProps {
   teams: Team[];
@@ -31,7 +32,7 @@ interface Organization {
   description?: string;
 }
 
-export function UserInvitation({ teams, onUserInvited, restrictToOrganizationId, allowAdminInvite = true }: UserInvitationProps) {
+export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganizationId, allowAdminInvite = true }: UserInvitationProps) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationTeams, setOrganizationTeams] = useState<Team[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
@@ -55,7 +56,12 @@ export function UserInvitation({ teams, onUserInvited, restrictToOrganizationId,
       try {
         setLoadingOrgs(true);
         const orgs = await organizationQueries.getOrganizations();
-        setOrganizations(orgs);
+        const mappedOrgs: Organization[] = (orgs || []).map((org: any) => ({
+          id: org.id,
+          name: org.name,
+          description: org.description ?? undefined,
+        }))
+        setOrganizations(mappedOrgs);
 
         // If restricted to specific organization, auto-select it
         if (restrictToOrganizationId) {
@@ -112,15 +118,6 @@ export function UserInvitation({ teams, onUserInvited, restrictToOrganizationId,
       const teamName = organizationTeams.find(t => t.id === formData.teamId)?.name;
       const organizationName = organizations.find(o => o.id === formData.organizationId)?.name;
 
-      const generateToken = () => {
-        return Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-      };
-
-      const token = generateToken();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const appUrl = window.location.origin;
 
       console.log('🚀 Starting user creation process...');
 
@@ -322,7 +319,7 @@ export function UserInvitation({ teams, onUserInvited, restrictToOrganizationId,
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `招待済みユーザー_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `招待済みユーザー_${getTodayJSTString()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

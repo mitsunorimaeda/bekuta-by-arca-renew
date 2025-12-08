@@ -1,6 +1,7 @@
 import { TrainingRecord, User } from './supabase';
 import { ACWRData } from './acwr';
 import { TrendAnalysis } from './trendAnalysis';
+import { formatDateJST, getTodayJST } from './date'; // ★ 追加
 
 export interface ExportData {
   user: User;
@@ -59,7 +60,7 @@ export function exportToCSV(data: ExportData): void {
       record.date,
       record.rpe.toString(),
       record.duration_min.toString(),
-      record.load.toString(),
+      (record.load ?? '').toString(),
       acwrEntry?.acwr?.toString() || '',
       acwrEntry?.acuteLoad?.toString() || '',
       acwrEntry?.chronicLoad?.toString() || '',
@@ -120,7 +121,7 @@ export function exportTeamToCSV(data: TeamExportData): void {
         record.date,
         record.rpe.toString(),
         record.duration_min.toString(),
-        record.load.toString(),
+        (record.load ?? '').toString(),
         acwrEntry?.acwr?.toString() || '',
         acwrEntry?.acuteLoad?.toString() || '',
         acwrEntry?.chronicLoad?.toString() || '',
@@ -175,41 +176,52 @@ export function exportToJSON(data: ExportData): void {
   document.body.removeChild(link);
 }
 
-// 日付範囲のヘルパー関数
-export function getDateRange(period: 'week' | 'month' | 'quarter' | 'custom', customStart?: string, customEnd?: string) {
-  const today = new Date();
+// 日付範囲のヘルパー関数（JST対応版）
+export function getDateRange(
+  period: 'week' | 'month' | 'quarter' | 'custom',
+  customStart?: string,
+  customEnd?: string
+) {
+  const today = getTodayJST();         // ★ ベースはJSTの「今日」
   let start: Date;
-  let end: Date = today;
-  
+  let end: Date = new Date(today);
+
   switch (period) {
-    case 'week':
+    case 'week': {
       start = new Date(today);
-      start.setDate(today.getDate() - 7);
+      start.setDate(start.getDate() - 7);
       break;
-    case 'month':
+    }
+    case 'month': {
       start = new Date(today);
-      start.setMonth(today.getMonth() - 1);
+      start.setMonth(start.getMonth() - 1);
       break;
-    case 'quarter':
+    }
+    case 'quarter': {
       start = new Date(today);
-      start.setMonth(today.getMonth() - 3);
+      start.setMonth(start.getMonth() - 3);
       break;
-    case 'custom':
+    }
+    case 'custom': {
       if (customStart && customEnd) {
-        start = new Date(customStart);
-        end = new Date(customEnd);
+        // custom はユーザーが選んだ YYYY-MM-DD をそのまま使う
+        return {
+          start: customStart,
+          end: customEnd
+        };
       } else {
         throw new Error('カスタム期間には開始日と終了日が必要です');
       }
-      break;
-    default:
+    }
+    default: {
       start = new Date(today);
-      start.setMonth(today.getMonth() - 1);
+      start.setMonth(start.getMonth() - 1);
+    }
   }
-  
+
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0]
+    start: formatDateJST(start),  // ★ JSTベースで YYYY-MM-DD を作成
+    end: formatDateJST(end)
   };
 }
 

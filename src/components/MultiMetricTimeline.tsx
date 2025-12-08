@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Activity, Scale, Moon, Heart, Zap } from 'lucide-react';
 import { ACWRData } from '../lib/acwr';
+import { formatDateJST } from '../lib/date';
 
 interface MultiMetricTimelineProps {
   acwrData: ACWRData[];
@@ -26,10 +27,17 @@ export function MultiMetricTimeline({
 
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
 
-  const getDaysAgo = (days: number) => {
-    const date = new Date();
-    date.setDate(date.getDate() - days);
-    return date.toISOString().split('T')[0];
+  const getDaysAgo = (days: number): string => {
+    const now = new Date();
+    
+    // JST に変換
+    const jstTime = now.getTime() + 9 * 60 * 60 * 1000;
+    const jst = new Date(jstTime);
+  
+    // JST 日付で days 日前に調整
+    jst.setUTCDate(jst.getUTCDate() - days);
+  
+    return formatDateJST(jst);
   };
 
   const filterByTimeRange = (dateString: string) => {

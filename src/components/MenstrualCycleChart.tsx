@@ -3,6 +3,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Droplets } from 'lucide-react';
 import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
 import { useBasalBodyTemperature } from '../hooks/useBasalBodyTemperature';
+import { toJSTDateString } from '../lib/date';
+import { formatDateJST } from '../lib/date'; // パスは実際の場所に合わせて
 
 interface MenstrualCycleChartProps {
   userId: string;
@@ -23,14 +25,15 @@ export function MenstrualCycleChart({ userId, days = 90 }: MenstrualCycleChartPr
     const dataMap = new Map<string, any>();
 
     for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = formatDateJST(d);
+    
       dataMap.set(dateStr, {
         date: dateStr,
         displayDate: `${d.getMonth() + 1}/${d.getDate()}`,
         temperature: null,
         cyclePhase: null,
       });
-    }
+    } 
 
     temperatures.forEach((temp) => {
       const entry = dataMap.get(temp.measurement_date);
@@ -43,15 +46,23 @@ export function MenstrualCycleChart({ userId, days = 90 }: MenstrualCycleChartPr
       const start = new Date(cycle.cycle_start_date);
       const end = cycle.cycle_end_date ? new Date(cycle.cycle_end_date) : today;
 
+      
+
       for (let d = new Date(start); d <= end && d <= today; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = formatDateJST(d);
         const entry = dataMap.get(dateStr);
+
         if (entry) {
           const phase = cycles.find((c) => {
-            const cycleStart = new Date(c.cycle_start_date);
-            const cycleEnd = c.cycle_end_date ? new Date(c.cycle_end_date) : today;
+            // ここも念のため JST 基準にしたいなら同じように揃える
+            const cycleStart = new Date(c.cycle_start_date + 'T00:00:00');
+            const cycleEnd = c.cycle_end_date
+              ? new Date(c.cycle_end_date + 'T00:00:00')
+              : today;
+
             return d >= cycleStart && d <= cycleEnd;
           });
+
           if (phase) {
             entry.cyclePhase = 1;
           }

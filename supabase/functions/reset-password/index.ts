@@ -1,4 +1,7 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// 先頭付近
+declare const Deno: any;
+// 👇 ここを変更
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

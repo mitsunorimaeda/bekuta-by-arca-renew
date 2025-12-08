@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, CheckCircle, Activity, Scale, Moon, Heart, Zap, Calendar } from 'lucide-react';
 import { TrainingRecord, WeightRecord, SleepRecord, MotivationRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
+import { getTodayJSTString } from '../lib/date';
 
 interface UnifiedDailyCheckInProps {
   userId: string;
@@ -52,7 +53,7 @@ export function UnifiedDailyCheckIn({
   lastTrainingRecord,
   lastWeightRecord
 }: UnifiedDailyCheckInProps) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayJSTString();;
 
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [activeSection, setActiveSection] = useState<'training' | 'weight' | 'conditioning' | 'cycle'>('training');

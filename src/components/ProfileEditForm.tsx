@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User as UserIcon, Calendar, Ruler, Users, Save, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
+import { getYearsAgoString } from '../lib/date';
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type UserUpdate = Database['public']['Tables']['users']['Update'];
@@ -164,7 +165,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
                 type="date"
                 value={dateOfBirth}
                 onChange={(e) => setDateOfBirth(e.target.value)}
-                max={new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                max={getYearsAgoString(10)}   // ← ここだけ変更！
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 dark:text-white"
               />
               {age !== null && (

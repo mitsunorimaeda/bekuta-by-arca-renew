@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Scale, Activity, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { getTodayJSTString } from '../lib/date';
 
 interface QuickRecordBarProps {
   onTrainingSubmit: (data: { rpe: number; duration_min: number; date: string }) => Promise<void>;
@@ -21,7 +22,7 @@ export function QuickRecordBar({
   const [submitting, setSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayJSTString();;
 
   const handleQuickSubmit = async () => {
     if (!rpe && !weight) return;

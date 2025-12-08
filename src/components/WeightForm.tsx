@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Scale, Calendar, AlertCircle, FileText } from 'lucide-react';
 import { WeightRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
+import { getTodayJSTString } from '../lib/date';
 
 interface WeightFormProps {
   onSubmit: (data: { weight_kg: number; date: string; notes?: string }) => Promise<void>;
@@ -12,7 +13,7 @@ interface WeightFormProps {
 
 export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading }: WeightFormProps) {
   const [weight, setWeight] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayJSTString());
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
@@ -53,7 +54,7 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading }: Wei
       });
       setWeight('');
       setNotes('');
-      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(getTodayJSTString());
     } catch (error) {
       console.error('Error submitting weight record:', error);
       if (error instanceof Error) {
@@ -80,7 +81,7 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading }: Wei
 
       setWeight('');
       setNotes('');
-      setSelectedDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(getTodayJSTString());
       setExistingRecord(null);
       setPendingData(null);
     } catch (error) {
@@ -124,12 +125,12 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading }: Wei
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
-          max={new Date().toISOString().split('T')[0]}
+          max={getTodayJSTString()}
           className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
           style={{ fontSize: '16px' }}
         />
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          {selectedDate === new Date().toISOString().split('T')[0] ? '今日の体重記録' : '過去の体重記録'}
+          {selectedDate === getTodayJSTString() ? '今日の体重記録' : '過去の体重記録'}
         </p>
       </div>
 

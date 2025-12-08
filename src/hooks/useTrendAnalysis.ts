@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateACWR } from '../lib/acwr';
 import { performTrendAnalysis, TrendAnalysis, TrendData } from '../lib/trendAnalysis';
+import { getTodayJST, formatDateToJST } from '../lib/date';
 
 export function useTrendAnalysis(targetId: string | null, analysisType: 'user' | 'team' = 'user') {
   const [trendAnalysis, setTrendAnalysis] = useState<TrendAnalysis | null>(null);
@@ -19,20 +20,24 @@ export function useTrendAnalysis(targetId: string | null, analysisType: 'user' |
 
     try {
       let trendData: TrendData[] = [];
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-
+    
+      // ▼ ここを書き換え
+      const threeMonthsAgoDate = getTodayJST();
+      threeMonthsAgoDate.setUTCMonth(threeMonthsAgoDate.getUTCMonth() - 3);
+      const threeMonthsAgoStr = formatDateToJST(threeMonthsAgoDate);
+      // ▲ JST基準で「3ヶ月前のYYYY-MM-DD」
+    
       if (analysisType === 'user') {
         // 個人ユーザーの分析
         const { data: trainingRecords, error: recordsError } = await supabase
           .from('training_records')
           .select('*')
           .eq('user_id', targetId)
-          .gte('date', threeMonthsAgo.toISOString().split('T')[0])
+          .gte('date', threeMonthsAgoStr)   // ← ここも変更
           .order('date', { ascending: true });
-
+    
         if (recordsError) throw recordsError;
-
+    
         if (trainingRecords && trainingRecords.length > 0) {
           const acwrData = calculateACWR(trainingRecords);
           
@@ -51,24 +56,31 @@ export function useTrendAnalysis(targetId: string | null, analysisType: 'user' |
           .select('id')
           .eq('role', 'athlete')
           .eq('team_id', targetId);
-
+    
         if (athletesError) throw athletesError;
-
+    
         if (!athletes || athletes.length === 0) {
           setError('このチームには選手が登録されていません。');
           setTrendAnalysis(null);
           setLoading(false);
           return;
         }
+    
+        // （この先はそのままでOK）
 
         const athleteIds = athletes.map(athlete => athlete.id);
 
         // 全選手の練習記録を取得
+        // JST の今日を基準に 3 ヶ月前を算出
+        const threeMonthsAgoDate = getTodayJST();
+        threeMonthsAgoDate.setUTCMonth(threeMonthsAgoDate.getUTCMonth() - 3);
+        const threeMonthsAgoStr = formatDateToJST(threeMonthsAgoDate);
+
         const { data: trainingRecords, error: recordsError } = await supabase
           .from('training_records')
           .select('*')
           .in('user_id', athleteIds)
-          .gte('date', threeMonthsAgo.toISOString().split('T')[0])
+          .gte('date', threeMonthsAgoStr)  // ← JST版日付
           .order('date', { ascending: true });
 
         if (recordsError) throw recordsError;

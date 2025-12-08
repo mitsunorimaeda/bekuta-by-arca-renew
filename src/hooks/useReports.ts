@@ -1,54 +1,57 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { generateTeamReport, TeamReportSummary, ReportPeriod, getPeriodDates } from '../lib/reportGeneration';
+import { generateTeamReport, ReportPeriod, getPeriodDates } from '../lib/reportGeneration';
+import { getNowJSTISOString } from '../lib/date';
 
+// DB の実態に寄せて「null 許容」にしておく
 export interface ReportConfig {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   organization_id: string | null;
   team_id: string | null;
   created_by: string | null;
   period_type: 'weekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'custom';
-  include_training_load: boolean;
-  include_acwr: boolean;
-  include_weight: boolean;
-  include_sleep: boolean;
-  include_motivation: boolean;
-  include_performance: boolean;
-  include_alerts: boolean;
-  compare_with_previous: boolean;
-  include_team_average: boolean;
-  highlight_high_risk: boolean;
+  include_training_load: boolean | null;
+  include_acwr: boolean | null;
+  include_weight: boolean | null;
+  include_sleep: boolean | null;
+  include_motivation: boolean | null;
+  include_performance: boolean | null;
+  include_alerts: boolean | null;
+  compare_with_previous: boolean | null;
+  include_team_average: boolean | null;
+  highlight_high_risk: boolean | null;
   settings: any;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
+// DB 側の型に合わせて null を許容 & report_type は optional に
 export interface GeneratedReport {
   id: string;
   config_id: string | null;
   schedule_id: string | null;
-  report_type: string;
-  title: string;
-  period_start: string;
-  period_end: string;
+  report_type?: string; // database.types に無くてもエラーにならないように optional
+  title: string | null;
+  period_start: string | null;
+  period_end: string | null;
   organization_id: string | null;
   team_id: string | null;
-  athlete_ids: string[];
+  athlete_ids: string[] | null;
   summary_data: any;
   detailed_data: any;
-  insights: string[];
-  recommendations: string[];
+  insights: string[] | null;
+  recommendations: string[] | null;
   pdf_url: string | null;
   generation_status: string;
   error_message: string | null;
   generated_by: string | null;
-  generated_at: string;
+  generated_at: string | null;
   viewed_at: string | null;
   view_count: number;
-  created_at: string;
+  created_at: string | null;
 }
 
 export function useReports(teamId: string | null) {
@@ -63,6 +66,7 @@ export function useReports(teamId: string | null) {
       setReports([]);
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   const fetchReports = async () => {
@@ -81,7 +85,8 @@ export function useReports(teamId: string | null) {
 
       if (fetchError) throw fetchError;
 
-      setReports(data || []);
+      // DB の Row 型 → GeneratedReport へのキャスト（フィールド名は同じなので OK）
+      setReports((data || []) as GeneratedReport[]);
     } catch (err: any) {
       console.error('Error fetching reports:', err);
       setError(err.message);
@@ -108,31 +113,34 @@ export function useReports(teamId: string | null) {
 
       const title = `${team?.name || 'チーム'}レポート - ${period.start} 〜 ${period.end}`;
 
+      // Supabase の generated_reports 型に合わせるため any キャストで緩める
+      const insertPayload: any = {
+        report_type: periodType,
+        title,
+        period_start: period.start,
+        period_end: period.end,
+        team_id: teamId,
+        athlete_ids: reportData.athletes.map(a => a.athleteId),
+        summary_data: {
+          totalAthletes: reportData.totalAthletes,
+          activeAthletes: reportData.activeAthletes,
+          teamAverageLoad: reportData.teamAverageLoad,
+          teamAverageACWR: reportData.teamAverageACWR,
+          highRiskCount: reportData.highRiskCount,
+          mediumRiskCount: reportData.mediumRiskCount,
+          lowRiskCount: reportData.lowRiskCount,
+          totalAlerts: reportData.totalAlerts,
+          criticalAlerts: reportData.criticalAlerts
+        },
+        detailed_data: reportData,              // TeamReportSummary → Json 扱いにする
+        insights: reportData.insights,
+        recommendations: reportData.recommendations,
+        generation_status: 'completed'
+      };
+
       const { data: insertedReport, error: insertError } = await supabase
         .from('generated_reports')
-        .insert({
-          report_type: periodType,
-          title,
-          period_start: period.start,
-          period_end: period.end,
-          team_id: teamId,
-          athlete_ids: reportData.athletes.map(a => a.athleteId),
-          summary_data: {
-            totalAthletes: reportData.totalAthletes,
-            activeAthletes: reportData.activeAthletes,
-            teamAverageLoad: reportData.teamAverageLoad,
-            teamAverageACWR: reportData.teamAverageACWR,
-            highRiskCount: reportData.highRiskCount,
-            mediumRiskCount: reportData.mediumRiskCount,
-            lowRiskCount: reportData.lowRiskCount,
-            totalAlerts: reportData.totalAlerts,
-            criticalAlerts: reportData.criticalAlerts
-          },
-          detailed_data: reportData,
-          insights: reportData.insights,
-          recommendations: reportData.recommendations,
-          generation_status: 'completed'
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
@@ -157,7 +165,7 @@ export function useReports(teamId: string | null) {
     try {
       const { error } = await supabase
         .from('generated_reports')
-        .update({ viewed_at: new Date().toISOString() })
+        .update({ viewed_at: getNowJSTISOString() })
         .eq('id', reportId);
 
       if (error) throw error;
@@ -212,6 +220,7 @@ export function useReportConfigs(organizationId: string | null) {
       setConfigs([]);
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
 
   const fetchConfigs = async () => {
@@ -229,7 +238,7 @@ export function useReportConfigs(organizationId: string | null) {
 
       if (fetchError) throw fetchError;
 
-      setConfigs(data || []);
+      setConfigs((data || []) as ReportConfig[]);
     } catch (err: any) {
       console.error('Error fetching report configs:', err);
       setError(err.message);
@@ -240,9 +249,10 @@ export function useReportConfigs(organizationId: string | null) {
 
   const createConfig = async (config: Partial<ReportConfig>): Promise<{ success: boolean; error?: string }> => {
     try {
+      // name など必須項目は UI 側で必ず入れる前提で any キャスト
       const { error } = await supabase
         .from('report_configs')
-        .insert(config);
+        .insert(config as any);
 
       if (error) throw error;
 
@@ -262,7 +272,7 @@ export function useReportConfigs(organizationId: string | null) {
     try {
       const { error } = await supabase
         .from('report_configs')
-        .update(updates)
+        .update(updates as any)
         .eq('id', id);
 
       if (error) throw error;

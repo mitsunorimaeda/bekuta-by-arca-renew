@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getTodayJSTString } from '../lib/date';
+import { getJSTDAYSAGOString } from "../lib/date"; 
+import { getTodayJST } from '../lib/date';
+
 
 interface TeamAchievement {
   id: string;
@@ -33,7 +37,10 @@ export function useTeamAchievements(teamId: string | null) {
       .order('achieved_at', { ascending: false });
 
     if (!error && data) {
-      setAchievements(data);
+      setAchievements(data.map(item => ({
+        ...item,
+        description: item.description ?? '',
+      })));
     }
     setLoading(false);
   };
@@ -67,14 +74,16 @@ export function useTeamAchievements(teamId: string | null) {
     }
 
     if (allMembersHaveStreak) {
+      const thirtyDaysAgoJST = getJSTDAYSAGOString(30);
+    
       const { data: existing } = await supabase
         .from('team_achievements')
         .select('id')
         .eq('team_id', teamId)
         .eq('achievement_type', 'team_streak')
-        .gte('achieved_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+        .gte('achieved_at', thirtyDaysAgoJST) // JSTの日付安全フィルタ
         .maybeSingle();
-
+    
       if (!existing) {
         await recordTeamAchievement(
           'team_streak',
@@ -97,8 +106,8 @@ export function useTeamAchievements(teamId: string | null) {
 
     if (!teamMembers || teamMembers.length === 0) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = getTodayJSTString();
+    const weekAgo = getJSTDAYSAGOString(7);
 
     let allHavePB = true;
 
@@ -137,6 +146,8 @@ export function useTeamAchievements(teamId: string | null) {
     }
   };
 
+  
+
   const checkTeamGoals = async () => {
     if (!teamId) return;
 
@@ -148,7 +159,11 @@ export function useTeamAchievements(teamId: string | null) {
 
     if (!teamMembers || teamMembers.length === 0) return;
 
-    const thisMonth = new Date().toISOString().slice(0, 7);
+    // 🔽 ここを JST ベースに変更
+    const todayJST = getTodayJST();
+    const thisMonth =
+      `${todayJST.getFullYear()}-` +
+      String(todayJST.getMonth() + 1).padStart(2, '0'); // 例: 2025-12
 
     let allCompletedGoals = true;
 
@@ -184,7 +199,7 @@ export function useTeamAchievements(teamId: string | null) {
         .select('id')
         .eq('team_id', teamId)
         .eq('achievement_type', 'team_goals_complete')
-        .gte('achieved_at', `${thisMonth}-01`)
+        .gte('achieved_at', `${thisMonth}-01`) // 例: 2025-12-01
         .maybeSingle();
 
       if (!existing) {
@@ -198,33 +213,33 @@ export function useTeamAchievements(teamId: string | null) {
     }
   };
 
-  const recordTeamAchievement = async (
-    type: string,
-    title: string,
-    description: string,
-    metadata: any = {}
-  ) => {
-    if (!teamId) return;
+    const recordTeamAchievement = async (
+      type: string,
+      title: string,
+      description: string,
+      metadata: any = {}
+    ) => {
+      if (!teamId) return;
 
-    const { error } = await supabase.rpc('record_team_achievement', {
-      p_team_id: teamId,
-      p_achievement_type: type,
-      p_title: title,
-      p_description: description,
-      p_metadata: metadata,
-    });
+      const { error } = await supabase.rpc('record_team_achievement', {
+        p_team_id: teamId,
+        p_achievement_type: type,
+        p_title: title,
+        p_description: description,
+        p_metadata: metadata,
+      });
 
-    if (!error) {
-      loadTeamAchievements();
-    }
-  };
+      if (!error) {
+        loadTeamAchievements();
+      }
+    };
 
-  return {
-    achievements,
-    loading,
-    checkTeamStreak,
-    checkTeamPersonalBests,
-    checkTeamGoals,
-    recordTeamAchievement,
-  };
+    return {
+      achievements,
+      loading,
+      checkTeamStreak,
+      checkTeamPersonalBests,
+      checkTeamGoals,
+      recordTeamAchievement,
+    };
 }

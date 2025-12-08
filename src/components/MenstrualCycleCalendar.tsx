@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, TrendingUp, AlertTriangle, Info } from 'lucide-react';
 import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
 
@@ -19,15 +19,27 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
 
   const currentPhase = getCurrentCyclePhase();
 
-  const getCyclePhaseForDate = (date: Date): CyclePhaseInfo => {
-    const dateStr = date.toISOString().split('T')[0];
+  // 今日（0:00）を基準にして「周期の何日目か」を計算
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
+  let currentDayInCycle: number | null = null;
+  if (currentPhase) {
+    const cycleStart = new Date(currentPhase.cycle.cycle_start_date);
+    cycleStart.setHours(0, 0, 0, 0);
+    currentDayInCycle =
+      Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  }
+
+  const getCyclePhaseForDate = (date: Date): CyclePhaseInfo => {
     for (const cycle of cycles) {
       const cycleStart = new Date(cycle.cycle_start_date);
       const cycleEnd = cycle.cycle_end_date ? new Date(cycle.cycle_end_date) : new Date();
 
       if (date >= cycleStart && date <= cycleEnd) {
-        const dayInCycle = Math.floor((date.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const dayInCycle = Math.floor(
+          (date.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)
+        ) + 1;
 
         let phase: CyclePhaseInfo['phase'] = null;
         let isHighPerformance = false;
@@ -57,19 +69,24 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
   const predictNextCycle = (): { start: Date; end: Date } | null => {
     if (cycles.length === 0) return null;
 
-    const sortedCycles = [...cycles].sort((a, b) =>
-      new Date(b.cycle_start_date).getTime() - new Date(a.cycle_start_date).getTime()
+    const sortedCycles = [...cycles].sort(
+      (a, b) =>
+        new Date(b.cycle_start_date).getTime() - new Date(a.cycle_start_date).getTime()
     );
 
     const lastCycle = sortedCycles[0];
     if (!lastCycle.cycle_end_date) return null;
 
-    const avgCycleLength = sortedCycles.reduce((sum, cycle) => {
-      if (!cycle.cycle_end_date) return sum;
-      const start = new Date(cycle.cycle_start_date);
-      const end = new Date(cycle.cycle_end_date);
-      return sum + Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    }, 0) / sortedCycles.filter(c => c.cycle_end_date).length;
+    const avgCycleLength =
+      sortedCycles.reduce((sum, cycle) => {
+        if (!cycle.cycle_end_date) return sum;
+        const start = new Date(cycle.cycle_start_date);
+        const end = new Date(cycle.cycle_end_date);
+        return (
+          sum +
+          Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+        );
+      }, 0) / sortedCycles.filter((c) => c.cycle_end_date).length;
 
     const lastEnd = new Date(lastCycle.cycle_end_date);
     const predictedStart = new Date(lastEnd);
@@ -104,8 +121,6 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
 
   const calendarDays = getCalendarDays();
   const prediction = predictNextCycle();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   const getPhaseColor = (phase: CyclePhaseInfo['phase']) => {
     switch (phase) {
@@ -124,11 +139,16 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
 
   const getPhaseLabel = (phase: CyclePhaseInfo['phase']) => {
     switch (phase) {
-      case 'menstrual': return '月経期';
-      case 'follicular': return '卵胞期';
-      case 'ovulatory': return '排卵期';
-      case 'luteal': return '黄体期';
-      default: return '';
+      case 'menstrual':
+        return '月経期';
+      case 'follicular':
+        return '卵胞期';
+      case 'ovulatory':
+        return '排卵期';
+      case 'luteal':
+        return '黄体期';
+      default:
+        return '';
     }
   };
 
@@ -180,7 +200,8 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">現在のフェーズ</p>
               <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                {getPhaseLabel(currentPhase.phase as any)} - 周期{currentPhase.dayInCycle}日目
+                {getPhaseLabel(currentPhase.phase as any)} - 周期
+                {currentDayInCycle ?? '-'}日目
               </p>
             </div>
             {currentPhase.phase === 'follicular' || currentPhase.phase === 'ovulatory' ? (
@@ -203,9 +224,12 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
           <div className="flex items-start gap-2">
             <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">次回の周期予測</p>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+                次回の周期予測
+              </p>
               <p className="text-sm text-blue-700 dark:text-blue-300">
-                {prediction.start.getMonth() + 1}月{prediction.start.getDate()}日 - {prediction.end.getMonth() + 1}月{prediction.end.getDate()}日
+                {prediction.start.getMonth() + 1}月{prediction.start.getDate()}日 -{' '}
+                {prediction.end.getMonth() + 1}月{prediction.end.getDate()}日
                 （カレンダー上の点線枠で表示）
               </p>
             </div>
@@ -218,9 +242,11 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
           <div
             key={day}
             className={`text-center text-sm font-semibold py-2 ${
-              idx === 0 ? 'text-red-600 dark:text-red-400' :
-              idx === 6 ? 'text-blue-600 dark:text-blue-400' :
-              'text-gray-600 dark:text-gray-400'
+              idx === 0
+                ? 'text-red-600 dark:text-red-400'
+                : idx === 6
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400'
             }`}
           >
             {day}
@@ -247,11 +273,15 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
               `}
             >
               <div className="flex flex-col items-center justify-center h-full">
-                <span className={`text-sm font-medium ${
-                  isToday ? 'text-purple-700 dark:text-purple-300 font-bold' :
-                  phaseInfo.phase ? 'text-gray-900 dark:text-white' :
-                  'text-gray-600 dark:text-gray-400'
-                }`}>
+                <span
+                  className={`text-sm font-medium ${
+                    isToday
+                      ? 'text-purple-700 dark:text-purple-300 font-bold'
+                      : phaseInfo.phase
+                      ? 'text-gray-900 dark:text-white'
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}
+                >
                   {day.getDate()}
                 </span>
 
@@ -279,27 +309,39 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">周期フェーズ</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+            周期フェーズ
+          </h4>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600"></div>
-            <span className="text-sm text-gray-700 dark:text-gray-300">月経期（1-5日目）</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              月経期（1-5日目）
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600"></div>
-            <span className="text-sm text-gray-700 dark:text-gray-300">卵胞期（6-13日目）</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              卵胞期（6-13日目）
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-600"></div>
-            <span className="text-sm text-gray-700 dark:text-gray-300">排卵期（14-16日目）</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              排卵期（14-16日目）
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-blue-100 dark:bg-blue-900/30 border border-blue-400 dark:border-blue-600"></div>
-            <span className="text-sm text-gray-700 dark:text-gray-300">黄体期（17-28日目）</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              黄体期（17-28日目）
+            </span>
           </div>
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">パフォーマンスガイド</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+            パフォーマンスガイド
+          </h4>
           <div className="flex items-start gap-2 bg-green-50 dark:bg-green-900/20 p-2 rounded">
             <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5" />
             <div className="text-xs text-green-800 dark:text-green-200">

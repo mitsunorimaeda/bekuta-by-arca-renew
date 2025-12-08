@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Thermometer, Calendar, Clock, AlertCircle } from 'lucide-react';
 import { useBasalBodyTemperature } from '../hooks/useBasalBodyTemperature';
+import { getTodayJSTString } from '../lib/date';
 
 interface BasalBodyTemperatureFormProps {
   userId: string;
@@ -12,7 +13,7 @@ export function BasalBodyTemperatureForm({ userId, onSuccess }: BasalBodyTempera
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayJSTString();
   const currentTime = new Date().toTimeString().slice(0, 5);
 
   const [formData, setFormData] = useState({

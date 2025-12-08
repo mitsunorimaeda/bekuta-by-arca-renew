@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Heart, Zap, AlertCircle } from 'lucide-react';
+import { getTodayJSTString } from '../lib/date';
 
 interface MotivationFormProps {
   onSubmit: (data: {
@@ -16,7 +17,7 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
   const [motivationLevel, setMotivationLevel] = useState(5);
   const [energyLevel, setEnergyLevel] = useState(5);
   const [stressLevel, setStressLevel] = useState(5);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayJSTString());
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
@@ -36,7 +37,7 @@ export function MotivationForm({ onSubmit, loading = false }: MotivationFormProp
       setMotivationLevel(5);
       setEnergyLevel(5);
       setStressLevel(5);
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getTodayJSTString());
       setNotes('');
     } catch (err) {
       setError('モチベーション記録の追加に失敗しました');

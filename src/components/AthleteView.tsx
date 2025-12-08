@@ -1,4 +1,6 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
+import { getTodayJSTString } from '../lib/date';
+import { toJSTDateString } from '../lib/date';
 import { User } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
 import { TrainingForm } from './TrainingForm';
@@ -19,7 +21,6 @@ import { ProfileEditForm } from './ProfileEditForm';
 import { TutorialController } from './TutorialController';
 import { PerformanceRecordForm } from './PerformanceRecordForm';
 import { PerformanceRecordsList } from './PerformanceRecordsList';
-import { PerformanceChart } from './PerformanceChart';
 import { PerformanceOverview } from './PerformanceOverview';
 import { PersonalBestCelebration } from './PersonalBestCelebration';
 import { useTrainingData } from '../hooks/useTrainingData';
@@ -40,7 +41,31 @@ import { UnifiedDailyCheckIn } from './UnifiedDailyCheckIn';
 import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
 import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
-import { Activity, TrendingUp, Calendar, AlertTriangle, BarChart3, Download, Scale, LineChart, Settings, HelpCircle, Zap, Moon, Heart, LayoutDashboard, Menu, X, LogOut, Trophy, MessageSquare, Shield, FileText, Building2, Droplets } from 'lucide-react';
+import {
+  Activity,
+  TrendingUp,
+  Calendar,
+  AlertTriangle,
+  BarChart3,
+  Download,
+  Scale,
+  LineChart,
+  Settings,
+  HelpCircle,
+  Zap,
+  Moon,
+  Heart,
+  LayoutDashboard,
+  Menu,
+  X,
+  LogOut,
+  Trophy,
+  MessageSquare,
+  Shield,
+  FileText,
+  Building2,
+  Droplets
+} from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
 const GamificationView = lazy(() => import('./GamificationView').then(m => ({ default: m.GamificationView })));
 const MessagingPanel = lazy(() => import('./MessagingPanel').then(m => ({ default: m.MessagingPanel })));
@@ -64,13 +89,56 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
   console.log('[AthleteView] User object:', user);
   console.log('[AthleteView] User gender:', user.gender);
 
-  const { records, loading, checkExistingRecord: checkExistingTrainingRecord, addTrainingRecord, updateTrainingRecord, deleteTrainingRecord, acwrData } = useTrainingData(user.id);
+  const {
+    records,
+    loading,
+    checkExistingRecord: checkExistingTrainingRecord,
+    addTrainingRecord,
+    updateTrainingRecord,
+    deleteTrainingRecord,
+    acwrData
+  } = useTrainingData(user.id);
+
   const { trendAnalysis, loading: trendLoading, error: trendError, refreshAnalysis } = useTrendAnalysis(user.id, 'user');
-  const { records: weightRecords, loading: weightLoading, checkExistingRecord: checkExistingWeightRecord, addWeightRecord, updateWeightRecord, deleteWeightRecord, getLatestWeight, getWeightChange } = useWeightData(user.id);
-  const { records: sleepRecords, loading: sleepLoading, checkExistingRecord: checkExistingSleepRecord, addSleepRecord, updateSleepRecord, getAverageSleepHours, getAverageSleepQuality, getLatestSleep } = useSleepData(user.id);
-  const { records: motivationRecords, loading: motivationLoading, checkExistingRecord: checkExistingMotivationRecord, addMotivationRecord, updateMotivationRecord, getAverageMotivation, getAverageEnergy, getAverageStress, getLatestMotivation } = useMotivationData(user.id);
+
+  const {
+    records: weightRecords,
+    loading: weightLoading,
+    checkExistingRecord: checkExistingWeightRecord,
+    addWeightRecord,
+    updateWeightRecord,
+    deleteWeightRecord,
+    getLatestWeight,
+    getWeightChange
+  } = useWeightData(user.id);
+
+  const {
+    records: sleepRecords,
+    loading: sleepLoading,
+    checkExistingRecord: checkExistingSleepRecord,
+    addSleepRecord,
+    updateSleepRecord,
+    getAverageSleepHours,
+    getAverageSleepQuality,
+    getLatestSleep
+  } = useSleepData(user.id);
+
+  const {
+    records: motivationRecords,
+    loading: motivationLoading,
+    checkExistingRecord: checkExistingMotivationRecord,
+    addMotivationRecord,
+    updateMotivationRecord,
+    getAverageMotivation,
+    getAverageEnergy,
+    getAverageStress,
+    getLatestMotivation
+  } = useMotivationData(user.id);
+
   const { cycles: menstrualCycles, addCycle: addMenstrualCycle, updateCycle: updateMenstrualCycle } = useMenstrualCycleData(user.id);
+
   const [performanceCategory, setPerformanceCategory] = useState<'jump' | 'endurance' | 'strength' | 'sprint' | 'agility'>('jump');
+
   const {
     testTypes: performanceTestTypes,
     records: performanceRecords,
@@ -82,17 +150,20 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
     getRecordsByTestType,
     getPersonalBest
   } = usePerformanceData(user.id, performanceCategory);
+
   const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } = useTutorialContext();
   const { isDarkMode } = useDarkMode();
-  const [showForm, setShowForm] = useState(false);
-  const [showAlertPanel, setShowAlertPanel] = useState(false);
+
+  const [, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
-  const [showMessagingPanel, setShowMessagingPanel] = useState(false);
   const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  const [, setProfileRefreshKey] = useState(0);
   const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
-  const [activeTab, setActiveTab] = useState<'unified' | 'overview' | 'trends' | 'weight' | 'insights' | 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'>('unified');
+  const [activeTab, setActiveTab] = useState<
+    'unified' | 'overview' | 'trends' | 'weight' | 'insights' | 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
+  >('unified');
+
   const [celebrationData, setCelebrationData] = useState<{
     testName: string;
     value: number;
@@ -108,16 +179,29 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
 
+  // gender をコンポーネント用に正規化
+  const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null =
+    user.gender === 'female' || user.gender === 'male' || user.gender === 'other' || user.gender === 'prefer_not_to_say'
+      ? user.gender
+      : null;
+
+  const normalizedGenderBinary: 'female' | 'male' | null =
+    user.gender === 'female' || user.gender === 'male' ? user.gender : null;
+
+  // sleep_quality を number に統一（null の場合は 0 とみなす）
+  const normalizedSleepRecords = sleepRecords.map(r => ({
+    ...r,
+    sleep_quality: r.sleep_quality ?? 0
+  }));
+
   // ユーザー固有のアラート
   const userAlerts = alerts.filter(alert => alert.user_id === user.id);
   const highPriorityAlerts = userAlerts.filter(alert => alert.priority === 'high');
 
-  // Get today's records for cross-tab reference
-  const today = new Date().toISOString().split('T')[0];
-  const todayTraining = records.find(r => r.date === today);
+  // 今日の日付（JST）
+  const today = getTodayJSTString();
   const todayWeight = weightRecords.find(r => r.date === today);
   const latestWeight = getLatestWeight();
-  const weightChange30d = getWeightChange(30);
 
   // Get last records for quick record suggestions
   const lastTrainingRecord = records.length > 0 ? records[records.length - 1] : null;
@@ -134,7 +218,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
 
     const totalRpe = recentRecords.reduce((sum, r) => sum + r.rpe, 0);
     const totalDuration = recentRecords.reduce((sum, r) => sum + r.duration_min, 0);
-    const totalLoad = recentRecords.reduce((sum, r) => sum + r.load, 0);
+    const totalLoad = recentRecords.reduce((sum, r) => sum + (r.load ?? 0), 0);
 
     return {
       rpe: totalRpe / recentRecords.length,
@@ -155,14 +239,14 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
     if (records.length === 0) return 0;
 
     const sortedDates = [...new Set(records.map(r => r.date))].sort();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
 
     let consecutive = 0;
-    let currentDate = new Date(today);
+    let currentDate = new Date(todayDate);
 
     for (let i = 0; i < 365; i++) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = toJSTDateString(currentDate);
       if (sortedDates.includes(dateStr)) {
         consecutive++;
         currentDate.setDate(currentDate.getDate() - 1);
@@ -197,13 +281,40 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
     return result;
   };
 
+  // Training 更新用のラッパー（Promise<void> に揃える）
+  const handleTrainingUpdate = async (recordId: string, recordData: { rpe: number; duration_min: number; date?: string }) => {
+    await updateTrainingRecord(recordId, recordData);
+  };
+
+  const handleTrainingUpdateForList = async (recordId: string, recordData: { rpe: number; duration_min: number }) => {
+    await updateTrainingRecord(recordId, recordData);
+  };
+
+  const handleTrainingUpdateForCheckIn = async (recordId: string, recordData: { rpe: number; duration_min: number; date?: string }) => {
+    await updateTrainingRecord(recordId, recordData);
+  };
+
+  // Performance 更新用ラッパー
+  const handlePerformanceUpdate = async (
+    recordId: string,
+    updates: {
+      date?: string;
+      values?: Record<string, any>;
+      notes?: string;
+      is_official?: boolean;
+      weather_conditions?: string;
+    }
+  ) => {
+    await updatePerformanceRecord(recordId, updates);
+  };
+
   const lastPerformanceRecords = new Map();
   const personalBestsMap = new Map();
 
   performanceTestTypes.forEach(testType => {
-    const records = getRecordsByTestType(testType.id);
-    if (records.length > 0) {
-      lastPerformanceRecords.set(testType.id, records[0]);
+    const recs = getRecordsByTestType(testType.id);
+    if (recs.length > 0) {
+      lastPerformanceRecords.set(testType.id, recs[0]);
     }
 
     const pb = getPersonalBest(testType.id);
@@ -231,10 +342,16 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-baseline space-x-2">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', letterSpacing: '-0.02em' }}>
+              <h1
+                className="text-2xl sm:text-3xl font-bold text-white"
+                style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', letterSpacing: '-0.02em' }}
+              >
                 Bekuta
               </h1>
-              <span className="text-xs font-medium text-blue-100 hidden sm:inline" style={{ letterSpacing: '0.05em' }}>
+              <span
+                className="text-xs font-medium text-blue-100 hidden sm:inline"
+                style={{ letterSpacing: '0.05em' }}
+              >
                 by ARCA
               </span>
             </div>
@@ -259,7 +376,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
               {/* ハンバーガーメニュー */}
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="bg-white/20 hover:bg-white/30 text-white p-2 rounded-lg transition-colors"
+                className="bg-white/20 hover:bg-white/30 text白 p-2 rounded-lg transition-colors"
                 aria-label="メニュー"
               >
                 {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -505,17 +622,16 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
       )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
-
         {activeTab === 'unified' ? (
           <>
             <ConsolidatedOverviewDashboard
               acwrData={acwrData}
               weightRecords={weightRecords}
-              sleepRecords={sleepRecords}
+              sleepRecords={normalizedSleepRecords}
               motivationRecords={motivationRecords}
               trainingRecords={records}
               menstrualCycles={menstrualCycles}
-              userGender={user.gender}
+              userGender={normalizedGenderFull}
               onOpenDetailView={(section) => {
                 if (section === 'training') setActiveTab('overview');
                 else if (section === 'weight') setActiveTab('weight');
@@ -532,7 +648,11 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
               <MultiMetricTimeline
                 acwrData={acwrData}
                 weightRecords={weightRecords}
-                sleepRecords={sleepRecords}
+                sleepRecords={normalizedSleepRecords.map(r => ({
+                  sleep_hours: r.sleep_hours,
+                  sleep_quality: r.sleep_quality,
+                  date: r.date
+                }))}
                 motivationRecords={motivationRecords}
               />
             </div>
@@ -553,128 +673,128 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
           </>
         ) : activeTab === 'overview' ? (
           <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-            {/* Left Column - Training Form and Alerts */}
-            <div className="lg:col-span-1 space-y-6">
-              {/* Alert Summary */}
-              {userAlerts.length > 0 && (
-                <AlertSummary
-                  alerts={userAlerts}
-                  onViewAll={() => setShowAlertPanel(true)}
-                />
-              )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+              {/* Left Column - Training Form and Alerts */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Alert Summary */}
+                {userAlerts.length > 0 && (
+                  <AlertSummary
+                    alerts={userAlerts}
+                    onViewAll={() => setShowAlertPanel(true)}
+                  />
+                )}
 
-              {/* High Priority Alert Banner */}
-              {highPriorityAlerts.length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <div className="flex items-center">
-                    <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-red-900">緊急注意</h3>
-                      <p className="text-sm text-red-700">
-                        怪我のリスクが高まっています。練習強度の調整を検討してください。
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Cross-tab reference: Today's weight */}
-              {todayWeight && (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-green-600 dark:text-green-400 mb-1">今日の体重</p>
-                      <p className="text-2xl font-bold text-green-700 dark:text-green-300">{Number(todayWeight.weight_kg).toFixed(1)} kg</p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('weight')}
-                      className="text-sm text-green-600 dark:text-green-400 hover:underline"
-                    >
-                      体重管理へ →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Training Form Section */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors" data-tutorial="training-form">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">練習記録</h2>
-                  <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
-                </div>
-
-                <TrainingForm
-                  userId={user.id}
-                  onSubmit={addTrainingRecord}
-                  onCheckExisting={checkExistingTrainingRecord}
-                  onUpdate={updateTrainingRecord}
-                  loading={loading}
-                  lastRecord={lastTrainingRecord}
-                  weeklyAverage={weeklyAverage}
-                  daysWithData={daysWithData}
-                  consecutiveDays={consecutiveDays}
-                />
-              </div>
-
-              {/* ACWR Status Card */}
-              {latestACWR && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">現在のACWR</h3>
-                    <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 dark:text-gray-500" />
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
-                      {latestACWR.acwr}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                      {getRiskLabel(latestACWR.riskLevel)}
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                        <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">急性負荷</p>
-                        <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.acuteLoad}</p>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                        <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">慢性負荷</p>
-                        <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.chronicLoad}</p>
+                {/* High Priority Alert Banner */}
+                {highPriorityAlerts.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                    <div className="flex items-center">
+                      <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-red-900">緊急注意</h3>
+                        <p className="text-sm text-red-700">
+                          怪我のリスクが高まっています。練習強度の調整を検討してください。
+                        </p>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
 
-            {/* Right Column - Chart Section */}
-            <div className="lg:col-span-2">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors" data-tutorial="acwr-chart">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">ACWR推移グラフ</h2>
-                {loading ? (
-                  <div className="flex items-center justify-center h-64 sm:h-96">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                {/* Cross-tab reference: Today's weight */}
+                {todayWeight && (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-green-600 dark:text-green-400 mb-1">今日の体重</p>
+                        <p className="text-2xl font-bold text-green-700 dark:text-green-300">{Number(todayWeight.weight_kg).toFixed(1)} kg</p>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('weight')}
+                        className="text-sm text-green-600 dark:text-green-400 hover:underline"
+                      >
+                        体重管理へ →
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <ACWRChart data={acwrData} daysWithData={daysWithData} isDarkMode={isDarkMode} />
+                )}
+
+                {/* Training Form Section */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors" data-tutorial="training-form">
+                  <div className="flex items-center justify-between mb-4 sm:mb-6">
+                    <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">練習記録</h2>
+                    <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
+                  </div>
+
+                  <TrainingForm
+                    userId={user.id}
+                    onSubmit={addTrainingRecord}
+                    onCheckExisting={checkExistingTrainingRecord}
+                    onUpdate={handleTrainingUpdate}
+                    loading={loading}
+                    lastRecord={lastTrainingRecord}
+                    weeklyAverage={weeklyAverage}
+                    daysWithData={daysWithData}
+                    consecutiveDays={consecutiveDays}
+                  />
+                </div>
+
+                {/* ACWR Status Card */}
+                {latestACWR && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">現在のACWR</h3>
+                      <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 dark:text-gray-500" />
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
+                        {latestACWR.acwr}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        {getRiskLabel(latestACWR.riskLevel)}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                          <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">急性負荷</p>
+                          <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.acuteLoad}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                          <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">慢性負荷</p>
+                          <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.chronicLoad}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
 
-          {/* Training Records Section - Full Width */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mt-6 transition-colors">
-            <TrainingRecordsList
-              records={records}
-              onUpdate={updateTrainingRecord}
-              onDelete={deleteTrainingRecord}
-              loading={loading}
-              allowEdit={true}
-              allowDelete={true}
-              allowDateEdit={false} // 日付編集は慎重に検討
-              showLimited={true}
-              limitCount={10}
-            />
-          </div>
+              {/* Right Column - Chart Section */}
+              <div className="lg:col-span-2">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors" data-tutorial="acwr-chart">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">ACWR推移グラフ</h2>
+                  {loading ? (
+                    <div className="flex items-center justify-center h-64 sm:h-96">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                  ) : (
+                    <ACWRChart data={acwrData} daysWithData={daysWithData} isDarkMode={isDarkMode} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Training Records Section - Full Width */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mt-6 transition-colors">
+              <TrainingRecordsList
+                records={records}
+                onUpdate={handleTrainingUpdateForList}
+                onDelete={deleteTrainingRecord}
+                loading={loading}
+                allowEdit={true}
+                allowDelete={true}
+                allowDateEdit={false} // 日付編集は慎重に検討
+                showLimited={true}
+                limitCount={10}
+              />
+            </div>
           </>
         ) : activeTab === 'trends' ? (
           /* Trend Analysis Tab */
@@ -717,7 +837,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                   <div className="bg-blue-50 rounded-lg p-4">
                     <p className="text-xs text-blue-600 mb-1">現在の体重</p>
                     <p className="text-2xl font-bold text-blue-700">
-                      {getLatestWeight() !== null ? `${getLatestWeight()?.toFixed(1)} kg` : '未記録'}
+                      {getLatestWeight() !== null ? `${getLatestWeight()!.toFixed(1)} kg` : '未記録'}
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -727,7 +847,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                         {getWeightChange(30) !== null ? (
                           <>
                             {getWeightChange(30)! > 0 ? '+' : ''}
-                            {getWeightChange(30)?.toFixed(1)} kg
+                            {getWeightChange(30)!.toFixed(1)} kg
                           </>
                         ) : '-'}
                       </p>
@@ -746,7 +866,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                   weightKg={latestWeight}
                   heightCm={user.height_cm}
                   dateOfBirth={user.date_of_birth}
-                  gender={user.gender}
+                  gender={normalizedGenderFull}
                 />
               )}
 
@@ -910,7 +1030,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                   testTypes={performanceTestTypes}
                   onSubmit={handlePerformanceRecordSubmit}
                   onCheckExisting={checkExistingRecord}
-                  onUpdate={updatePerformanceRecord}
+                  onUpdate={handlePerformanceUpdate}
                   loading={performanceLoading}
                   lastRecords={lastPerformanceRecords}
                   personalBests={personalBestsMap}
@@ -945,11 +1065,11 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
             {/* Conditioning Summary Card */}
             <ConditioningSummaryCard
               latestACWR={latestACWR}
-              sleepHours={getLatestSleep()?.sleep_hours ? Number(getLatestSleep()?.sleep_hours) : null}
-              sleepQuality={getLatestSleep()?.sleep_quality || null}
-              motivationLevel={getLatestMotivation()?.motivation_level || null}
-              energyLevel={getLatestMotivation()?.energy_level || null}
-              stressLevel={getLatestMotivation()?.stress_level || null}
+              sleepHours={getLatestSleep()?.sleep_hours ? Number(getLatestSleep()!.sleep_hours) : null}
+              sleepQuality={getLatestSleep()?.sleep_quality ?? null}
+              motivationLevel={getLatestMotivation()?.motivation_level ?? null}
+              energyLevel={getLatestMotivation()?.energy_level ?? null}
+              stressLevel={getLatestMotivation()?.stress_level ?? null}
             />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1131,7 +1251,11 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
                   <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">性別</p>
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {user.gender === 'male' ? '男性' : user.gender === 'female' ? '女性' : user.gender === 'other' ? 'その他' : user.gender === 'prefer_not_to_say' ? '回答しない' : '未設定'}
+                      {user.gender === 'male' ? '男性' :
+                       user.gender === 'female' ? '女性' :
+                       user.gender === 'other' ? 'その他' :
+                       user.gender === 'prefer_not_to_say' ? '回答しない' :
+                       '未設定'}
                     </p>
                   </div>
                   <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
@@ -1163,7 +1287,7 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
             user={user}
             trainingRecords={records}
             acwrData={acwrData}
-            trendAnalysis={trendAnalysis}
+            trendAnalysis={trendAnalysis || undefined}
             onClose={() => setShowExportPanel(false)}
           />
         </Suspense>
@@ -1204,10 +1328,10 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
       {showUnifiedCheckIn && (
         <UnifiedDailyCheckIn
           userId={user.id}
-          userGender={user.gender}
+          userGender={normalizedGenderBinary}
           onTrainingSubmit={addTrainingRecord}
           onTrainingCheckExisting={checkExistingTrainingRecord}
-          onTrainingUpdate={updateTrainingRecord}
+          onTrainingUpdate={handleTrainingUpdateForCheckIn}
           onWeightSubmit={addWeightRecord}
           onWeightCheckExisting={checkExistingWeightRecord}
           onWeightUpdate={updateWeightRecord}

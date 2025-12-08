@@ -1,4 +1,7 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// 先頭付近
+declare const Deno: any;
+// 👇 ここを変更
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 function generateAlertEmailHTML(data: any): string {
   const priorityColors = {
@@ -188,9 +191,9 @@ Deno.serve(async (req) => {
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     const emailType = isDirectEmail(requestData) ? 'other' : requestData.type;
-    let deliveryStatus = 'simulated';
-    let resendId = null;
-    let errorMessage = null;
+    let deliveryStatus: 'simulated' | 'sent' | 'failed' = 'simulated';
+    let resendId: string | null = null;
+    let errorMessage: string | null = null;
 
     if (resendApiKey && resendApiKey.startsWith('re_')) {
       console.log('📮 Sending email via Resend...');

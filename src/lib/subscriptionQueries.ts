@@ -1,22 +1,104 @@
-import { supabase } from './supabase';
-import type { Database } from './database.types';
+//　2025年12月08日　一旦保存　ここからサブスクリプションの構成を見直しする
 
-type SubscriptionPlan = Database['public']['Tables']['subscription_plans']['Row'];
-type SubscriptionPlanInsert = Database['public']['Tables']['subscription_plans']['Insert'];
-type OrganizationSubscription = Database['public']['Tables']['organization_subscriptions']['Row'];
-type OrganizationSubscriptionInsert = Database['public']['Tables']['organization_subscriptions']['Insert'];
-type OrganizationSubscriptionUpdate = Database['public']['Tables']['organization_subscriptions']['Update'];
-type UserSubscription = Database['public']['Tables']['user_subscriptions']['Row'];
-type UsageTracking = Database['public']['Tables']['usage_tracking']['Row'];
-type UsageTrackingInsert = Database['public']['Tables']['usage_tracking']['Insert'];
-type BillingHistory = Database['public']['Tables']['billing_history']['Row'];
-type BillingHistoryInsert = Database['public']['Tables']['billing_history']['Insert'];
-type PermissionDefinition = Database['public']['Tables']['permission_definitions']['Row'];
-type RolePermission = Database['public']['Tables']['role_permissions']['Row'];
+import { supabase } from './supabase';
+import { getDaysAgoJSTString } from './date'; // ★ 追加
+
+// --- ここから、このファイル専用のゆるい型定義 -----------------
+
+// プラン情報（必要そうなフィールド＋保険で index signature）
+type SubscriptionPlan = {
+  id: string;
+  name?: string | null;
+  athlete_limit: number | null;
+  storage_gb: number;
+  features?: Record<string, boolean> | null;
+  is_active?: boolean | null;
+  sort_order?: number | null;
+  [key: string]: any;
+};
+
+type SubscriptionPlanInsert = Omit<SubscriptionPlan, 'id'> & { id?: string };
+
+// 組織サブスク
+type OrganizationSubscription = {
+  id: string;
+  organization_id: string;
+  plan_id: string | null;
+  billing_cycle?: 'monthly' | 'yearly' | null;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  status?: string | null;
+  cancel_at_period_end?: boolean | null;
+  updated_at?: string | null;
+  [key: string]: any;
+};
+
+type OrganizationSubscriptionInsert = Omit<OrganizationSubscription, 'id'> & {
+  id?: string;
+};
+
+type OrganizationSubscriptionUpdate = Partial<OrganizationSubscription>;
+
+// ユーザーサブスク（今はほぼ使ってないけど一応保持）
+type UserSubscription = {
+  id: string;
+  user_id: string;
+  plan_id: string | null;
+  [key: string]: any;
+};
+
+// 利用状況
+type UsageTracking = {
+  id: string;
+  organization_id: string;
+  period_start: string;
+  period_end: string;
+  active_athletes: number;
+  total_users: number;
+  storage_used_mb: number;
+  api_calls: number;
+  data_exports: number;
+  [key: string]: any;
+};
+
+type UsageTrackingInsert = Omit<UsageTracking, 'id'> & { id?: string };
+
+// 請求履歴
+type BillingHistory = {
+  id: string;
+  organization_id?: string | null;
+  user_id?: string | null;
+  billing_date?: string | null;
+  [key: string]: any;
+};
+
+type BillingHistoryInsert = Omit<BillingHistory, 'id'> & { id?: string };
+
+// 権限定義
+type PermissionDefinition = {
+  id: string;
+  is_active?: boolean | null;
+  category?: string | null;
+  name?: string | null;
+  [key: string]: any;
+};
+
+// ロール権限（今は返り値 any で扱うので最低限）
+type RolePermission = {
+  id: string;
+  role: string;
+  permission_id: string;
+  [key: string]: any;
+};
+
+// Supabase クライアントを any としても扱えるラッパ
+const db = supabase as any;
+
+// --- ここから元のロジック -----------------
 
 export const subscriptionQueries = {
   async getSubscriptionPlans() {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('subscription_plans')
       .select('*')
       .eq('is_active', true)
@@ -27,7 +109,7 @@ export const subscriptionQueries = {
   },
 
   async getSubscriptionPlanById(id: string) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('subscription_plans')
       .select('*')
       .eq('id', id)
@@ -38,7 +120,7 @@ export const subscriptionQueries = {
   },
 
   async createSubscriptionPlan(plan: SubscriptionPlanInsert) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('subscription_plans')
       .insert(plan)
       .select()
@@ -49,21 +131,24 @@ export const subscriptionQueries = {
   },
 
   async getOrganizationSubscription(organizationId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('organization_subscriptions')
-      .select(`
+      .select(
+        `
         *,
         plan:plan_id (*)
-      `)
+      `
+      )
       .eq('organization_id', organizationId)
       .maybeSingle();
 
     if (error) throw error;
-    return data;
+    // db が any なので data も any 扱い（plan プロパティもエラーにならない）
+    return data as (OrganizationSubscription & { plan?: SubscriptionPlan }) | null;
   },
 
   async createOrganizationSubscription(subscription: OrganizationSubscriptionInsert) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('organization_subscriptions')
       .insert(subscription)
       .select()
@@ -73,8 +158,11 @@ export const subscriptionQueries = {
     return data as OrganizationSubscription;
   },
 
-  async updateOrganizationSubscription(organizationId: string, updates: OrganizationSubscriptionUpdate) {
-    const { data, error } = await supabase
+  async updateOrganizationSubscription(
+    organizationId: string,
+    updates: OrganizationSubscriptionUpdate
+  ) {
+    const { data, error } = await db
       .from('organization_subscriptions')
       .update(updates)
       .eq('organization_id', organizationId)
@@ -86,17 +174,19 @@ export const subscriptionQueries = {
   },
 
   async getUserSubscription(userId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('user_subscriptions')
-      .select(`
+      .select(
+        `
         *,
         plan:plan_id (*)
-      `)
+      `
+      )
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error) throw error;
-    return data;
+    return data as (UserSubscription & { plan?: SubscriptionPlan }) | null;
   },
 
   async getCurrentUsage(organizationId: string) {
@@ -104,7 +194,7 @@ export const subscriptionQueries = {
     const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('usage_tracking')
       .select('*')
       .eq('organization_id', organizationId)
@@ -121,6 +211,7 @@ export const subscriptionQueries = {
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+    // ここは既存テーブルなので typed supabase のままでOK
     const { data: activeAthletes, error: athletesError } = await supabase
       .from('users')
       .select('id', { count: 'exact', head: false })
@@ -137,10 +228,10 @@ export const subscriptionQueries = {
 
     if (usersError) throw usersError;
 
-    const { data: trainingRecords, error: trainingError } = await supabase
+    const { error: trainingError } = await supabase
       .from('training_records')
       .select('id', { count: 'exact', head: true })
-      .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
+      .gte('date', getDaysAgoJSTString(30)); // ★ JSTベースの30日前
 
     if (trainingError) throw trainingError;
 
@@ -154,7 +245,7 @@ export const subscriptionQueries = {
   },
 
   async createUsageRecord(usage: UsageTrackingInsert) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('usage_tracking')
       .insert(usage)
       .select()
@@ -165,7 +256,7 @@ export const subscriptionQueries = {
   },
 
   async getBillingHistory(organizationId?: string, userId?: string) {
-    let query = supabase
+    let query = db
       .from('billing_history')
       .select('*')
       .order('billing_date', { ascending: false });
@@ -183,7 +274,7 @@ export const subscriptionQueries = {
   },
 
   async createBillingRecord(billing: BillingHistoryInsert) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('billing_history')
       .insert(billing)
       .select()
@@ -194,7 +285,7 @@ export const subscriptionQueries = {
   },
 
   async updateBillingRecord(id: string, updates: Partial<BillingHistory>) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('billing_history')
       .update(updates)
       .eq('id', id)
@@ -206,7 +297,7 @@ export const subscriptionQueries = {
   },
 
   async getPermissionDefinitions() {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('permission_definitions')
       .select('*')
       .eq('is_active', true)
@@ -218,33 +309,38 @@ export const subscriptionQueries = {
   },
 
   async getRolePermissions(role: string) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('role_permissions')
-      .select(`
+      .select(
+        `
         *,
         permission:permission_id (*)
-      `)
+      `
+      )
       .eq('role', role);
 
     if (error) throw error;
-    return data;
+    return data as (RolePermission & { permission?: PermissionDefinition })[];
   },
 
   async getAllRolePermissions() {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('role_permissions')
-      .select(`
+      .select(
+        `
         *,
         permission:permission_id (*)
-      `)
+      `
+      )
       .order('role');
 
     if (error) throw error;
-    return data;
+    return data as (RolePermission & { permission?: PermissionDefinition })[];
   },
 
   async checkPlanLimits(organizationId: string) {
     const subscription = await this.getOrganizationSubscription(organizationId);
+
     if (!subscription || !subscription.plan) {
       return {
         withinLimits: false,
@@ -256,14 +352,16 @@ export const subscriptionQueries = {
     const plan = subscription.plan as SubscriptionPlan;
     const usage = await this.calculateCurrentUsage(organizationId);
 
-    const withinAthleteLimit = plan.athlete_limit === null || usage.active_athletes <= plan.athlete_limit;
-    const withinStorageLimit = usage.storage_used_mb <= (plan.storage_gb * 1024);
+    const withinAthleteLimit =
+      plan.athlete_limit === null || usage.active_athletes <= plan.athlete_limit;
+    const withinStorageLimit = usage.storage_used_mb <= plan.storage_gb * 1024;
 
     return {
       withinLimits: withinAthleteLimit && withinStorageLimit,
-      message: withinAthleteLimit && withinStorageLimit
-        ? 'プラン制限内です'
-        : '使用量がプラン制限を超えています',
+      message:
+        withinAthleteLimit && withinStorageLimit
+          ? 'プラン制限内です'
+          : '使用量がプラン制限を超えています',
       limits: {
         athletes: {
           current: usage.active_athletes,
@@ -276,8 +374,8 @@ export const subscriptionQueries = {
           exceeded: !withinStorageLimit
         }
       },
-      plan: plan,
-      usage: usage
+      plan,
+      usage
     };
   },
 
@@ -288,10 +386,14 @@ export const subscriptionQueries = {
     }
 
     const plan = subscription.plan as SubscriptionPlan;
-    return plan.features && plan.features[featureKey] === true;
+    return !!(plan.features && plan.features[featureKey] === true);
   },
 
-  async upgradePlan(organizationId: string, newPlanId: string, billingCycle: 'monthly' | 'yearly') {
+  async upgradePlan(
+    organizationId: string,
+    newPlanId: string,
+    billingCycle: 'monthly' | 'yearly'
+  ) {
     const currentSubscription = await this.getOrganizationSubscription(organizationId);
     if (!currentSubscription) {
       throw new Error('現在のサブスクリプションが見つかりません');

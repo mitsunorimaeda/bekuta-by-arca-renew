@@ -1,3 +1,6 @@
+// trendAnalysis.ts の一番上あたりに追加
+import { formatDateToJST } from './date';
+
 export interface TrendData {
   date: string;
   acwr: number;
@@ -87,27 +90,32 @@ export function getWeekNumber(date: Date): number {
 }
 
 // 週の開始日と終了日を取得（月曜日始まり）
-export function getWeekDateRange(year: number, weekNumber: number): { startDate: string; endDate: string } {
+export function getWeekDateRange(
+  year: number,
+  weekNumber: number
+): { startDate: string; endDate: string } {
   // 年の1月1日
   const yearStart = new Date(year, 0, 1);
-  
+
   // 1月1日の曜日（月曜日=0）
   const yearStartDay = (yearStart.getDay() + 6) % 7;
-  
+
   // 年の最初の月曜日
   const firstMonday = new Date(year, 0, 1 - yearStartDay);
-  
+
   // 指定された週の月曜日
   const weekStart = new Date(firstMonday.getTime());
   weekStart.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
-  
+
   // その週の日曜日
   const weekEnd = new Date(weekStart.getTime());
   weekEnd.setDate(weekStart.getDate() + 6);
-  
+
   return {
-    startDate: weekStart.toISOString().split('T')[0],
-    endDate: weekEnd.toISOString().split('T')[0]
+    // ❌ weekStart.toISOString().split('T')[0]
+    // ✅ JSTローカルの日付文字列に統一
+    startDate: formatDateToJST(weekStart),
+    endDate: formatDateToJST(weekEnd),
   };
 }
 

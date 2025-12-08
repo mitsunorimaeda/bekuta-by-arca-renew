@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getTodayJSTString } from '../lib/date';
 import { Team, supabase } from '../lib/supabase';
 import {
   Upload,
@@ -442,7 +443,7 @@ export function BulkUserInvitation({
     link.setAttribute('href', url);
     link.setAttribute(
       'download',
-      `一括招待結果_${new Date().toISOString().split('T')[0]}.csv`
+      `一括招待結果_${getTodayJSTString()}.csv`
     );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);

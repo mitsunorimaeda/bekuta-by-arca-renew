@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Users, Trophy, TrendingUp } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { getDaysAgoJSTString } from '../lib/date';
 
 interface AthletePerformance {
   userId: string;
@@ -40,7 +41,7 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
 
       if (membersError) throw membersError;
 
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const thirtyDaysAgo = getDaysAgoJSTString(30);
       const performances: AthletePerformance[] = [];
 
       for (const member of members || []) {
@@ -60,27 +61,50 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
           .eq('user_id', userId)
           .gte('date', thirtyDaysAgo);
 
-        const totalLoad = trainingData?.reduce((sum, r) => sum + r.load, 0) || 0;
-        const avgLoad = trainingData && trainingData.length > 0 ? totalLoad / trainingData.length : 0;
+        // ✅ ① null を 0 として扱う
+        const totalLoad =
+          trainingData?.reduce((sum, r) => sum + (r.load ?? 0), 0) ?? 0;
+
+        const avgLoad =
+          trainingData && trainingData.length > 0
+            ? totalLoad / trainingData.length
+            : 0;
 
         let avgACWR = 0;
         if (trainingData && trainingData.length >= 28) {
           const recentWeek = trainingData.slice(-7);
           const previousWeeks = trainingData.slice(-28, -7);
 
-          const acuteLoad = recentWeek.reduce((sum, r) => sum + r.load, 0);
-          const chronicLoad = previousWeeks.reduce((sum, r) => sum + r.load, 0) / 3;
+          // ✅ ② acuteLoad も null を 0 扱い
+          const acuteLoad = recentWeek.reduce(
+            (sum, r) => sum + (r.load ?? 0),
+            0
+          );
+
+          // ✅ ③ chronicLoad も null を 0 扱い
+          const chronicLoad =
+            previousWeeks.reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
 
           avgACWR = chronicLoad > 0 ? acuteLoad / chronicLoad : 0;
         }
 
         let trend: 'improving' | 'stable' | 'declining' = 'stable';
         if (trainingData && trainingData.length >= 14) {
-          const firstHalf = trainingData.slice(0, Math.floor(trainingData.length / 2));
-          const secondHalf = trainingData.slice(Math.floor(trainingData.length / 2));
+          const firstHalf = trainingData.slice(
+            0,
+            Math.floor(trainingData.length / 2)
+          );
+          const secondHalf = trainingData.slice(
+            Math.floor(trainingData.length / 2)
+          );
 
-          const firstAvg = firstHalf.reduce((sum, r) => sum + r.load, 0) / firstHalf.length;
-          const secondAvg = secondHalf.reduce((sum, r) => sum + r.load, 0) / secondHalf.length;
+          // ✅ ④ トレンド計算も null を 0 扱い
+          const firstAvg =
+            firstHalf.reduce((sum, r) => sum + (r.load ?? 0), 0) /
+            firstHalf.length;
+          const secondAvg =
+            secondHalf.reduce((sum, r) => sum + (r.load ?? 0), 0) /
+            secondHalf.length;
 
           if (secondAvg > firstAvg * 1.1) trend = 'improving';
           else if (secondAvg < firstAvg * 0.9) trend = 'declining';
@@ -208,7 +232,9 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
             className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg"
           >
             <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold text-gray-900 dark:text-white">{athlete.name}</h4>
+              <h4 className="font-semibold text-gray-900 dark:text-white">
+                {athlete.name}
+              </h4>
               <span className={`text-xl ${getTrendColor(athlete.trend)}`}>
                 {getTrendIcon(athlete.trend)}
               </span>

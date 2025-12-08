@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Activity, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { getTodayJSTString } from '../lib/date';
+import { getDaysAgoJSTString } from '../lib/date';
+
+
+
 
 interface TeamMember {
   userId: string;
@@ -39,7 +44,7 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
 
       if (membersError) throw membersError;
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayJSTString();
       const memberRisks: TeamMember[] = [];
 
       for (const member of members || []) {
@@ -55,19 +60,19 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
           .from('training_records')
           .select('date, load')
           .eq('user_id', userId)
-          .gte('date', new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+          .gte('date', getDaysAgoJSTString(27))
           .order('date', { ascending: false });
 
         const { data: injuries } = await supabase
           .from('injury_records')
           .select('id')
           .eq('user_id', userId)
-          .gte('occurred_date', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+          .gte('occurred_date', getDaysAgoJSTString(90))
 
         let currentACWR: number | null = null;
         if (trainingData && trainingData.length > 0) {
-          const acute = trainingData.slice(0, 7).reduce((sum, r) => sum + r.load, 0);
-          const chronic = trainingData.slice(7, 28).reduce((sum, r) => sum + r.load, 0) / 3;
+          const acute = trainingData.slice(0, 7).reduce((sum, r) => sum + (r.load ?? 0), 0);
+          const chronic = trainingData.slice(7, 28).reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
           currentACWR = chronic > 0 ? acute / chronic : null;
         }
 

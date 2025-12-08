@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Moon, Star } from 'lucide-react';
 import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
+import { getTodayJSTString } from '../lib/date';
 
 interface SleepFormProps {
   onSubmit: (data: {
@@ -22,7 +23,7 @@ export function SleepForm({
   loading = false,
 }: SleepFormProps) {
   const [sleepHours, setSleepHours] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayJSTString());
   const [sleepQuality, setSleepQuality] = useState<number>(3);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
@@ -61,7 +62,7 @@ export function SleepForm({
 
       // フォームリセット
       setSleepHours('');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getTodayJSTString());
       setSleepQuality(3);
       setNotes('');
     } catch (err) {
@@ -79,7 +80,7 @@ export function SleepForm({
       await onUpdate(existingRecord.id, pendingData);
 
       setSleepHours('');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getTodayJSTString());
       setSleepQuality(3);
       setNotes('');
       setExistingRecord(null);

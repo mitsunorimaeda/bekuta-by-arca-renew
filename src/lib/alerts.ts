@@ -1,3 +1,5 @@
+import { formatDateJST } from '../lib/date';
+
 export interface Alert {
   id: string;
   user_id: string;
@@ -71,7 +73,7 @@ export function generateAlerts(
 ): Alert[] {
   const alerts: Alert[] = [];
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = formatDateJST(now);  // ★ ここだけ変更
   
   // 最新のACWRデータ
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
@@ -93,7 +95,7 @@ export function generateAlerts(
       type: rule.type,
       is_read: false,
       is_dismissed: false,
-      created_at: now.toISOString()
+      created_at: now.toISOString()   // ここはUTCのままでOK
     };
     
     switch (rule.condition) {
@@ -107,7 +109,7 @@ export function generateAlerts(
             message: `${userName}さんのACWRが${latestACWR.acwr}となり、${rule.threshold}を超えました。怪我のリスクが高まっています。`,
             acwr_value: latestACWR.acwr,
             threshold_exceeded: `${rule.threshold}以上`,
-            expires_at: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString() // 48時間後に延長
+            expires_at: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString()
           };
         }
         break;
@@ -122,7 +124,7 @@ export function generateAlerts(
             message: `${userName}さんのACWRが${latestACWR.acwr}となり、${rule.threshold}を下回りました。練習負荷が不足している可能性があります。`,
             acwr_value: latestACWR.acwr,
             threshold_exceeded: `${rule.threshold}未満`,
-            expires_at: new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString() // 72時間後
+            expires_at: new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString()
           };
         }
         break;
@@ -139,14 +141,14 @@ export function generateAlerts(
               priority: 'medium',
               title: '📅 練習記録なし',
               message: `${userName}さんの練習記録が${daysSinceLastTraining}日間ありません。継続的なデータ記録をお願いします。`,
-              expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7日後
+              expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
             };
           }
         }
         break;
         
       case 'no_training_today':
-        // 22時以降のみチェック（時間を遅らせる）
+        // 22時以降のみチェック
         if (now.getHours() >= 22 && !todayTraining) {
           shouldAlert = true;
           alertData = {
@@ -154,7 +156,7 @@ export function generateAlerts(
             priority: 'low',
             title: '⏰ 今日の記録忘れ',
             message: `${userName}さん、今日の練習記録をまだ入力していません。忘れずに記録をお願いします。`,
-            expires_at: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString() // 2時間後（深夜0時まで）
+            expires_at: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString()
           };
         }
         break;
