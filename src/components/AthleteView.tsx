@@ -207,8 +207,18 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
   
 
   // Get last records for quick record suggestions
-  const lastTrainingRecord = records.length > 0 ? records[records.length - 1] : null;
-  const lastWeightRecord = weightRecords.length > 0 ? weightRecords[0] : null;
+  const lastTrainingRecord =
+  records.length > 0
+    ? records.reduce((latest, r) =>
+        !latest || new Date(r.date) > new Date(latest.date) ? r : latest
+      , null as (typeof records)[number] | null)
+    : null;
+    const lastWeightRecord =
+    weightRecords.length > 0
+      ? weightRecords.reduce((latest, r) =>
+          !latest || new Date(r.date) > new Date(latest.date) ? r : latest
+        , null as (typeof weightRecords)[number] | null)
+      : null;
 
   // Calculate weekly average for smart input
   const getWeeklyAverage = () => {
