@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Target, Award, Users, Flame, HelpCircle } from 'lucide-react';
+import { Trophy, Award, Users, Flame, HelpCircle } from 'lucide-react';
 import { useStreaks } from '../hooks/useStreaks';
 import { usePoints } from '../hooks/usePoints';
 import { useBadges } from '../hooks/useBadges';
-import { useGoals } from '../hooks/useGoals';
 import { useRankings } from '../hooks/useRankings';
-import { useTutorial } from '../hooks/useTutorial';
 import { StreakDisplay } from './StreakDisplay';
 import { LevelProgressCard } from './LevelProgressCard';
 import { BadgeCollection } from './BadgeCollection';
 import { BadgeEarnedModal } from './BadgeEarnedModal';
-import { GoalManagement } from './GoalManagement';
 import { TeamRankings } from './TeamRankings';
 import { LevelUpModal } from './LevelUpModal';
 import { TutorialController } from './TutorialController';
@@ -24,21 +21,15 @@ interface GamificationViewProps {
 export function GamificationView({ userId, userTeamId }: GamificationViewProps) {
   const { streaks, loading: streaksLoading, getStreakByType, getTotalStreak } = useStreaks(userId);
   const { userPoints, loading: pointsLoading, getLevelProgress } = usePoints(userId);
-  const { allBadges, userBadges, loading: badgesLoading, getNewBadges, markBadgeAsViewed, getBadgeProgress } = useBadges(userId);
   const {
-    goals,
-    loading: goalsLoading,
-    createGoal,
-    updateGoal,
-    completeGoal,
-    deleteGoal,
-    getActiveGoals,
-    getGoalProgress,
-    getDaysUntilDeadline,
-    isGoalOverdue,
-  } = useGoals(userId);
+    allBadges,
+    userBadges,
+    loading: badgesLoading,
+    getNewBadges,
+    markBadgeAsViewed,
+    getBadgeProgress
+  } = useBadges(userId);
   const { weeklyRankings, pointsRankings, loading: rankingsLoading } = useRankings(userId, userTeamId);
-  const { startTutorial: startMainTutorial } = useTutorial();
 
   const [showBadgeCollection, setShowBadgeCollection] = useState(false);
   const [newBadgeToShow, setNewBadgeToShow] = useState<any>(null);
@@ -46,18 +37,18 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
   const [previousLevel, setPreviousLevel] = useState<number | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
 
-  const loading = streaksLoading || pointsLoading || badgesLoading || goalsLoading || rankingsLoading;
+  const loading = streaksLoading || pointsLoading || badgesLoading || rankingsLoading;
 
   const levelProgress = pointsLoading ? 0 : getLevelProgress();
   const newBadges = badgesLoading ? [] : getNewBadges();
   const badgeProgress = badgesLoading ? { earned: 0, total: 0, percentage: 0 } : getBadgeProgress();
 
-  // Check for level up
+  // レベルアップ判定
   useEffect(() => {
     if (userPoints && previousLevel !== null && userPoints.current_level > previousLevel) {
       setLevelUpData({
         level: userPoints.current_level,
-        rankTitle: userPoints.rank_title,
+        rankTitle: userPoints.rank_title
       });
     }
     if (userPoints) {
@@ -65,7 +56,7 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
     }
   }, [userPoints?.current_level]);
 
-  // Auto-show new badges
+  // 新しいバッジがあれば自動表示
   useEffect(() => {
     if (newBadges.length > 0 && !newBadgeToShow) {
       const badge = newBadges[0];
@@ -108,7 +99,7 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">ゲーミフィケーション</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            楽しみながら継続的な記録を！ストリーク、バッジ、目標で成長を可視化
+            楽しみながら継続的な記録を！ストリークとバッジで成長を可視化
           </p>
         </div>
         <button
@@ -122,7 +113,7 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
       </div>
 
       {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Total Streak */}
         <StreakDisplay
           streak={getTotalStreak()}
@@ -169,28 +160,10 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
             </div>
           )}
         </button>
-
-        {/* Active Goals */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 transition-colors">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">進行中の目標</p>
-              <div className="flex items-baseline space-x-2">
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {getActiveGoals().length}
-                </p>
-                <span className="text-sm text-gray-600 dark:text-gray-400">個</span>
-              </div>
-            </div>
-            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <Target className="w-6 h-6 text-green-600 dark:text-green-400" />
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column - Streaks and Level */}
         <div className="space-y-6">
           <div data-tutorial="streaks-section">
@@ -207,7 +180,7 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
           </div>
 
           <div data-tutorial="level-section">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text:white mb-4 flex items-center space-x-2">
               <Trophy className="w-5 h-5 text-yellow-500" />
               <span>レベル進捗</span>
             </h3>
@@ -217,24 +190,6 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
               showDetails={true}
             />
           </div>
-        </div>
-
-        {/* Middle Column - Goals */}
-        <div data-tutorial="goals-section">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">
-            <Target className="w-5 h-5 text-green-500" />
-            <span>目標管理</span>
-          </h3>
-          <GoalManagement
-            goals={goals}
-            onCreateGoal={createGoal}
-            onUpdateGoal={updateGoal}
-            onCompleteGoal={completeGoal}
-            onDeleteGoal={deleteGoal}
-            getGoalProgress={getGoalProgress}
-            getDaysUntilDeadline={getDaysUntilDeadline}
-            isGoalOverdue={isGoalOverdue}
-          />
         </div>
 
         {/* Right Column - Rankings */}
