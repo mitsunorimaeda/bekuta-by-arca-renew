@@ -31,6 +31,17 @@ interface UnifiedDailyCheckInProps {
   onClose: () => void;
   lastTrainingRecord?: { rpe: number; duration_min: number; date: string } | null;
   lastWeightRecord?: { weight_kg: number; date: string } | null;
+  lastSleepRecord?: {
+    sleep_hours: number;
+    sleep_quality: number | null;
+    date: string;
+  } | null;
+  lastMotivationRecord?: {
+    motivation_level: number;
+    energy_level: number;
+    stress_level: number;
+    date: string;
+  } | null;
 }
 
 export function UnifiedDailyCheckIn({
@@ -51,7 +62,9 @@ export function UnifiedDailyCheckIn({
   onCycleUpdate,
   onClose,
   lastTrainingRecord,
-  lastWeightRecord
+  lastWeightRecord,
+  lastSleepRecord,       // ★ 追加
+  lastMotivationRecord   // ★ 追加
 }: UnifiedDailyCheckInProps) {
   const today = getTodayJSTString();;
 
@@ -64,13 +77,23 @@ export function UnifiedDailyCheckIn({
   const [weight, setWeight] = useState<string>(lastWeightRecord?.weight_kg ? String(lastWeightRecord.weight_kg) : '');
   const [weightNotes, setWeightNotes] = useState<string>('');
 
-  const [sleepHours, setSleepHours] = useState<number>(7);
-  const [sleepQuality, setSleepQuality] = useState<number>(3);
+  // ★ 前回睡眠から初期値
+  const [sleepHours, setSleepHours] = useState<number>(
+    lastSleepRecord?.sleep_hours ?? 7);
+  const [sleepQuality, setSleepQuality] = useState<number>(
+    (lastSleepRecord?.sleep_quality ?? 3));
   const [sleepNotes, setSleepNotes] = useState<string>('');
 
-  const [motivationLevel, setMotivationLevel] = useState<number>(7);
-  const [energyLevel, setEnergyLevel] = useState<number>(7);
-  const [stressLevel, setStressLevel] = useState<number>(5);
+   // ★ 前回モチベーションから初期値
+   const [motivationLevel, setMotivationLevel] = useState<number>(
+    lastMotivationRecord?.motivation_level ?? 7
+  );
+  const [energyLevel, setEnergyLevel] = useState<number>(
+    lastMotivationRecord?.energy_level ?? 7
+  );
+  const [stressLevel, setStressLevel] = useState<number>(
+    lastMotivationRecord?.stress_level ?? 5
+  );
   const [conditioningNotes, setConditioningNotes] = useState<string>('');
 
   // Menstrual cycle tracking (for female users)

@@ -180,7 +180,26 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
   const latestMotivation = getLatestMotivation();
   const latestWeight = getLatestWeight();
-  const lastSleepRecord = sleepRecords.length > 0 ? sleepRecords[0] : null;
+
+  // ★ 最新 sleep record（必ず一番新しい日付を選ぶ）
+  const lastSleepRecord =
+    sleepRecords.length > 0
+      ? sleepRecords.reduce(
+          (latest, r) =>
+            !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
+          null as (typeof sleepRecords)[number] | null
+        )
+      : null;
+
+  // ★ 最新 motivation record（必ず一番新しい日付を選ぶ）
+  const lastMotivationRecord =
+    motivationRecords.length > 0
+      ? motivationRecords.reduce(
+          (latest, r) =>
+            !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
+          null as (typeof motivationRecords)[number] | null
+        )
+      : null;
 
   // gender をコンポーネント用に正規化
   const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null =
@@ -1374,6 +1393,8 @@ export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNav
           onClose={() => setShowUnifiedCheckIn(false)}
           lastTrainingRecord={lastTrainingRecord}
           lastWeightRecord={lastWeightRecord}
+          lastSleepRecord={lastSleepRecord}
+          lastMotivationRecord={lastMotivationRecord}
         />
       )}
 
