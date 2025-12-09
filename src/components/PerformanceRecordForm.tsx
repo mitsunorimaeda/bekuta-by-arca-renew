@@ -390,14 +390,17 @@ export function PerformanceRecordForm({
                   </select>
                 ) : (
                   <input
-                    type="tel"
-                    value={formValues[field.name] || ''}
-                    onChange={(e) => handleValueChange(field.name, e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
-                    placeholder={field.label}
-                    style={{ fontSize: '16px' }}
-                  />
-                )}
+                  type={field.type === 'number' ? 'number' : 'text'}
+                  inputMode={field.type === 'number' ? 'decimal' : 'text'}
+                  step={field.type === 'number' ? '0.01' : undefined}   // 小数1桁。必要なら 0.01 に
+                  min={field.type === 'number' ? 0 : undefined}
+                  value={formValues[field.name] || ''}
+                  onChange={(e) => handleValueChange(field.name, e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
+                  placeholder={field.label}
+                  style={{ fontSize: '16px' }}
+                />
+              )}
               </div>
             ))}
           </div>
