@@ -337,20 +337,19 @@ function App() {
           <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 relative z-20 transition-colors">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex justify-between items-center h-16">
-                <div className="flex items-center">
-                <div className="flex items-center">
-  <button
-    onClick={() => {
-      // ホーム画面に戻す
-      setCurrentPage('app');
+              <div className="flex items-center">
+                  <button
+                    onClick={() => {
+                      // ホームへ戻す
+                      setCurrentPage('app');
 
-      // 少し待ってから擬似リフレッシュ（再レンダリング）
-      setTimeout(() => {
-        window.location.reload();
-      }, 50);
-    }}
-                    className="flex items-baseline space-x-2 transition-colors active:opacity-70"
-                    style={{ WebkitTapHighlightColor: 'transparent' }} // iOSでの青枠防止
+                      // 擬似リロード
+                      setTimeout(() => {
+                        window.location.reload();
+                      }, 50);
+                    }}
+                    className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
                     <span
                       className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
@@ -369,7 +368,6 @@ function App() {
                       by ARCA
                     </span>
                   </button>
-                </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   {/* デスクトップ: ユーザー名 + アラート + ログアウト */}
