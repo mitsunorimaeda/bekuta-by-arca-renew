@@ -75,17 +75,18 @@ import { MenstrualCycleChart } from './MenstrualCycleChart';
 import { MenstrualCycleCalendar } from './MenstrualCycleCalendar';
 import { CyclePerformanceCorrelation } from './CyclePerformanceCorrelation';
 
-interface AthleteViewProps {
-  user: User;
-  alerts: Alert[];
-  onLogout?: () => Promise<void>;
-  onNavigateToPrivacy?: () => void;
-  onNavigateToTerms?: () => void;
-  onNavigateToCommercial?: () => void;
-  onNavigateToHelp?: () => void;
-}
+type AthleteViewProps = {
+  user: any; // 実際の型があればそれでOK
+  alerts: any[];
+  onLogout: () => void;
+  onHome: () => void; // ← これを追加
+  onNavigateToPrivacy: () => void;
+  onNavigateToTerms: () => void;
+  onNavigateToCommercial: () => void;
+  onNavigateToHelp: () => void;
+};
 
-export function AthleteView({ user, alerts, onLogout, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: AthleteViewProps) {
+export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: AthleteViewProps) {
   console.log('[AthleteView] User object:', user);
   console.log('[AthleteView] User gender:', user.gender);
 

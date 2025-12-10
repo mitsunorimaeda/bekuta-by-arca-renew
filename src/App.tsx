@@ -449,14 +449,14 @@ function App() {
         <div className="relative">
           {effectiveRole === 'athlete' ? (
             <AthleteView
-              user={userProfile}
-              alerts={alerts}
-              onLogout={signOut}
-              onNavigateToPrivacy={() => setCurrentPage('privacy')}
-              onNavigateToTerms={() => setCurrentPage('terms')}
-              onNavigateToCommercial={() => setCurrentPage('commercial')}
-              onNavigateToHelp={() => setCurrentPage('help')}
-            />
+            user={userProfile}
+            alerts={alerts}
+            onLogout={signOut}
+            onNavigateToPrivacy={() => setCurrentPage('privacy')}
+            onNavigateToTerms={() => setCurrentPage('terms')}
+            onNavigateToCommercial={() => setCurrentPage('commercial')}
+            onNavigateToHelp={() => setCurrentPage('help')}
+           />
           ) : effectiveRole === 'admin' ? (
             <AdminView
               user={userProfile}
