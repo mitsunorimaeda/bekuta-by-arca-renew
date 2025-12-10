@@ -36,8 +36,8 @@ interface StaffViewProps {
 export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: StaffViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [athletes, setAthletes] = useState<User[]>([]);
-  const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
+  // 元：const [athletes, setAthletes] = useState<User[]>([]);
+  const [athletes, setAthletes] = useState<StaffAthleteWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'trends' | 'team-analytics' | 'reports' | 'team-access' | 'transfers' | 'messages'>('athletes');
   const [showAlertPanel, setShowAlertPanel] = useState(false);
@@ -106,20 +106,28 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   };
 
-  const fetchTeamAthletes = async (teamId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('role', 'athlete')
-        .eq('team_id', teamId);
+  // 追加：ビューの行型（User に + α なイメージ）
+type StaffAthleteWithActivity = User & {
+  training_days_28d: number | null;
+  training_sessions_28d: number | null;
+  last_training_date: string | null;
+};
 
-      if (error) throw error;
-      setAthletes(data || []);
-    } catch (error) {
-      console.error('Error fetching team athletes:', error);
-    }
-  };
+const fetchTeamAthletes = async (teamId: string) => {
+  try {
+    const { data, error } = await supabase
+      // ★ ここを users → view 名に変更 ＋ as any で型チェック回避
+      .from('staff_team_athletes_with_activity' as any)
+      .select('*')
+      .eq('team_id', teamId);
+
+    if (error) throw error;
+
+    setAthletes((data || []) as StaffAthleteWithActivity[]);
+  } catch (error) {
+    console.error('Error fetching team athletes:', error);
+  }
+};
 
   // アラート関連のヘルパー関数
   const markAsRead = async (alertId: string) => {
