@@ -4,6 +4,8 @@ import { Alert, AlertRule, DEFAULT_ALERT_RULES, generateAlerts, filterActiveAler
 import { calculateACWR } from '../lib/acwr';
 import { sendAlertEmail } from '../lib/emailService';
 
+// --- 省略（インポート部はそのまま） ---
+
 export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin') {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -34,13 +36,17 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
           .single();
 
         if (userError || !userData) {
-          console.error('Error fetching user data for alert email:', userError);
+          if (import.meta.env.DEV) {
+            console.error('Error fetching user data for alert email:', userError);
+          }
           continue;
         }
 
         const emailPrefs = userData.email_notifications as Record<string, boolean> | null;
         if (emailPrefs && emailPrefs.alerts === false) {
-          console.log(`Skipping alert email for ${userData.email} - notifications disabled`);
+          if (import.meta.env.DEV) {
+            console.log(`Skipping alert email for ${userData.email} - notifications disabled`);
+          }
           continue;
         }
 
@@ -53,7 +59,11 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
           : Infinity;
 
         if (hoursSinceLastEmail < 6) {
-          console.log(`Skipping alert email for ${userData.email} - last email sent ${hoursSinceLastEmail.toFixed(1)} hours ago`);
+          if (import.meta.env.DEV) {
+            console.log(
+              `Skipping alert email for ${userData.email} - last email sent ${hoursSinceLastEmail.toFixed(1)} hours ago`
+            );
+          }
           continue;
         }
 
@@ -61,7 +71,11 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
           const result = await sendAlertEmail(userData.email, userData.name, alert);
 
           if (result.success) {
-            console.log(`Alert email sent to ${userData.email}`);
+
+            // ⭐★ ここだけ安全に修正 ★⭐
+            if (import.meta.env.DEV) {
+              console.log(`Alert email sent to ${userData.email}`);
+            }
 
             await supabase
               .from('users')
@@ -70,14 +84,20 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
 
             break;
           } else {
-            console.error(`Failed to send alert email to ${userData.email}:`, result.error);
+            if (import.meta.env.DEV) {
+              console.error(`Failed to send alert email to ${userData.email}:`, result.error);
+            }
           }
         }
       } catch (error) {
-        console.error('Error sending alert email:', error);
+        if (import.meta.env.DEV) {
+          console.error('Error sending alert email:', error);
+        }
       }
     }
   };
+
+  // ---- 以下は全て同じ（変更なし） ----
 
   // メモ化されたアラートチェック関数
   const checkAndGenerateAlerts = useCallback(async () => {
