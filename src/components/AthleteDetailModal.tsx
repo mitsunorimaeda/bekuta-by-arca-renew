@@ -1,3 +1,4 @@
+import React from 'react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { ACWRChart } from './ACWRChart';
@@ -13,6 +14,45 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
   const recentRecords = records.slice(-7); // Last 7 records
+
+  // ==== ここから追加：練習日数サマリー ====
+
+  // 日付だけを比較するためのユーティリティ
+  const today = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(today.getDate() - 6); // 今日含めて7日間
+  const twentyEightDaysAgo = new Date();
+  twentyEightDaysAgo.setDate(today.getDate() - 27); // 今日含めて28日間
+
+  const trainingDays7dSet = new Set<string>();
+  const trainingDays28dSet = new Set<string>();
+
+  records.forEach((record) => {
+    const d = new Date(record.date);
+    const dayKey = d.toDateString(); // 同じ日を1回としてカウント
+
+    if (d >= sevenDaysAgo && d <= today) {
+      trainingDays7dSet.add(dayKey);
+    }
+    if (d >= twentyEightDaysAgo && d <= today) {
+      trainingDays28dSet.add(dayKey);
+    }
+  });
+
+  const trainingDays7d = trainingDays7dSet.size;
+  const trainingDays28d = trainingDays28dSet.size;
+
+  // 最終練習日
+  let lastTrainingDate: Date | null = null;
+  if (records.length > 0) {
+    lastTrainingDate = records.reduce((latest: Date | null, r) => {
+      const d = new Date(r.date);
+      if (!latest) return d;
+      return d > latest ? d : latest;
+    }, null as Date | null);
+  }
+
+  // ==== 追加ここまで ====
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -72,6 +112,43 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                 </div>
               )}
 
+              {/* 練習日数サマリー */}
+              {(records.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-gray-50 rounded-lg p-6 text-center">
+                    <div className="text-xs text-gray-500 mb-1">直近7日間の練習日数</div>
+                    <div className="text-2xl font-bold text-gray-900 mb-1">
+                      {trainingDays7d} 日
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      （{sevenDaysAgo.toLocaleDateString('ja-JP')} 〜 {today.toLocaleDateString('ja-JP')}）
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-6 text-center">
+                    <div className="text-xs text-gray-500 mb-1">直近28日間の練習日数</div>
+                    <div className="text-2xl font-bold text-gray-900 mb-1">
+                      {trainingDays28d} 日
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      （{twentyEightDaysAgo.toLocaleDateString('ja-JP')} 〜 {today.toLocaleDateString('ja-JP')}）
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-6 text-center">
+                    <div className="text-xs text-gray-500 mb-1">最終練習日</div>
+                    <div className="text-2xl font-bold text-gray-900 mb-1">
+                      {lastTrainingDate
+                        ? lastTrainingDate.toLocaleDateString('ja-JP')
+                        : '記録なし'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {lastTrainingDate ? 'この日以降の記録はありません' : '過去の記録がまだありません'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ACWR Chart */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">ACWR推移グラフ</h3>
@@ -84,7 +161,10 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                 {recentRecords.length > 0 ? (
                   <div className="space-y-3">
                     {recentRecords.map((record) => (
-                      <div key={record.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
+                      <div
+                        key={record.id}
+                        className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0"
+                      >
                         <div className="flex items-center space-x-4">
                           <Calendar className="w-5 h-5 text-gray-400" />
                           <div>
