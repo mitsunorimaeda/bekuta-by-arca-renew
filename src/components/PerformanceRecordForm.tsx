@@ -372,8 +372,13 @@ export function PerformanceRecordForm({
               <div key={field.name}>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {field.label} {field.required && <span className="text-red-500">*</span>}
-                  {field.unit && <span className="text-gray-500 text-xs ml-1">({field.unit})</span>}
+                  {field.unit && (
+                    <span className="text-gray-500 text-xs ml-1">
+                      ({field.unit})
+                    </span>
+                  )}
                 </label>
+
                 {field.type === 'select' ? (
                   <select
                     value={formValues[field.name] || ''}
@@ -390,17 +395,18 @@ export function PerformanceRecordForm({
                   </select>
                 ) : (
                   <input
-                  type={field.type === 'number' ? 'number' : 'text'}
-                  inputMode={field.type === 'number' ? 'decimal' : 'text'}
-                  step={field.type === 'number' ? '0.01' : undefined}   // 小数1桁。必要なら 0.01 に
-                  min={field.type === 'number' ? 0 : undefined}
-                  value={formValues[field.name] || ''}
-                  onChange={(e) => handleValueChange(field.name, e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
-                  placeholder={field.label}
-                  style={{ fontSize: '16px' }}
-                />
-              )}
+                    // 🔽 デフォルトは数字入力に統一。text と明示されたものだけテキスト扱い
+                    type={field.type === 'text' ? 'text' : 'number'}
+                    inputMode={field.type === 'text' ? 'text' : 'decimal'}
+                    step={field.type === 'text' ? undefined : '0.01'}
+                    min={field.type === 'text' ? undefined : 0}
+                    value={formValues[field.name] || ''}
+                    onChange={(e) => handleValueChange(field.name, e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
+                    placeholder={field.label}
+                    style={{ fontSize: '16px' }}
+                  />
+                )}
               </div>
             ))}
           </div>
