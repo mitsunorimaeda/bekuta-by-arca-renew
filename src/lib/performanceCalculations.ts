@@ -1,6 +1,7 @@
 /**
  * -----------------------------------------------------
- * パフォーマンス測定の計算式・共通ユーティリティ（完全版）
+ * パフォーマンス測定の計算式・共通ユーティリティ（完全統合版）
+ * cmj_as（腕振りCMJ）対応済み
  * -----------------------------------------------------
  */
 
@@ -64,7 +65,7 @@ export const calculateVO2max = {
 
     if (vo2maxTable[count]) return vo2maxTable[count];
     if (count < 8) return 27.8;
-    if (count > 157) return 61.3 + 0.2 * (count - 157); // 線形外挿
+    if (count > 157) return 61.3 + 0.2 * (count - 157);
 
     const low = Math.floor(count);
     const high = Math.ceil(count);
@@ -93,22 +94,34 @@ export const calculate1RM = {
 };
 
 /**
- * primary_value 計算（種目名から判定）
+ * primary_value 計算（種目名 → 計算式）
  */
 export function calculatePrimaryValue(
   testName: string,
-  values: Record<string, any>,
-  userAge?: number
+  values: Record<string, any>
 ): number | null {
   try {
     switch (testName) {
-      case 'cmj':
-      case 'standing_long_jump':
-        return parseFloat(values.height || values.distance) || null;
 
+      /**
+       * ジャンプ系（跳躍高）
+       * cmj = CMJ（腕振りなし）
+       * cmj_as = CMJ（腕振りあり）★追加
+       */
+      case 'cmj':
+      case 'cmj_as':  // ←ここが重要！
+        return parseFloat(values.height) || null;
+
+      /**
+       * 立ち幅跳び
+       */
+      case 'standing_long_jump':
       case 'standing_five_jump':
         return parseFloat(values.distance) || null;
 
+      /**
+       * 反応系ジャンプ（RSI）
+       */
       case 'dj_rsi':
         if (values.height && values.contact_time) {
           return (parseFloat(values.height) / 100) /
@@ -123,6 +136,9 @@ export function calculatePrimaryValue(
         }
         return null;
 
+      /**
+       * 持久系
+       */
       case 'cooper_test':
         return calculateVO2max.cooperTest(parseFloat(values.distance));
 
@@ -141,6 +157,9 @@ export function calculatePrimaryValue(
       case 'shuttle_run_20m':
         return calculateVO2max.shuttleRun20m(parseFloat(values.count));
 
+      /**
+       * 筋力系：1RM
+       */
       case 'bench_press':
       case 'back_squat':
       case 'deadlift':
@@ -149,44 +168,31 @@ export function calculatePrimaryValue(
           parseFloat(values.reps)
         );
 
-          // ■ 新しく追加されたジャンプ系
-    case 'sqj':
-      return parseFloat(values.height) || null;
+      /**
+       * 新規追加種目
+       */
+      case 'sqj': // スクワットジャンプ
+        return parseFloat(values.height) || null;
 
-    // ■ 新しく追加された 1000m
-    case '1000m_run':
-      return (
-        parseFloat(values.time_minutes) * 60 +
-        parseFloat(values.time_seconds)
-      );
+      case '1000m_run':
+        return (
+          parseFloat(values.time_minutes) * 60 +
+          parseFloat(values.time_seconds)
+        );
 
-    // ■ 筋力（懸垂）
-    case 'pull_up':
-      return parseFloat(values.count) || null;
+      case 'pull_up':
+        return parseFloat(values.count) || null;
 
-    // ■ アジリティ系
+      case 'side_step_test':
+        return parseFloat(values.count) || null;
 
-    case 'side_step_test': // 反復横跳び
-      return parseFloat(values.count) || null;
-
-    case '050_r': // 0-5-0（右）
-      return parseFloat(values.time) || null;
-
-    case '050-l': // 0-5-0（左）
-      return parseFloat(values.time) || null;
-
-    case 'pro_agility_r': // プロアジリティ（右）
-      return parseFloat(values.time) || null;
-
-    case 'pro_agility_l': // プロアジリティ（左）
-      return parseFloat(values.time) || null;
-
-    case 'arrowhead_agility_r': // アローヘッド（右）
-      return parseFloat(values.time) || null;
-
-    case 'arrowhead_agility_l': // アローヘッド（左）
-      return parseFloat(values.time) || null;
-
+      case '050_r':
+      case '050-l':
+      case 'pro_agility_r':
+      case 'pro_agility_l':
+      case 'arrowhead_agility_r':
+      case 'arrowhead_agility_l':
+        return parseFloat(values.time) || null;
 
       default:
         return null;
@@ -198,7 +204,7 @@ export function calculatePrimaryValue(
 }
 
 /**
- * JSON values → primary_value 抽出（直接保存された値を使う）
+ * values から primary_value を抽出
  */
 export function extractPrimaryValue(values: Record<string, any>) {
   if (!values) return null;
@@ -215,7 +221,7 @@ export function extractPrimaryValue(values: Record<string, any>) {
 }
 
 /**
- * 最新の測定結果から primary_value を取得
+ * 最新の primary_value を取得
  */
 export function getLatestPrimaryValue(records: any[]) {
   if (!records?.length) return null;
@@ -232,6 +238,11 @@ export function getLatestPrimaryValue(records: any[]) {
  */
 export function getCalculatedUnit(testName: string): string {
   switch (testName) {
+
+    case 'cmj':
+    case 'cmj_as':  // ★ 追加
+      return 'cm';
+
     case 'cooper_test':
     case 'yoyo_ir1':
     case 'yoyo_ir2':
@@ -250,19 +261,25 @@ export function getCalculatedUnit(testName: string): string {
     case 'rj_rsi':
       return 'RSI';
 
-    case 'cmj':
-      return 'cm';
-
     default:
       return '';
   }
 }
 
 /**
- * 表示名
+ * 表示ラベル
  */
 export function getCalculatedValueLabel(testName: string): string {
   switch (testName) {
+
+    case 'cmj':
+    case 'cmj_as': // ★ 追加
+      return '跳躍高';
+
+    case 'standing_long_jump':
+    case 'standing_five_jump':
+      return '距離';
+
     case 'cooper_test':
     case 'yoyo_ir1':
     case 'yoyo_ir2':
@@ -280,13 +297,6 @@ export function getCalculatedValueLabel(testName: string): string {
     case 'dj_rsi':
     case 'rj_rsi':
       return 'RSI';
-
-    case 'standing_long_jump':
-    case 'standing_five_jump':
-      return '距離';
-
-    case 'cmj':
-      return '跳躍高';
 
     default:
       return '計算値';
