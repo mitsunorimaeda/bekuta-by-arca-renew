@@ -1,589 +1,413 @@
-// App.tsx
-import React, { Suspense, lazy } from 'react';
-import { useAuth } from './hooks/useAuth';
-import { useAlerts } from './hooks/useAlerts';
-import { useOrganizationRole } from './hooks/useOrganizationRole';
-import { useToast } from './hooks/useToast';
-import { TutorialProvider } from './contexts/TutorialContext';
-import { LoginForm } from './components/LoginForm';
-import { PasswordChangeForm } from './components/PasswordChangeForm';
-import { WelcomePage } from './components/WelcomePage';
-import { AthleteView } from './components/AthleteView';
-import { StaffView } from './components/StaffView';
-import { AdminView } from './components/AdminView';
-// 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
-// import { PasswordResetConfirm } from './components/PasswordResetConfirm';
+import React, { useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ChevronRight,
+  Activity,
+  Search,
+  Filter,
+  ArrowUpDown,
+  Circle
+} from 'lucide-react';
 
-// Lazy load heavy components for better performance
-const OrganizationAdminView = lazy(() =>
-  import('./components/OrganizationAdminView').then((m) => ({
-    default: m.OrganizationAdminView,
-  })),
-);
-import { AlertBadge } from './components/AlertBadge';
-const AlertPanel = lazy(() =>
-  import('./components/AlertPanel').then((m) => ({ default: m.AlertPanel })),
-);
+type AthleteListProps = {
+  athletes: any[];
+  onAthleteSelect: (athlete: any) => void;
+};
 
-import { Building2, Users, Menu, X, LogOut } from 'lucide-react';
-import { ConsentModal } from './components/ConsentModal';
-import { ToastContainer } from './components/ToastContainer';
-import { Footer } from './components/Footer';
-import { PrivacyPolicy } from './pages/PrivacyPolicy';
-import { TermsOfService } from './pages/TermsOfService';
-import { CommercialTransactions } from './pages/CommercialTransactions';
-import { HelpPage } from './pages/HelpPage';
-import { TeamAchievementNotification } from './components/TeamAchievementNotification';
+// ACWR からリスク判定（バックエンドに risk_level があればそれを優先）
+function getRiskInfo(athlete: any) {
+  const explicitLevel: string | null =
+    athlete.latest_risk_level ||
+    athlete.risk_level ||
+    null;
 
-// 🔽 Supabase クライアントを使う
-import { supabase } from './lib/supabase';
+  let acwr: number | null = null;
 
-type AppUserRole = 'athlete' | 'staff' | 'admin';
-
-function App() {
-  console.log('🎯 App component is rendering');
-
-  const {
-    user,
-    userProfile,
-    loading: authLoading,
-    requiresPasswordChange: authRequiresPasswordChange,
-    signIn,
-    signOut,
-    changePassword,
-    acceptTerms,
-  } = useAuth();
-
-  const effectiveRole: AppUserRole =
-    userProfile?.role === 'staff' ||
-    userProfile?.role === 'admin' ||
-    userProfile?.role === 'athlete'
-      ? userProfile.role
-      : 'athlete';
-
-  const [requiresPasswordChange, setRequiresPasswordChange] = React.useState(false);
-  const { isOrganizationAdmin, getOrganizationAdminRoles } = useOrganizationRole(userProfile?.id);
-
-  const {
-    alerts,
-    loading: alertsLoading,
-    unreadCount,
-    markAsRead,
-    dismissAlert,
-    markAllAsRead,
-    getAlertsByPriority,
-  } = useAlerts(userProfile?.id || '', effectiveRole);
-
-  const { toasts, removeToast } = useToast();
-
-  const [showAlertPanel, setShowAlertPanel] = React.useState(false);
-  const [showConsentModal, setShowConsentModal] = React.useState(false);
-  const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password'>('app');
-  const [welcomeToken, setWelcomeToken] = React.useState<string | null>(null);
-  const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
-  const [showMobileMenu, setShowMobileMenu] = React.useState(false);
-
-  // 🔹 ローカルでの「同意済み」フラグ
-  const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
-
-  // パスワード変更フラグを同期
-  React.useEffect(() => {
-    setRequiresPasswordChange(authRequiresPasswordChange);
-  }, [authRequiresPasswordChange]);
-
-  // URL（token / reset-password）チェック
-  React.useEffect(() => {
-    const url = new URL(window.location.href);
-    const urlParams = url.searchParams;
-    const token = urlParams.get('token');
-    if (token) {
-      setWelcomeToken(token);
-    }
-
-    // パスワードリセット用の専用パス
-    if (url.pathname.startsWith('/reset-password')) {
-      console.log('🔐 /reset-password route detected');
-      setCurrentPage('reset-password');
-    }
-  }, []);
-
-  // ✅ recovery リンク（ハッシュ）からセッションを貼る
-  React.useEffect(() => {
-    // 例: #access_token=xxx&refresh_token=yyy&type=recovery
-    const hash = window.location.hash;
-    if (!hash) return;
-
-    const params = new URLSearchParams(hash.replace('#', ''));
-    const type = params.get('type');
-
-    if (type !== 'recovery') return;
-
-    console.log('🔐 Recovery hash detected in URL');
-
-    const access_token = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
-
-    if (!access_token || !refresh_token) {
-      console.warn('⚠️ recovery URL に access_token または refresh_token がありません');
-      return;
-    }
-
-    (async () => {
-      const { data, error } = await supabase.auth.setSession({
-        access_token,
-        refresh_token,
-      });
-
-      if (error) {
-        console.error('❌ Failed to set recovery session:', error);
-        return;
-      }
-
-      if (data.session?.user) {
-        console.log('👤 Recovery session user set');
-
-        // パスワード変更フローに入る想定なのでフラグをオン
-        setRequiresPasswordChange(true);
-
-        // URL の # 以下を消す
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname + window.location.search,
-        );
-
-        // 念のため reset-password ページであることを保証
-        setCurrentPage('reset-password');
-      } else {
-        console.log('⚠️ No user found after setSession');
-      }
-    })();
-  }, []);
-
-  // ✅ DB の terms_accepted を見て同意モーダルを制御
-  React.useEffect(() => {
-    console.log('👀 Checking terms consent state:', {
-      hasUser: !!user,
-      hasProfile: !!userProfile,
-      requiresPasswordChange,
-      profileTermsAccepted: userProfile?.terms_accepted,
-      termsAcceptedLocally,
-    });
-
-    if (user && userProfile && !requiresPasswordChange) {
-      if (!userProfile.terms_accepted && !termsAcceptedLocally) {
-        setShowConsentModal(true);
-      } else {
-        setShowConsentModal(false);
-      }
-    } else {
-      setShowConsentModal(false);
-    }
-  }, [user, userProfile, requiresPasswordChange, termsAcceptedLocally]);
-
-  const handleLogout = async (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
-  const hasHighPriorityAlerts = getAlertsByPriority('high').length > 0;
-
-  console.log('🔐 App render - Auth states:');
-  console.log('  - authLoading:', authLoading);
-  console.log('  - user exists:', !!user);
-  console.log('  - userProfile exists:', !!userProfile);
-  console.log('  - requiresPasswordChange:', requiresPasswordChange);
-
-  // 🔄 認証ローディング中
-  if (authLoading) {
-    console.log('⏳ Showing auth loading spinner');
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
-      </div>
-    );
+  if (typeof athlete.latest_acwr === 'number') {
+    acwr = athlete.latest_acwr;
+  } else if (typeof athlete.acwr === 'number') {
+    acwr = athlete.acwr;
+  } else if (typeof athlete.latestACWR === 'number') {
+    acwr = athlete.latestACWR;
   }
 
-  // 🔐 パスワードリセット専用ページ
-  if (currentPage === 'reset-password') {
-    console.log('🔐 Showing reset password flow');
+  const deriveFromACWR = (value: number | null): string => {
+    if (value == null) return 'unknown';
+    if (value >= 1.5) return 'high';
+    if (value >= 1.2) return 'caution';
+    if (value >= 0.8) return 'good';
+    return 'low';
+  };
 
-    // まだセッションが立っていない間はローディング表示
-    if (!user || !userProfile) {
-      return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center space-y-3">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              パスワードリセットリンクを確認しています…
-            </p>
-          </div>
-        </div>
+  const level = explicitLevel || deriveFromACWR(acwr);
+  const riskWeight =
+    level === 'high'
+      ? 3
+      : level === 'caution'
+      ? 2
+      : level === 'good'
+      ? 1
+      : level === 'low'
+      ? 0
+      : -1;
+
+  const label =
+    level === 'high'
+      ? '高リスク'
+      : level === 'caution'
+      ? '要注意'
+      : level === 'good'
+      ? '良好'
+      : level === 'low'
+      ? '低負荷'
+      : '不明';
+
+  const badgeClass =
+    level === 'high'
+      ? 'bg-red-50 text-red-700 border border-red-200'
+      : level === 'caution'
+      ? 'bg-orange-50 text-orange-700 border border-orange-200'
+      : level === 'good'
+      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+      : level === 'low'
+      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+      : 'bg-gray-50 text-gray-600 border border-gray-200';
+
+  const dotClass =
+    level === 'high'
+      ? 'text-red-500'
+      : level === 'caution'
+      ? 'text-orange-500'
+      : level === 'good'
+      ? 'text-emerald-500'
+      : level === 'low'
+      ? 'text-blue-500'
+      : 'text-gray-400';
+
+  return {
+    acwr,
+    level,
+    label,
+    riskWeight,
+    badgeClass,
+    dotClass
+  };
+}
+
+// 28日間の練習日数っぽいものを拾う（カラム名は色々に対応）
+function getActivityInfo(athlete: any) {
+  const days =
+    athlete.training_days_28d ??
+    athlete.training_days_last_28 ??
+    athlete.trainingDays28d ??
+    athlete.trainingDays ??
+    0;
+
+  const sessions =
+    athlete.training_sessions_28d ??
+    athlete.training_sessions_last_28 ??
+    athlete.trainingSessions28d ??
+    athlete.trainingSessions ??
+    days ?? 0;
+
+  const lastDate =
+    athlete.last_training_date ||
+    athlete.lastTrainingDate ||
+    athlete.latest_training_date ||
+    null;
+
+  return { days, sessions, lastDate };
+}
+
+export function AthleteList({ athletes, onAthleteSelect }: AthleteListProps) {
+  const [query, setQuery] = useState('');
+  const [riskFilter, setRiskFilter] = useState<'all' | 'high' | 'caution' | 'no-data'>('all');
+  const [sortKey, setSortKey] = useState<'risk' | 'name' | 'acwr' | 'activity'>('risk');
+
+  const enhancedAthletes = useMemo(() => {
+    return athletes.map((athlete) => {
+      const risk = getRiskInfo(athlete);
+      const activity = getActivityInfo(athlete);
+
+      return {
+        ...athlete,
+        _metrics: {
+          risk,
+          activity
+        }
+      };
+    });
+  }, [athletes]);
+
+  const filteredAndSorted = useMemo(() => {
+    let list = [...enhancedAthletes];
+
+    // 検索（名前・メール）
+    if (query.trim() !== '') {
+      const q = query.trim().toLowerCase();
+      list = list.filter((a) => {
+        const name = (a.name || '').toLowerCase();
+        const email = (a.email || '').toLowerCase();
+        return name.includes(q) || email.includes(q);
+      });
+    }
+
+    // リスクフィルタ
+    if (riskFilter === 'high') {
+      list = list.filter((a) => a._metrics.risk.level === 'high');
+    } else if (riskFilter === 'caution') {
+      list = list.filter((a) => a._metrics.risk.level === 'caution');
+    } else if (riskFilter === 'no-data') {
+      list = list.filter(
+        (a) =>
+          a._metrics.risk.level === 'unknown' &&
+          (a._metrics.risk.acwr == null || Number.isNaN(a._metrics.risk.acwr))
       );
     }
 
-    // セッションがある → 新しいパスワードを入力してもらう
-    return (
-      <PasswordChangeForm
-        onPasswordChange={async (password: string) => {
-          try {
-            await changePassword(password);
-            setRequiresPasswordChange(false);
-            setCurrentPage('app');
-            window.history.replaceState({}, '', '/');
-            console.log('✅ Password changed successfully (from recovery link)');
-          } catch (error) {
-            console.error('❌ Password change failed:', error);
-            throw error;
-          }
-        }}
-        userName={userProfile.name}
-      />
-    );
-  }
+    // ソート
+    list.sort((a, b) => {
+      const ma = a._metrics;
+      const mb = b._metrics;
 
-  // Welcome トークンがある場合（初回セットアップフロー）
-  if (welcomeToken) {
-    return (
-      <WelcomePage
-        token={welcomeToken}
-        onContinue={() => {
-          setWelcomeToken(null);
-          window.history.replaceState({}, '', '/');
-        }}
-      />
-    );
-  }
+      if (sortKey === 'name') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
 
-  // 未ログイン or userProfile がまだ取れていない場合
-  if (!user || !userProfile) {
-    return (
-      <LoginForm
-        onLogin={async (email, password) => {
-          await signIn(email, password);
-        }}
-      />
-    );
-  }
+      if (sortKey === 'acwr') {
+        const va = ma.risk.acwr ?? -1;
+        const vb = mb.risk.acwr ?? -1;
+        return vb - va; // 高い順
+      }
 
-  // パスワード変更が必要な場合（通常ログイン後の強制変更など）
-  if (requiresPasswordChange) {
-    console.log('🔑 Showing password change form (authRequiresPasswordChange)');
-    return (
-      <PasswordChangeForm
-        onPasswordChange={async (password: string) => {
-          try {
-            await changePassword(password);
-            setRequiresPasswordChange(false);
-            window.history.replaceState({}, '', '/');
-            console.log('✅ Password changed successfully');
-          } catch (error) {
-            console.error('❌ Password change failed:', error);
-            throw error;
-          }
-        }}
-        userName={userProfile.name}
-      />
-    );
-  }
+      if (sortKey === 'activity') {
+        const va = ma.activity.days ?? 0;
+        const vb = mb.activity.days ?? 0;
+        return vb - va; // 多い順
+      }
 
-  // ✅ 利用規約モーダル
-  if (showConsentModal) {
-    return (
-      <ConsentModal
-        onAccept={async () => {
-          try {
-            await acceptTerms();
-            setTermsAcceptedLocally(true);
-            setShowConsentModal(false);
-          } catch (error) {
-            console.error('❌ acceptTerms failed:', error);
-          }
-        }}
-        onDecline={async () => {
-          await signOut();
-        }}
-      />
-    );
-  }
+      // sortKey === 'risk'
+      const va = ma.risk.riskWeight;
+      const vb = mb.risk.riskWeight;
+      return vb - va;
+    });
 
-  // 法的ページ
-  if (currentPage === 'privacy') {
-    return <PrivacyPolicy onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'terms') {
-    return <TermsOfService onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'commercial') {
-    return <CommercialTransactions onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'help') {
-    return <HelpPage user={userProfile} onBack={() => setCurrentPage('app')} />;
-  }
-
-  console.log('✅ Showing main application');
+    return list;
+  }, [enhancedAthletes, query, riskFilter, sortKey]);
 
   return (
-    <TutorialProvider userId={userProfile.id} role={effectiveRole}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-        {/* Navigation Bar - Hidden for athletes as they have their own header */}
-        {effectiveRole !== 'athlete' && (
-          <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 relative z-20 transition-colors">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    console.log('🏠 Bekuta logo clicked');
-
-                    // ① アプリの内部状態を「ホーム」に寄せる
-                    setCurrentPage('app');       // 法的ページ等から戻る
-                    setDashboardMode('staff');   // コーチ／組織管理のトグルをコーチ側に戻す
-                    setShowMobileMenu(false);    // モバイルメニューを閉じる
-                    setShowAlertPanel(false);    // アラートパネルを閉じる
-
-                    // ② window.location.reload() は一旦やめる
-                    //    iOS PWA での挙動も不安定なので、まずは状態リセットだけで様子を見る
-                  }}
-                  className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  <span
-                    className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
-                    style={{
-                      fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                      letterSpacing: '-0.02em',
-                    }}
-                  >
-                    Bekuta
-                  </span>
-                  <span
-                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
-                    style={{ letterSpacing: '0.05em' }}
-                  >
-                    by ARCA
-                  </span>
-                </button>
-              </div>
-                <div className="flex items-center space-x-3">
-                  {/* デスクトップ: ユーザー名 + アラート + ログアウト */}
-                  <span className="text-sm text-gray-600 dark:text-gray-300 hidden md:block transition-colors">
-                    {userProfile.name}さん
-                  </span>
-
-                  {!alertsLoading && (
-                    <AlertBadge
-                      count={unreadCount}
-                      hasHighPriority={hasHighPriorityAlerts}
-                      onClick={() => setShowAlertPanel(true)}
-                      className="touch-target"
-                    />
-                  )}
-
-                  {/* デスクトップ: ログアウトボタン */}
-                  <button
-                    onClick={handleLogout}
-                    className="hidden md:flex bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600
-                      text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg
-                      border border-gray-300 dark:border-gray-600
-                      transition-colors items-center space-x-2 text-sm"
-                    type="button"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>ログアウト</span>
-                  </button>
-
-                  {/* モバイル: ハンバーガーメニュー */}
-                  <button
-                    onClick={() => setShowMobileMenu(!showMobileMenu)}
-                    className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    type="button"
-                  >
-                    {showMobileMenu ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </nav>
-        )}
-
-        {/* Mobile Menu - Only for non-athletes */}
-        {effectiveRole !== 'athlete' && showMobileMenu && (
-          <div className="md:hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg transition-colors">
-            <div className="px-4 py-3 space-y-3">
-              <div className="flex items-center space-x-3 pb-3 border-b border-gray-200 dark:border-gray-700">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 dark:text-blue-400 font-semibold text-sm">
-                    {userProfile.name.charAt(0)}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text:white">{userProfile.name}さん</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{userProfile.email}</p>
-                </div>
-              </div>
-              <button
-                onClick={(e) => {
-                  setShowMobileMenu(false);
-                  handleLogout(e);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                type="button"
-              >
-                <LogOut className="w-5 h-5" />
-                <span>ログアウト</span>
-              </button>
-            </div>
+    <div className="space-y-4">
+      {/* コントロールバー */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {/* 検索 */}
+        <div className="flex-1 min-w-0">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="選手名やメールアドレスで検索"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
           </div>
-        )}
-
-        {/* Main Content */}
-        <div className="relative">
-          {effectiveRole === 'athlete' ? (
-            <AthleteView
-              user={userProfile}
-              alerts={alerts}
-              onLogout={signOut}
-              onHome={() => {
-                console.log('🏠 Athlete Bekuta home tapped');
-                // 念のため「app」ページに戻す（保険）
-                setCurrentPage('app');
-
-                // もし何かモーダル開いていたら閉じたい場合はここで制御もOK
-                setShowAlertPanel(false);
-                setShowMobileMenu(false);
-
-                // UI状態も含めて「ホームに戻る」感を出したいならリロードもアリ
-                setTimeout(() => {
-                  window.location.reload();
-                }, 50);
-              }}
-              onNavigateToPrivacy={() => setCurrentPage('privacy')}
-              onNavigateToTerms={() => setCurrentPage('terms')}
-              onNavigateToCommercial={() => setCurrentPage('commercial')}
-              onNavigateToHelp={() => setCurrentPage('help')}
-            />
-          ) : effectiveRole === 'admin' ? (
-            <AdminView
-              user={userProfile}
-              alerts={alerts}
-              onNavigateToPrivacy={() => setCurrentPage('privacy')}
-              onNavigateToTerms={() => setCurrentPage('terms')}
-              onNavigateToCommercial={() => setCurrentPage('commercial')}
-              onNavigateToHelp={() => setCurrentPage('help')}
-            />
-          ) : (
-            // Staff or Organization Admin
-            <>
-              {/* Dashboard Mode Switcher for Staff who are also Org Admins */}
-              {isOrganizationAdmin() && (
-                <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 transition-colors sticky top-0 z-30">
-                  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-                    <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 max-w-md">
-                      <button
-                        onClick={() => setDashboardMode('staff')}
-                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                          dashboardMode === 'staff'
-                            ? 'bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm'
-                            : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        <span>コーチ</span>
-                      </button>
-                      <button
-                        onClick={() => setDashboardMode('org-admin')}
-                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                          dashboardMode === 'org-admin'
-                            ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                            : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <Building2 className="w-4 h-4" />
-                        <span>組織管理</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {dashboardMode === 'staff' ? (
-                <StaffView
-                  user={userProfile}
-                  alerts={alerts}
-                  onNavigateToPrivacy={() => setCurrentPage('privacy')}
-                  onNavigateToTerms={() => setCurrentPage('terms')}
-                  onNavigateToCommercial={() => setCurrentPage('commercial')}
-                  onNavigateToHelp={() => setCurrentPage('help')}
-                />
-              ) : (
-                getOrganizationAdminRoles().length > 0 && (
-                  <Suspense
-                    fallback={
-                      <div className="flex items-center justify-center min-h-screen">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                      </div>
-                    }
-                  >
-                    <OrganizationAdminView
-                      user={userProfile}
-                      alerts={alerts}
-                      organizationId={getOrganizationAdminRoles()[0].organizationId}
-                      organizationName={getOrganizationAdminRoles()[0].organizationName}
-                      onNavigateToPrivacy={() => setCurrentPage('privacy')}
-                      onNavigateToTerms={() => setCurrentPage('terms')}
-                      onNavigateToCommercial={() => setCurrentPage('commercial')}
-                      onNavigateToHelp={() => setCurrentPage('help')}
-                    />
-                  </Suspense>
-                )
-              )}
-            </>
-          )}
         </div>
 
-        {/* Alert Panel */}
-        {showAlertPanel && !alertsLoading && (
-          <Suspense
-            fallback={
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
-              </div>
-            }
-          >
-            <AlertPanel
-              alerts={alerts}
-              onMarkAsRead={markAsRead}
-              onDismiss={dismissAlert}
-              onMarkAllAsRead={markAllAsRead}
-              onClose={() => setShowAlertPanel(false)}
-              userRole={effectiveRole}
-            />
-          </Suspense>
-        )}
+        {/* フィルタ & ソート */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden sm:flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-full px-2 py-1">
+            <Filter className="w-3 h-3 text-gray-400" />
+            <button
+              className={`px-2 py-1 text-xs rounded-full ${
+                riskFilter === 'all'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              onClick={() => setRiskFilter('all')}
+            >
+              すべて
+            </button>
+            <button
+              className={`px-2 py-1 text-xs rounded-full ${
+                riskFilter === 'high'
+                  ? 'bg-red-100 text-red-700'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              onClick={() => setRiskFilter('high')}
+            >
+              高リスク
+            </button>
+            <button
+              className={`px-2 py-1 text-xs rounded-full ${
+                riskFilter === 'caution'
+                  ? 'bg-orange-100 text-orange-700'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              onClick={() => setRiskFilter('caution')}
+            >
+              要注意
+            </button>
+            <button
+              className={`px-2 py-1 text-xs rounded-full ${
+                riskFilter === 'no-data'
+                  ? 'bg-gray-200 text-gray-700'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              onClick={() => setRiskFilter('no-data')}
+            >
+              データ未入力
+            </button>
+          </div>
 
-        {/* Team Achievement Notification */}
-        {userProfile && <TeamAchievementNotification userId={userProfile.id} />}
+          {/* モバイル向けフィルタ簡略版 */}
+          <div className="sm:hidden">
+            <select
+              value={riskFilter}
+              onChange={(e) => setRiskFilter(e.target.value as any)}
+              className="text-xs px-2 py-1.5 border border-gray-300 rounded-lg bg-white"
+            >
+              <option value="all">全員</option>
+              <option value="high">高リスク</option>
+              <option value="caution">要注意</option>
+              <option value="no-data">データ未入力</option>
+            </select>
+          </div>
 
-        {/* Toast Notifications */}
-        <ToastContainer toasts={toasts} onClose={removeToast} />
-
-        {/* Footer */}
-        <Footer
-          onNavigateToPrivacy={() => setCurrentPage('privacy')}
-          onNavigateToTerms={() => setCurrentPage('terms')}
-          onNavigateToCommercial={() => setCurrentPage('commercial')}
-        />
+          {/* ソート */}
+          <div>
+            <div className="inline-flex items-center border border-gray-300 rounded-lg px-2 py-1 bg-white">
+              <ArrowUpDown className="w-3 h-3 text-gray-400 mr-1" />
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as any)}
+                className="text-xs bg-transparent border-none focus:outline-none focus:ring-0"
+              >
+                <option value="risk">リスク順</option>
+                <option value="acwr">ACWR順</option>
+                <option value="activity">練習日数順</option>
+                <option value="name">名前順</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
-    </TutorialProvider>
+
+      {/* リスト本体 */}
+      <div className="space-y-3">
+        {filteredAndSorted.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 text-sm border border-dashed border-gray-300 rounded-xl">
+            条件に合致する選手がいません。フィルタや検索条件を見直してください。
+          </div>
+        ) : (
+          filteredAndSorted.map((athlete) => {
+            const { risk, activity } = athlete._metrics;
+            const hasACWR = risk.acwr != null && !Number.isNaN(risk.acwr);
+
+            return (
+              <button
+                key={athlete.id}
+                onClick={() => onAthleteSelect(athlete)}
+                className="w-full text-left bg-white rounded-xl border border-gray-100 hover:border-green-300 hover:shadow-md transition-all px-4 py-3 sm:px-5 sm:py-4"
+              >
+                {/* 上段：名前・メール・詳細ボタン */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm sm:text-base font-semibold text-gray-900 truncate">
+                      {athlete.name || '名前未設定'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                      {athlete.email || 'メール未設定'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {risk.level === 'high' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-xs text-red-700 border border-red-200">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        高リスク
+                      </span>
+                    )}
+                    {risk.level === 'caution' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-50 text-xs text-orange-700 border border-orange-200">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        要注意
+                      </span>
+                    )}
+                    <span className="inline-flex items-center text-xs text-blue-600 font-medium">
+                      詳細
+                      <ChevronRight className="w-3 h-3 ml-0.5" />
+                    </span>
+                  </div>
+                </div>
+
+                {/* 中段：ACWR & リスク */}
+                <div className="mt-3 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-50">
+                        <Activity className="w-4 h-4 text-blue-500" />
+                      </span>
+                      <div>
+                        <p className="text-[11px] text-gray-500 uppercase tracking-wide">
+                          ACWR
+                        </p>
+                        <p className="text-lg font-semibold text-gray-900">
+                          {hasACWR ? risk.acwr.toFixed(2) : '-'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[11px] text-gray-500 mb-1">リスク評価</p>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium ${risk.badgeClass}`}
+                      >
+                        <Circle className={`w-2 h-2 mr-1.5 ${risk.dotClass}`} />
+                        {risk.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* モバイルでは下段に回るので PC時だけ表示 */}
+                  <div className="hidden sm:flex flex-col items-end text-xs">
+                    <p className="text-gray-500 mb-1">直近28日間の練習</p>
+                    <p className="text-gray-900 font-semibold">
+                      {activity.days ?? 0} 日
+                      <span className="text-gray-400 text-[11px] ml-1">
+                        / 28日
+                      </span>
+                    </p>
+                    {activity.lastDate && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        最終記録：
+                        {new Date(activity.lastDate).toLocaleDateString('ja-JP')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 下段：モバイル用の練習情報 */}
+                <div className="mt-3 sm:hidden border-t border-gray-100 pt-2 flex items-center justify-between text-xs text-gray-600">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="w-3 h-3 text-gray-400" />
+                    <span>
+                      28日間の練習日数：
+                      <span className="font-semibold text-gray-900">
+                        {activity.days ?? 0}日
+                      </span>
+                    </span>
+                  </div>
+                  {activity.lastDate && (
+                    <span className="text-[11px] text-gray-400">
+                      最終：
+                      {new Date(activity.lastDate).toLocaleDateString('ja-JP')}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }
-
-export default App;
