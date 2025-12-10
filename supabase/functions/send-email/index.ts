@@ -8,22 +8,60 @@ const IS_DEV =
   Deno.env.get('ENVIRONMENT') === 'development' ||
   Deno.env.get('NODE_ENV') === 'development';
 
-function generateAlertEmailHTML(data: any): string {
-  const priorityColors = {
-    high: { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' },
-    medium: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' },
-    low: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' }
-  };
-  const colors = priorityColors[data.priority as 'high' | 'medium' | 'low'];
-  const priorityLabel = { high: '高', medium: '中', low: '低' }[data.priority as 'high' | 'medium' | 'low'];
+  function generateAlertEmailHTML(data: any): string {
+    const priorityColors = {
+      high: { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' },
+      medium: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' },
+      low: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' }
+    };
+    const colors = priorityColors[data.priority as 'high' | 'medium' | 'low'];
+    const priorityLabel = { high: '高', medium: '中', low: '低' }[data.priority as 'high' | 'medium' | 'low'];
+  
+    // 🔽 acwrValue を安全に数値化する
+    const rawAcwr = data.acwrValue;
+    const acwrNumber =
+      typeof rawAcwr === 'number'
+        ? rawAcwr
+        : typeof rawAcwr === 'string'
+          ? Number(rawAcwr)
+          : null;
+    const hasValidAcwr = acwrNumber !== null && !Number.isNaN(acwrNumber);
+  
+    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ACWR アラート通知</title></head><body style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6;"><div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);"><div style="background: ${colors.border}; color: white; padding: 30px; text-align: center;"><h1 style="margin: 0; font-size: 24px;">⚠️ ACWR アラート通知</h1><p style="margin: 10px 0 0 0; opacity: 0.9;">優先度: ${priorityLabel}</p></div><div style="padding: 30px;"><p style="font-size: 18px; color: #1f2937; margin: 0 0 20px 0;">こんにちは、${data.userName}さん</p><div style="background: ${colors.bg}; border-left: 4px solid ${colors.border}; padding: 20px; margin: 20px 0; border-radius: 4px;"><h2 style="margin: 0 0 10px 0; color: ${colors.text}; font-size: 18px;">${data.alertTitle}</h2><p style="margin: 0; color: #4b5563; line-height: 1.6;">${data.alertMessage}</p></div>${
+      hasValidAcwr
+        ? `<div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0 0 5px 0; color: #6b7280; font-size: 14px;">現在のACWR値</p><p style="margin: 0; font-size: 32px; font-weight: bold; color: ${colors.text};">${acwrNumber!.toFixed(2)}</p><p style="margin: 10px 0 0 0; color: #6b7280; font-size: 14px;">推奨範囲: ${data.recommendedRange}</p></div>`
+        : ''
+    }<a href="${data.appUrl}" style="display: inline-block; background: ${colors.border}; color: white; text-decoration: none; padding: 12px 30px; border-radius: 8px; margin: 20px 0; font-weight: 600;">詳細を確認</a></div><div style="padding: 20px; text-align: center; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;"><p style="margin: 0;">© ${new Date().getFullYear()} Bekuta</p></div></div></body></html>`;
+  }
 
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ACWR アラート通知</title></head><body style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6;"><div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);"><div style="background: ${colors.border}; color: white; padding: 30px; text-align: center;"><h1 style="margin: 0; font-size: 24px;">⚠️ ACWR アラート通知</h1><p style="margin: 10px 0 0 0; opacity: 0.9;">優先度: ${priorityLabel}</p></div><div style="padding: 30px;"><p style="font-size: 18px; color: #1f2937; margin: 0 0 20px 0;">こんにちは、${data.userName}さん</p><div style="background: ${colors.bg}; border-left: 4px solid ${colors.border}; padding: 20px; margin: 20px 0; border-radius: 4px;"><h2 style="margin: 0 0 10px 0; color: ${colors.text}; font-size: 18px;">${data.alertTitle}</h2><p style="margin: 0; color: #4b5563; line-height: 1.6;">${data.alertMessage}</p></div>${data.acwrValue ? `<div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0 0 5px 0; color: #6b7280; font-size: 14px;">現在のACWR値</p><p style="margin: 0; font-size: 32px; font-weight: bold; color: ${colors.text};">${data.acwrValue.toFixed(2)}</p><p style="margin: 10px 0 0 0; color: #6b7280; font-size: 14px;">推奨範囲: ${data.recommendedRange}</p></div>` : ''}<a href="${data.appUrl}" style="display: inline-block; background: ${colors.border}; color: white; text-decoration: none; padding: 12px 30px; border-radius: 8px; margin: 20px 0; font-weight: 600;">詳細を確認</a></div><div style="padding: 20px; text-align: center; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;"><p style="margin: 0;">© ${new Date().getFullYear()} Bekuta</p></div></div></body></html>`;
-}
-
-function generateAlertEmailText(data: any): string {
-  const priorityLabel = { high: '高', medium: '中', low: '低' }[data.priority as 'high' | 'medium' | 'low'];
-  return `ACWR アラート通知\n\nこんにちは、${data.userName}さん\n\n優先度: ${priorityLabel}\n\n━━━━━━━━━━━━━━━━━━━━━━\n${data.alertTitle}\n━━━━━━━━━━━━━━━━━━━━━━\n\n${data.alertMessage}\n\n${data.acwrValue ? `現在のACWR値: ${data.acwrValue.toFixed(2)}\n推奨範囲: ${data.recommendedRange}\n` : ''}\n詳細を確認: ${data.appUrl}\n\n━━━━━━━━━━━━━━━━━━━━━━\n© ${new Date().getFullYear()} Bekuta`;
-}
+  function generateAlertEmailText(data: any): string {
+    const priorityLabel = { high: '高', medium: '中', low: '低' }[data.priority as 'high' | 'medium' | 'low'];
+  
+    const rawAcwr = data.acwrValue;
+    const acwrNumber =
+      typeof rawAcwr === 'number'
+        ? rawAcwr
+        : typeof rawAcwr === 'string'
+          ? Number(rawAcwr)
+          : null;
+    const hasValidAcwr = acwrNumber !== null && !Number.isNaN(acwrNumber);
+  
+    const acwrBlock = hasValidAcwr
+      ? `現在のACWR値: ${acwrNumber!.toFixed(2)}\n推奨範囲: ${data.recommendedRange}\n`
+      : '';
+  
+    return `ACWR アラート通知\n
+  こんにちは、${data.userName}さん\n
+  優先度: ${priorityLabel}\n
+  ━━━━━━━━━━━━━━━━━━━━━━
+  ${data.alertTitle}
+  ━━━━━━━━━━━━━━━━━━━━━━\n
+  ${data.alertMessage}\n
+  ${acwrBlock}
+  詳細を確認: ${data.appUrl}\n
+  ━━━━━━━━━━━━━━━━━━━━━━
+  © ${new Date().getFullYear()} Bekuta`;
+  }
 
 function generatePasswordResetEmailHTML(data: any): string {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>パスワードリセット通知</title></head><body style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6;"><div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);"><div style="background: #3b82f6; color: white; padding: 30px; text-align: center;"><h1 style="margin: 0; font-size: 24px;">🔑 パスワードリセット</h1></div><div style="padding: 30px;"><p style="font-size: 18px; color: #1f2937; margin: 0 0 20px 0;">こんにちは、${data.userName}さん</p><p style="color: #4b5563; line-height: 1.6;">管理者によってパスワードがリセットされました。以下の一時パスワードでログインし、新しいパスワードに変更してください。</p><div style="background: #fef3c7; border: 2px dashed #f59e0b; padding: 20px; margin: 20px 0; border-radius: 8px; text-align: center;"><p style="margin: 0 0 10px 0; color: #92400e; font-weight: 600;">一時パスワード</p><p style="margin: 0; font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; color: #d97706; letter-spacing: 2px;">${data.temporaryPassword}</p><p style="margin: 10px 0 0 0; color: #92400e; font-size: 12px;">⚠️ このパスワードは初回ログイン後に変更してください</p></div><a href="${data.appUrl}" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 30px; border-radius: 8px; margin: 20px 0; font-weight: 600;">ログインする</a></div><div style="padding: 20px; text-align: center; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;"><p style="margin: 0;">© ${new Date().getFullYear()} Bekuta</p></div></div></body></html>`;
