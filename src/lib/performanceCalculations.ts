@@ -194,6 +194,18 @@ export function calculatePrimaryValue(
       case 'arrowhead_l':
         return parseFloat(values.time) || null;
 
+      // -------------------------------
+      // Sprint 系（タイムを primary_value に使用）
+      // -------------------------------
+      case 'sprint_5m':
+      case 'sprint_10m':
+      case 'sprint_15m':
+      case 'sprint_20m':
+      case 'sprint_30m':
+      case 'sprint_50m':
+        return parseFloat(values.time) || null;
+
+
       default:
         return null;
     }
@@ -269,6 +281,15 @@ export function getCalculatedUnit(testName: string): string {
     case 'dj_rsi':
     case 'rj_rsi':
       return 'RSI';
+
+    case 'sprint_5m':
+    case 'sprint_10m':
+    case 'sprint_15m':
+    case 'sprint_20m':
+    case 'sprint_30m':
+    case 'sprint_50m':
+      return '秒';
+    
 
     default:
       return '';
