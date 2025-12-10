@@ -168,6 +168,15 @@ export function calculatePrimaryValue(
           parseFloat(values.reps)
         );
 
+      case 'bulgarian_squat_r':
+      case 'bulgarian_squat_l':
+        return calculate1RM.epley(
+          parseFloat(values.weight),
+          parseFloat(values.reps)
+         );
+  
+          
+
       /**
        * 新規追加種目
        */
@@ -276,6 +285,8 @@ export function getCalculatedUnit(testName: string): string {
     case 'bench_press':
     case 'back_squat':
     case 'deadlift':
+    case 'bulgarian_squat_r':
+    case 'bulgarian_squat_l':
       return 'kg';
 
     case 'dj_rsi':
@@ -330,6 +341,8 @@ export function getCalculatedValueLabel(testName: string): string {
     case 'bench_press':
     case 'back_squat':
     case 'deadlift':
+    case 'bulgarian_squat_r':
+    case 'bulgarian_squat_l':
       return '推定1RM';
 
     case 'dj_rsi':
