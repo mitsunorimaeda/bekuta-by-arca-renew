@@ -82,8 +82,17 @@ export function PerformanceRecordForm({
       setFormValues(initialValues);
 
       // 筋力測定種目の場合、最新体重を取得
-      const isStrengthTest = ['bench_press', 'back_squat', 'deadlift'].includes(selectedTestType.name);
-      if (isStrengthTest) {
+      const isStrengthTest = 
+            selectedTestType &&
+                    [
+                      'bench_press', 
+                      'back_squat', 
+                      'deadlift',
+                      'bulgarian_squat_r',
+                      'bulgarian_squat_l'
+                    ].includes(selectedTestType.name);
+     
+                    if (isStrengthTest) {
         const weight = getLatestWeight();
         console.log('🏋️ Strength test selected, latest weight:', weight);
         setLatestWeight(weight);
