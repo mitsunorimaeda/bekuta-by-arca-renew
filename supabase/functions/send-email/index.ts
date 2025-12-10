@@ -1,7 +1,12 @@
+// send-email (Supabase Edge Function)
+
 // 先頭付近
 declare const Deno: any;
-// 👇 ここを変更
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const IS_DEV =
+  Deno.env.get('ENVIRONMENT') === 'development' ||
+  Deno.env.get('NODE_ENV') === 'development';
 
 function generateAlertEmailHTML(data: any): string {
   const priorityColors = {
@@ -11,6 +16,7 @@ function generateAlertEmailHTML(data: any): string {
   };
   const colors = priorityColors[data.priority as 'high' | 'medium' | 'low'];
   const priorityLabel = { high: '高', medium: '中', low: '低' }[data.priority as 'high' | 'medium' | 'low'];
+
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ACWR アラート通知</title></head><body style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f3f4f6;"><div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);"><div style="background: ${colors.border}; color: white; padding: 30px; text-align: center;"><h1 style="margin: 0; font-size: 24px;">⚠️ ACWR アラート通知</h1><p style="margin: 10px 0 0 0; opacity: 0.9;">優先度: ${priorityLabel}</p></div><div style="padding: 30px;"><p style="font-size: 18px; color: #1f2937; margin: 0 0 20px 0;">こんにちは、${data.userName}さん</p><div style="background: ${colors.bg}; border-left: 4px solid ${colors.border}; padding: 20px; margin: 20px 0; border-radius: 4px;"><h2 style="margin: 0 0 10px 0; color: ${colors.text}; font-size: 18px;">${data.alertTitle}</h2><p style="margin: 0; color: #4b5563; line-height: 1.6;">${data.alertMessage}</p></div>${data.acwrValue ? `<div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0 0 5px 0; color: #6b7280; font-size: 14px;">現在のACWR値</p><p style="margin: 0; font-size: 32px; font-weight: bold; color: ${colors.text};">${data.acwrValue.toFixed(2)}</p><p style="margin: 10px 0 0 0; color: #6b7280; font-size: 14px;">推奨範囲: ${data.recommendedRange}</p></div>` : ''}<a href="${data.appUrl}" style="display: inline-block; background: ${colors.border}; color: white; text-decoration: none; padding: 12px 30px; border-radius: 8px; margin: 20px 0; font-weight: 600;">詳細を確認</a></div><div style="padding: 20px; text-align: center; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;"><p style="margin: 0;">© ${new Date().getFullYear()} Bekuta</p></div></div></body></html>`;
 }
 
@@ -79,9 +85,9 @@ Deno.serve(async (req) => {
     if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
-        { 
-          status: 405, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -90,9 +96,9 @@ Deno.serve(async (req) => {
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: 'Missing authorization header' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -104,13 +110,13 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-    
+
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Invalid authentication' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -131,6 +137,7 @@ Deno.serve(async (req) => {
     let emailSubject: string;
     let emailHtml: string;
     let emailText: string;
+    let alertCategory: string | null = null;
 
     if (isDirectEmail(requestData)) {
       emailSubject = requestData.subject;
@@ -144,6 +151,7 @@ Deno.serve(async (req) => {
           emailSubject = `⚠️ ACWR アラート通知 - ${data.alertTitle || 'トレーニング負荷警告'}`;
           emailHtml = generateAlertEmailHTML(data);
           emailText = generateAlertEmailText(data);
+          alertCategory = data.type || null;
           break;
 
         case 'password_reset':
@@ -175,28 +183,51 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log('='.repeat(80));
-    console.log('📧 EMAIL READY TO SEND');
-    console.log('='.repeat(80));
-    console.log('To:', to);
-    console.log('Subject:', emailSubject);
-    console.log('Timestamp:', new Date().toISOString());
-    console.log('-'.repeat(80));
-    console.log('HTML Preview:');
-    console.log(emailHtml.substring(0, 500) + '...');
-    console.log('-'.repeat(80));
-    console.log('Text Content:');
-    console.log(emailText);
-    console.log('='.repeat(80));
+    if (IS_DEV) {
+      console.log('='.repeat(80));
+      console.log('📧 EMAIL READY TO SEND');
+      console.log('='.repeat(80));
+      console.log('To:', to);
+      console.log('Subject:', emailSubject);
+      console.log('Timestamp:', new Date().toISOString());
+      console.log('-'.repeat(80));
+      console.log('HTML Preview:');
+      console.log(emailHtml.substring(0, 500) + '...');
+      console.log('-'.repeat(80));
+      console.log('Text Content:');
+      console.log(emailText);
+      console.log('='.repeat(80));
+    }
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     const emailType = isDirectEmail(requestData) ? 'other' : requestData.type;
     let deliveryStatus: 'simulated' | 'sent' | 'failed' = 'simulated';
-    let resendId: string | null = null;
     let errorMessage: string | null = null;
 
+    // 共通で email_logs に保存するヘルパー
+    const logEmail = async () => {
+      try {
+        await supabaseClient.from('email_logs').insert({
+          email: to,
+          email_type: emailType,
+          alert_category: alertCategory,
+          status: deliveryStatus,
+          error_message: errorMessage,
+          subject: emailSubject,
+          body: emailText,
+          user_id: null // 必要なら email から users.id を引いて入れる
+        });
+      } catch (e) {
+        if (IS_DEV) {
+          console.error('Failed to insert email_logs:', e);
+        }
+      }
+    };
+
     if (resendApiKey && resendApiKey.startsWith('re_')) {
-      console.log('📮 Sending email via Resend...');
+      if (IS_DEV) {
+        console.log('📮 Sending email via Resend...');
+      }
 
       try {
         const response = await fetch('https://api.resend.com/emails', {
@@ -217,19 +248,13 @@ Deno.serve(async (req) => {
         const result = await response.json();
 
         if (!response.ok) {
-          console.error('❌ Resend API error:', result);
+          if (IS_DEV) {
+            console.error('❌ Resend API error:', result);
+          }
           deliveryStatus = 'failed';
           errorMessage = JSON.stringify(result);
 
-          await supabaseClient.from('email_delivery_log').insert({
-            to_email: to,
-            subject: emailSubject,
-            email_type: emailType,
-            status: deliveryStatus,
-            error_message: errorMessage,
-            sent_by: user.id,
-            metadata: { request_type: isDirectEmail(requestData) ? 'direct' : 'templated' }
-          });
+          await logEmail();
 
           return new Response(
             JSON.stringify({
@@ -244,19 +269,11 @@ Deno.serve(async (req) => {
           );
         }
 
-        console.log('✅ Email sent successfully via Resend:', result);
+        if (IS_DEV) {
+          console.log('✅ Email sent successfully via Resend:', result);
+        }
         deliveryStatus = 'sent';
-        resendId = result.id;
-
-        await supabaseClient.from('email_delivery_log').insert({
-          to_email: to,
-          subject: emailSubject,
-          email_type: emailType,
-          status: deliveryStatus,
-          resend_id: resendId,
-          sent_by: user.id,
-          metadata: { request_type: isDirectEmail(requestData) ? 'direct' : 'templated' }
-        });
+        await logEmail();
 
         return new Response(
           JSON.stringify({
@@ -269,20 +286,14 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           }
         );
-      } catch (error) {
-        console.error('❌ Resend integration error:', error);
+      } catch (error: any) {
+        if (IS_DEV) {
+          console.error('❌ Resend integration error:', error);
+        }
         deliveryStatus = 'failed';
         errorMessage = error.message;
 
-        await supabaseClient.from('email_delivery_log').insert({
-          to_email: to,
-          subject: emailSubject,
-          email_type: emailType,
-          status: deliveryStatus,
-          error_message: errorMessage,
-          sent_by: user.id,
-          metadata: { request_type: isDirectEmail(requestData) ? 'direct' : 'templated' }
-        });
+        await logEmail();
 
         return new Response(
           JSON.stringify({
@@ -297,28 +308,17 @@ Deno.serve(async (req) => {
         );
       }
     } else {
-      console.log('ℹ️  RESEND_API_KEY not configured. Email simulated.');
-      console.log('ℹ️  To enable real email sending:');
-      console.log('   1. Sign up at https://resend.com');
-      console.log('   2. Get your API key');
-      console.log('   3. Set it as RESEND_API_KEY environment variable in Supabase');
+      if (IS_DEV) {
+        console.log('ℹ️  RESEND_API_KEY not configured. Email simulated.');
+      }
 
-      await supabaseClient.from('email_delivery_log').insert({
-        to_email: to,
-        subject: emailSubject,
-        email_type: emailType,
-        status: 'simulated',
-        sent_by: user.id,
-        metadata: {
-          request_type: isDirectEmail(requestData) ? 'direct' : 'templated',
-          note: 'RESEND_API_KEY not configured'
-        }
-      });
+      deliveryStatus = 'simulated';
+      await logEmail();
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Email logged to console (RESEND_API_KEY not configured)',
+          message: 'Email logged (simulation: RESEND_API_KEY not configured)',
           simulated: true,
           preview: {
             to,
@@ -333,13 +333,15 @@ Deno.serve(async (req) => {
       );
     }
 
-  } catch (error) {
-    console.error('❌ Unexpected error:', error);
+  } catch (error: any) {
+    if (IS_DEV) {
+      console.error('❌ Unexpected error:', error);
+    }
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: error.message }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }
