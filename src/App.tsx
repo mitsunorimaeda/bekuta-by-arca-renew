@@ -8,7 +8,7 @@ import { TutorialProvider } from './contexts/TutorialContext';
 import { LoginForm } from './components/LoginForm';
 import { PasswordChangeForm } from './components/PasswordChangeForm';
 import { WelcomePage } from './components/WelcomePage';
-import { AthleteView } from './components/AthleteView';
+import  AthleteView  from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
 // 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
