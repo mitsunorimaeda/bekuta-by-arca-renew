@@ -33,9 +33,18 @@ interface StaffViewProps {
   onNavigateToHelp?: () => void;
 }
 
+  // 追加：ビューの行型（User に + α なイメージ）
+  type StaffAthleteWithActivity = User & {
+    training_days_28d: number | null;
+    training_sessions_28d: number | null;
+    last_training_date: string | null;
+  };
+
+
 export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: StaffViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
   // 元：const [athletes, setAthletes] = useState<User[]>([]);
   const [athletes, setAthletes] = useState<StaffAthleteWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,12 +115,7 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   };
 
-  // 追加：ビューの行型（User に + α なイメージ）
-type StaffAthleteWithActivity = User & {
-  training_days_28d: number | null;
-  training_sessions_28d: number | null;
-  last_training_date: string | null;
-};
+
 
 const fetchTeamAthletes = async (teamId: string) => {
   try {
