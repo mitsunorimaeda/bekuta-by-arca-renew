@@ -338,37 +338,41 @@ function App() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex justify-between items-center h-16">
               <div className="flex items-center">
-                  <button
-                    onClick={() => {
-                      // ホームへ戻す
-                      setCurrentPage('app');
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log('🏠 Bekuta logo clicked');
 
-                      // 擬似リロード
-                      setTimeout(() => {
-                        window.location.reload();
-                      }, 50);
+                    // ① アプリの内部状態を「ホーム」に寄せる
+                    setCurrentPage('app');       // 法的ページ等から戻る
+                    setDashboardMode('staff');   // コーチ／組織管理のトグルをコーチ側に戻す
+                    setShowMobileMenu(false);    // モバイルメニューを閉じる
+                    setShowAlertPanel(false);    // アラートパネルを閉じる
+
+                    // ② window.location.reload() は一旦やめる
+                    //    iOS PWA での挙動も不安定なので、まずは状態リセットだけで様子を見る
+                  }}
+                  className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <span
+                    className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
+                    style={{
+                      fontFamily:
+                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                      letterSpacing: '-0.02em',
                     }}
-                    className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
-                    <span
-                      className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
-                      style={{
-                        fontFamily:
-                          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                        letterSpacing: '-0.02em',
-                      }}
-                    >
-                      Bekuta
-                    </span>
-                    <span
-                      className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
-                      style={{ letterSpacing: '0.05em' }}
-                    >
-                      by ARCA
-                    </span>
-                  </button>
-                </div>
+                    Bekuta
+                  </span>
+                  <span
+                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
+                    style={{ letterSpacing: '0.05em' }}
+                  >
+                    by ARCA
+                  </span>
+                </button>
+              </div>
                 <div className="flex items-center space-x-3">
                   {/* デスクトップ: ユーザー名 + アラート + ログアウト */}
                   <span className="text-sm text-gray-600 dark:text-gray-300 hidden md:block transition-colors">
