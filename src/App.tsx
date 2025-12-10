@@ -449,14 +449,28 @@ function App() {
         <div className="relative">
           {effectiveRole === 'athlete' ? (
             <AthleteView
-            user={userProfile}
-            alerts={alerts}
-            onLogout={signOut}
-            onNavigateToPrivacy={() => setCurrentPage('privacy')}
-            onNavigateToTerms={() => setCurrentPage('terms')}
-            onNavigateToCommercial={() => setCurrentPage('commercial')}
-            onNavigateToHelp={() => setCurrentPage('help')}
-           />
+              user={userProfile}
+              alerts={alerts}
+              onLogout={signOut}
+              onHome={() => {
+                console.log('🏠 Athlete Bekuta home tapped');
+                // 念のため「app」ページに戻す（保険）
+                setCurrentPage('app');
+
+                // もし何かモーダル開いていたら閉じたい場合はここで制御もOK
+                setShowAlertPanel(false);
+                setShowMobileMenu(false);
+
+                // UI状態も含めて「ホームに戻る」感を出したいならリロードもアリ
+                setTimeout(() => {
+                  window.location.reload();
+                }, 50);
+              }}
+              onNavigateToPrivacy={() => setCurrentPage('privacy')}
+              onNavigateToTerms={() => setCurrentPage('terms')}
+              onNavigateToCommercial={() => setCurrentPage('commercial')}
+              onNavigateToHelp={() => setCurrentPage('help')}
+            />
           ) : effectiveRole === 'admin' ? (
             <AdminView
               user={userProfile}
