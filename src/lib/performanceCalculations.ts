@@ -190,8 +190,8 @@ export function calculatePrimaryValue(
       case '050-l':
       case 'pro_agility_r':
       case 'pro_agility_l':
-      case 'arrowhead_agility_r':
-      case 'arrowhead_agility_l':
+      case 'arrowhead_r':
+      case 'arrowhead_l':
         return parseFloat(values.time) || null;
 
       default:
@@ -241,6 +241,8 @@ export function getCalculatedUnit(testName: string): string {
 
     case 'cmj':
     case 'cmj_as':  // ★ 追加
+    case 'standing_long_jump':
+    case 'standing_five_jump':
       return 'cm';
 
     case 'cooper_test':
@@ -249,7 +251,14 @@ export function getCalculatedUnit(testName: string): string {
     case 'shuttle_run_20m':
       return 'ml/kg/min';
 
+    case '1000m_run':
     case '1500m_run':
+    case 'arrowhead_r':
+    case 'arrowhead_l':
+    case '050_r':
+    case '050-l':
+    case 'pro_agility_r':
+    case 'pro_agility_l':
       return '秒';
 
     case 'bench_press':
@@ -272,6 +281,7 @@ export function getCalculatedUnit(testName: string): string {
 export function getCalculatedValueLabel(testName: string): string {
   switch (testName) {
 
+    case 'sqj':
     case 'cmj':
     case 'cmj_as': // ★ 追加
       return '跳躍高';
@@ -287,6 +297,13 @@ export function getCalculatedValueLabel(testName: string): string {
       return '推定VO2max';
 
     case '1500m_run':
+    case '1000m_run':
+    case 'arrowhead_r':
+    case 'arrowhead_l':
+    case '050_r':
+    case '050-l':
+    case 'pro_agility_r':
+    case 'pro_agility_l':
       return 'タイム';
 
     case 'bench_press':
