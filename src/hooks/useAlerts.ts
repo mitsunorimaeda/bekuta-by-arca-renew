@@ -7,6 +7,8 @@ import { sendAlertEmail } from '../lib/emailService';
 // --- 省略（インポート部はそのまま） ---
 const MIN_DAYS_FOR_ACWR = 21;
 
+const ENABLE_REALTIME_ALERT_EMAILS = false;
+
 export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin') {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -185,32 +187,27 @@ const checkAndGenerateAlerts = useCallback(async () => {
     }
 
     // 既存のアラートと重複チェック（ここはそのまま）
-    setAlerts((prev) => {
+    setAlerts(prev => {
       const existingAlertKeys = new Set(
-        prev.map(
-          (alert) =>
-            `${alert.user_id}-${alert.type}-${
-              alert.created_at.split('T')[0]
-            }`
-        )
+        prev.map(alert => `${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
       );
-
-      const uniqueNewAlerts = newAlerts.filter(
-        (alert) =>
-          !existingAlertKeys.has(
-            `${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`
-          )
+    
+      const uniqueNewAlerts = newAlerts.filter(alert =>
+        !existingAlertKeys.has(`${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
       );
-
+    
       if (uniqueNewAlerts.length > 0) {
-        sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch((error) => {
-          console.error('Error sending alert emails:', error);
-        });
-
+        // ★ ここをフラグでガード：今はリアルタイムのメール送信は停止
+        if (ENABLE_REALTIME_ALERT_EMAILS) {
+          sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch(error => {
+            console.error('Error sending alert emails:', error);
+          });
+        }
+    
         const combined = [...prev, ...uniqueNewAlerts];
         return sortAlertsByPriority(filterActiveAlerts(combined));
       }
-
+    
       return filterActiveAlerts(prev);
     });
   } catch (error) {
