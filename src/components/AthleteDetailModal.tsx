@@ -14,6 +14,7 @@ import {
   CartesianGrid,
   Legend,
   ReferenceLine,
+  ComposedChart
 } from 'recharts';
 
 interface AthleteDetailModalProps {
@@ -284,16 +285,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
   );
 }
 
-/**
- * RPE / Load / ACWR 用の複合チャート（2軸）
- */
 function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
-  // Recharts の ComposedChart を使いたいのでここで import
-  // （上でまとめて import 済みならそちらを使ってOK）
-  const {
-    ComposedChart,
-  } = require('recharts');
-
   return (
     <ComposedChart data={data}>
       <CartesianGrid strokeDasharray="3 3" />
@@ -336,7 +328,7 @@ function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
         activeDot={{ r: 5 }}
       />
 
-      {/* 目安帯：0.8〜1.3 を ReferenceLine 等で表現してもOK */}
+      {/* 目安帯：0.8〜1.3 */}
       <ReferenceLine
         yAxisId="right"
         y={0.8}
