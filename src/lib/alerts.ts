@@ -3,12 +3,18 @@ import { formatDateJST } from '../lib/date';
 export interface Alert {
   id: string;
   user_id: string;
+  // 追加: UI で名前を出す用
+  user_name?: string;
   type: 'high_risk' | 'caution' | 'low_load' | 'no_data' | 'reminder';
   priority: 'high' | 'medium' | 'low';
   title: string;
   message: string;
   acwr_value?: number;
   threshold_exceeded?: string;
+  // 追加: 「練習記録なし」用の補足情報
+  last_training_date?: string;
+  days_since_last_training?: number;
+
   is_read: boolean;
   is_dismissed: boolean;
   created_at: string;
@@ -99,6 +105,7 @@ export function generateAlerts(
     let shouldAlert = false;
     let alertData: Partial<Alert> = {
       user_id: userId,
+      user_name: userName, // ここで名前も持たせておく
       type: rule.type,
       is_read: false,
       is_dismissed: false,
@@ -162,6 +169,8 @@ export function generateAlerts(
               priority: 'medium',
               title: '📅 練習記録なし',
               message: `${userName}さんの練習記録が${daysSinceLastTraining}日間ありません。継続的なデータ記録をお願いします。`,
+              last_training_date: lastTraining.date,
+              days_since_last_training: daysSinceLastTraining,
               expires_at: new Date(
                 now.getTime() + 7 * 24 * 60 * 60 * 1000
               ).toISOString(),

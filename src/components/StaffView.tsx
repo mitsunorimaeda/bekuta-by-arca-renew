@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
+import { CoachNoDataAlertCard } from './CoachNoDataAlertCard';
 import { TeamSelector } from './TeamSelector';
 import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
@@ -346,6 +347,9 @@ const fetchTeamAthletes = async (teamId: string) => {
                 </div>
               </div>
             )}
+
+            {/* No Training Summary Alert */}
+              <CoachNoDataAlertCard alerts={alerts} />
 
                         {/* Team Overview */}
                         {selectedTeam && (
