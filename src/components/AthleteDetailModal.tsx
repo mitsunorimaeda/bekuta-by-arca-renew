@@ -1,19 +1,20 @@
+// src/components/AthleteDetailModal.tsx
 import React, { useMemo, useState } from 'react';
-import { X, Activity, Calendar, TrendingUp, Scale, BarChart2 } from 'lucide-react';
+import { X, Activity, Scale, BarChart2 } from 'lucide-react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import {
   ResponsiveContainer,
   LineChart,
   Line,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
   Legend,
   ReferenceLine,
-  ComposedChart
+  ComposedChart,
+  Bar,
 } from 'recharts';
 
 interface AthleteDetailModalProps {
@@ -24,92 +25,99 @@ interface AthleteDetailModalProps {
 type TabKey = 'overview' | 'weight' | 'rpe';
 
 export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps) {
-  // ✅ weightRecords も取得する
   const { records, weightRecords, acwrData, loading } = useTrainingData(athlete.id);
-
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
-  const recentRecords = records.slice(-7); // Last 7 records
+  const recentRecords = records.slice(-7); // Last 7 training records
 
-  // ---- 体重グラフ用データ（weight_records ベース）----
+  // ---------- 体重グラフ用データ（weight_records ベース） ----------
   const weightChartData = useMemo(() => {
-    return weightRecords
-      .map((r: any) => {
-        const weight = r.weight_kg ?? null;
-        if (weight == null || weight === '') return null;
+    return (
+      weightRecords
+        ?.map((r) => {
+          if (r.weight_kg == null) return null;
 
-        return {
-          date: new Date(r.date).toLocaleDateString('ja-JP', {
-            month: 'numeric',
-            day: 'numeric',
-          }),
-          weight:
-            typeof weight === 'string'
-              ? parseFloat(weight)
-              : (weight as number),
-        };
-      })
-      .filter((d: any) => d !== null);
+          return {
+            date: new Date(r.date).toLocaleDateString('ja-JP', {
+              month: 'numeric',
+              day: 'numeric',
+            }),
+            weight: typeof r.weight_kg === 'string' ? parseFloat(r.weight_kg) : r.weight_kg,
+          };
+        })
+        .filter((d): d is { date: string; weight: number } => d !== null) ?? []
+    );
   }, [weightRecords]);
 
-  // ---- RPE / Load / ACWR グラフ用データ（training_records ベース）----
+  // ---------- RPE / Load / ACWR グラフ用データ ----------
   const rpeLoadAcwrChartData = useMemo(() => {
-    // 日付 → ACWR のマップ
+    // ACWR の日付 → 値マップ
     const acwrMap: Record<string, number> = {};
     acwrData.forEach((d: any) => {
-      const key = d.date?.split('T')?.[0] ?? d.date;
+      const key =
+        typeof d.date === 'string'
+          ? d.date.split('T')[0]
+          : d.date instanceof Date
+          ? d.date.toISOString().split('T')[0]
+          : '';
       if (!key) return;
       acwrMap[key] = d.acwr ?? d.ACWR ?? d.value ?? null;
     });
 
-    return records
-      .map((r: any) => {
-        const baseDate = r.date?.split('T')?.[0] ?? r.date;
+    const points = records.map((r: any) => {
+      const baseKey =
+        typeof r.date === 'string'
+          ? r.date.split('T')[0]
+          : r.date instanceof Date
+          ? r.date.toISOString().split('T')[0]
+          : '';
 
-        const rpeRaw = r.rpe ?? r.session_rpe ?? null;
-        const durationRaw =
-          r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
+      const rpeRaw = r.rpe ?? r.session_rpe ?? null;
+      const durationRaw = r.duration_min ?? r.duration ?? null; // ← duration_min を見る
+      const loadRaw = r.load ?? null;
 
-        const rpe =
-          rpeRaw == null
-            ? null
-            : typeof rpeRaw === 'string'
-            ? parseFloat(rpeRaw)
-            : (rpeRaw as number);
+      const rpe =
+        rpeRaw == null
+          ? null
+          : typeof rpeRaw === 'string'
+          ? parseFloat(rpeRaw)
+          : rpeRaw;
 
-        const duration =
-          durationRaw == null
-            ? null
-            : typeof durationRaw === 'string'
-            ? parseFloat(durationRaw)
-            : (durationRaw as number);
+      const duration =
+        durationRaw == null
+          ? null
+          : typeof durationRaw === 'string'
+          ? parseFloat(durationRaw)
+          : durationRaw;
 
-        // load カラムがあればそれを優先、なければ RPE×時間 で計算
-        let load: number | null = null;
-        if (r.load != null && r.load !== '') {
-          load =
-            typeof r.load === 'string'
-              ? parseFloat(r.load)
-              : (r.load as number);
-        } else if (rpe != null && duration != null) {
-          load = rpe * duration;
-        }
+      // テーブルに load カラムがあれば最優先、それが無ければ rpe×duration
+      const load =
+        loadRaw != null
+          ? typeof loadRaw === 'string'
+            ? parseFloat(loadRaw)
+            : loadRaw
+          : rpe != null && duration != null
+          ? rpe * duration
+          : null;
 
-        const acwr = baseDate ? acwrMap[baseDate] ?? null : null;
+      const acwr = baseKey ? acwrMap[baseKey] ?? null : null;
 
-        return {
-          date: new Date(r.date).toLocaleDateString('ja-JP', {
-            month: 'numeric',
-            day: 'numeric',
-          }),
-          rpe,
-          load,
-          acwr,
-        };
-      })
-      // 何も指標がない日は除外
-      .filter((d: any) => d.rpe != null || d.load != null || d.acwr != null);
+      return {
+        date: new Date(r.date).toLocaleDateString('ja-JP', {
+          month: 'numeric',
+          day: 'numeric',
+        }),
+        rpe,
+        load,
+        acwr,
+      };
+    });
+
+    // すべて null の点は削除（どれか1つでもあれば残す）
+    return points.filter(
+      (p) => p.rpe != null || p.load != null || p.acwr != null
+    );
   }, [records, acwrData]);
 
   if (loading) {
@@ -132,9 +140,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               <Activity className="w-5 h-5" />
               {athlete.nickname || athlete.name || '選手'}
             </h2>
-            <p className="text-sm text-blue-100 mt-1">
-              {athlete.email}
-            </p>
+            <p className="text-sm text-blue-100 mt-1">{athlete.email}</p>
           </div>
           <button
             onClick={onClose}
@@ -179,13 +185,12 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               <BarChart2 className="w-4 h-4" />
               RPE / 負荷 / ACWR
             </button>
-            {/* ★ あとで追加用タブ（総合スコア・パフォーマンスなど） */}
           </div>
         </div>
 
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* --- 概要タブ --- */}
+          {/* --- 概要 --- */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -213,15 +218,13 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                   </p>
                 </div>
               </div>
-
-              {/* ★ 将来：ここに「総合スコア」のカード or ミニグラフを置く */}
             </div>
           )}
 
-          {/* --- 体重タブ --- */}
+          {/* --- 体重 --- */}
           {activeTab === 'weight' && (
             <div className="space-y-4">
-              <h3 className="text-base font-semibold text-gray-900ト flex items-center gap-2">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                 <Scale className="w-4 h-4 text-green-500" />
                 体重推移（weight_records ベース）
               </h3>
@@ -236,11 +239,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                     <LineChart data={weightChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
-                      <YAxis
-                        unit="kg"
-                        tick={{ fontSize: 12 }}
-                        domain={['auto', 'auto']}
-                      />
+                      <YAxis unit="kg" tick={{ fontSize: 12 }} domain={['auto', 'auto']} />
                       <Tooltip />
                       <Legend />
                       <Line
@@ -259,7 +258,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
             </div>
           )}
 
-          {/* --- RPE / Load / ACWR タブ --- */}
+          {/* --- RPE / Load / ACWR --- */}
           {activeTab === 'rpe' && (
             <div className="space-y-4">
               <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
@@ -269,7 +268,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
 
               {rpeLoadAcwrChartData.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  RPE または練習時間が記録されたデータがまだありません。
+                  RPE または練習時間・負荷が記録されたデータがまだありません。
                 </p>
               ) : (
                 <div className="h-72">
@@ -280,7 +279,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               )}
 
               <p className="text-xs text-gray-500 leading-relaxed">
-                ・棒グラフ：負荷（RPE × 練習時間 or load カラム）　
+                ・棒グラフ：負荷（RPE × 練習時間 または load カラム）
                 ・紫の線：ACWR（急性/慢性負荷比）
                 <br />
                 ※ いずれかの指標がない日はグラフに表示されません。
@@ -303,6 +302,7 @@ function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
         yAxisId="left"
         orientation="left"
         tick={{ fontSize: 12 }}
+        domain={[0, 'auto']}
         tickFormatter={(v: number) => `${v.toFixed(0)}`}
       />
       {/* 右Y軸：ACWR */}
