@@ -339,8 +339,8 @@ const fetchTeamAthletes = async (teamId: string) => {
               </div>
             )}
 
-            {/* Team Overview */}
-            {selectedTeam && latestTeamACWR && (
+                        {/* Team Overview */}
+                        {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
@@ -349,36 +349,51 @@ const fetchTeamAthletes = async (teamId: string) => {
                   </h2>
                   <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 ml-2" />
                 </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-6">
-                  <div className="bg-purple-50 rounded-lg p-4 sm:p-6 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-purple-600 mb-1">
-                      {latestTeamACWR.averageACWR}
-                    </div>
-                    <div className="text-xs sm:text-sm text-purple-700">チーム平均ACWR</div>
-                  </div>
 
-                  <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-blue-600 mb-1">
-                      {latestTeamACWR.athleteCount}
-                    </div>
-                    <div className="text-xs sm:text-sm text-blue-700">データ有効選手数</div>
+                {teamACWRLoading ? (
+                  // 読み込み中
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
                   </div>
+                ) : !latestTeamACWR ? (
+                  // データなし
+                  <div className="py-6 text-center text-sm text-gray-500">
+                    まだACWRを計算できる十分なトレーニングデータがありません。
+                    <br />
+                    （選手のRPEと練習時間を入力すると表示されます）
+                  </div>
+                ) : (
+                  // データあり
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-6">
+                    <div className="bg-purple-50 rounded-lg p-4 sm:p-6 text-center">
+                      <div className="text-xl sm:text-2xl font-bold text-purple-600 mb-1">
+                        {latestTeamACWR.averageACWR}
+                      </div>
+                      <div className="text-xs sm:text-sm text-purple-700">チーム平均ACWR</div>
+                    </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-gray-600 mb-1">
-                      {athletes.length}
+                    <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
+                      <div className="text-xl sm:text-2xl font-bold text-blue-600 mb-1">
+                        {latestTeamACWR.athleteCount}
+                      </div>
+                      <div className="text-xs sm:text-sm text-blue-700">データ有効選手数</div>
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-700">総選手数</div>
-                  </div>
 
-                  <div className="bg-red-50 rounded-lg p-4 sm:p-6 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-red-600 mb-1">
-                      {teamAlerts.filter(alert => alert.priority === 'high').length}
+                    <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
+                      <div className="text-xl sm:text-2xl font-bold text-gray-600 mb-1">
+                        {athletes.length}
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-700">総選手数</div>
                     </div>
-                    <div className="text-xs sm:text-sm text-red-700">高リスク選手</div>
+
+                    <div className="bg-red-50 rounded-lg p-4 sm:p-6 text-center">
+                      <div className="text-xl sm:text-2xl font-bold text-red-600 mb-1">
+                        {teamAlerts.filter(alert => alert.priority === 'high').length}
+                      </div>
+                      <div className="text-xs sm:text-sm text-red-700">高リスク選手</div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
