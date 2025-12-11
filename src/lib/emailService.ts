@@ -79,31 +79,24 @@ export async function sendEmail(
 
 /**
  * ACWR アラートメール
+ * 👉 いまは「フロントからは送信しない」運用にする
  */
 export async function sendAlertEmail(
   userEmail: string,
   userName: string,
   alert: Alert & { recommendations?: string[] }
 ): Promise<SendEmailResult> {
-  const acwrValue =
-    typeof (alert as any).acwr_value === 'number'
-      ? (alert as any).acwr_value.toFixed(2)
-      : undefined;
-
-  return sendEmail({
-    to: userEmail,
-    type: 'alert',
-    data: {
-      userName,
-      alertTitle: alert.title,
-      alertMessage: alert.message,
-      priority: (alert as any).priority,
-      acwrValue,
-      recommendedRange: '0.8-1.3',
-      recommendations: alert.recommendations ?? [],
-      appUrl: window.location.origin,
-    },
+  console.info('[sendAlertEmail] 現在フロント側からのアラートメール送信は停止中です', {
+    userEmail,
+    userName,
+    alert,
   });
+
+  // 実際のメール送信は行わない
+  return {
+    success: true,
+    message: 'Alert email sending is currently disabled on frontend.',
+  };
 }
 
 /**

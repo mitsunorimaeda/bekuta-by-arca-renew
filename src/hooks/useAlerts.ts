@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Alert, AlertRule, DEFAULT_ALERT_RULES, generateAlerts, filterActiveAlerts, sortAlertsByPriority } from '../lib/alerts';
 import { calculateACWR } from '../lib/acwr';
-import { sendAlertEmail } from '../lib/emailService';
 
 // --- 省略（インポート部はそのまま） ---
 const MIN_DAYS_FOR_ACWR = 21;
@@ -16,87 +15,12 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
   const [unreadCount, setUnreadCount] = useState(0);
 
   const sendAlertEmailsForNewAlerts = async (newAlerts: Alert[]) => {
-    const highPriorityAlerts = newAlerts.filter(alert => alert.priority === 'high');
-
-    if (highPriorityAlerts.length === 0) {
-      return;
-    }
-
-    const userAlertsMap = new Map<string, Alert[]>();
-    for (const alert of highPriorityAlerts) {
-      if (!userAlertsMap.has(alert.user_id)) {
-        userAlertsMap.set(alert.user_id, []);
-      }
-      userAlertsMap.get(alert.user_id)!.push(alert);
-    }
-
-    for (const [alertUserId, userAlerts] of userAlertsMap) {
-      try {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('email, name, email_notifications, last_alert_email_sent')
-          .eq('id', alertUserId)
-          .single();
-
-        if (userError || !userData) {
-          if (import.meta.env.DEV) {
-            console.error('Error fetching user data for alert email:', userError);
-          }
-          continue;
-        }
-
-        const emailPrefs = userData.email_notifications as Record<string, boolean> | null;
-        if (emailPrefs && emailPrefs.alerts === false) {
-          if (import.meta.env.DEV) {
-            console.log(`Skipping alert email for ${userData.email} - notifications disabled`);
-          }
-          continue;
-        }
-
-        const lastEmailSent = userData.last_alert_email_sent
-          ? new Date(userData.last_alert_email_sent)
-          : null;
-        const now = new Date();
-        const hoursSinceLastEmail = lastEmailSent
-          ? (now.getTime() - lastEmailSent.getTime()) / (1000 * 60 * 60)
-          : Infinity;
-
-        if (hoursSinceLastEmail < 6) {
-          if (import.meta.env.DEV) {
-            console.log(
-              `Skipping alert email for ${userData.email} - last email sent ${hoursSinceLastEmail.toFixed(1)} hours ago`
-            );
-          }
-          continue;
-        }
-
-        for (const alert of userAlerts) {
-          const result = await sendAlertEmail(userData.email, userData.name, alert);
-
-          if (result.success) {
-
-            // ⭐★ ここだけ安全に修正 ★⭐
-            if (import.meta.env.DEV) {
-              console.log(`Alert email sent to ${userData.email}`);
-            }
-
-            await supabase
-              .from('users')
-              .update({ last_alert_email_sent: now.toISOString() })
-              .eq('id', alertUserId);
-
-            break;
-          } else {
-            if (import.meta.env.DEV) {
-              console.error(`Failed to send alert email to ${userData.email}:`, result.error);
-            }
-          }
-        }
-      } catch (error) {
-        if (import.meta.env.DEV) {
-          console.error('Error sending alert email:', error);
-        }
-      }
+    // フロント側からのアラートメール送信は停止中
+    if (import.meta.env.DEV) {
+      console.info(
+        '[useAlerts] sendAlertEmailsForNewAlerts is disabled. New alerts count:',
+        newAlerts.length
+      );
     }
   };
 
