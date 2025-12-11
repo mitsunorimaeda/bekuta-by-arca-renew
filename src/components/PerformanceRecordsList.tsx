@@ -166,7 +166,7 @@ export function PerformanceRecordsList({
                       </div>
 
                       {/* 筋力測定の場合、相対1RMを表示 */}
-                      {record.test_type && ['bench_press', 'squat', 'deadlift'].includes(record.test_type.name) && record.values.relative_1rm && (
+                      {record.test_type && ['bench_press', 'back_squat', 'deadlift','bulgarian_squat_r','bulgarian_squat_l'].includes(record.test_type.name) && record.values.relative_1rm && (
                         <div className="mb-2 inline-flex items-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20">
                           <span className="text-xs font-medium text-purple-700 dark:text-purple-300 mr-2">
                             相対1RM:
