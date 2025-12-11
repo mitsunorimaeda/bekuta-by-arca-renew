@@ -5,6 +5,7 @@ import { calculateACWR } from '../lib/acwr';
 import { sendAlertEmail } from '../lib/emailService';
 
 // --- 省略（インポート部はそのまま） ---
+const MIN_DAYS_FOR_ACWR = 21;
 
 export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin') {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -100,106 +101,122 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
   // ---- 以下は全て同じ（変更なし） ----
 
   // メモ化されたアラートチェック関数
-  const checkAndGenerateAlerts = useCallback(async () => {
-    if (!userId || !userRole) return;
+const checkAndGenerateAlerts = useCallback(async () => {
+  if (!userId || !userRole) return;
 
-    try {
-      let usersToCheck: Array<{ id: string; name: string }> = [];
+  try {
+    let usersToCheck: Array<{ id: string; name: string }> = [];
 
-      if (userRole === 'athlete') {
-        // 選手の場合は自分のみ
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id, name')
-          .eq('id', userId)
-          .single();
-        
-        if (userData) {
-          usersToCheck = [userData];
-        }
-      } else if (userRole === 'staff') {
-        // スタッフの場合は担当チームの選手
-        const { data: teamData } = await supabase
-          .from('staff_team_links')
-          .select(`
-            team_id,
-            teams!inner (
-              users!inner (
-                id,
-                name
-              )
+    if (userRole === 'athlete') {
+      // 選手の場合は自分のみ
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('id', userId)
+        .single();
+
+      if (userData) {
+        usersToCheck = [userData];
+      }
+    } else if (userRole === 'staff') {
+      // スタッフの場合は担当チームの選手
+      const { data: teamData } = await supabase
+        .from('staff_team_links')
+        .select(`
+          team_id,
+          teams!inner (
+            users!inner (
+              id,
+              name
             )
-          `)
-          .eq('staff_user_id', userId);
+          )
+        `)
+        .eq('staff_user_id', userId);
 
-        if (teamData) {
-          usersToCheck = teamData.flatMap(link => 
-            (link.teams as any)?.users || []
-          );
-        }
-      } else if (userRole === 'admin') {
-        // 管理者の場合は全選手
-        const { data: allAthletes } = await supabase
-          .from('users')
-          .select('id, name')
-          .eq('role', 'athlete');
-
-        usersToCheck = allAthletes || [];
-      }
-
-      const newAlerts: Alert[] = [];
-
-      for (const user of usersToCheck) {
-        // 練習記録を取得
-        const { data: trainingRecords } = await supabase
-          .from('training_records')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('date', { ascending: true });
-
-        if (trainingRecords) {
-          // ACWRデータを計算
-          const acwrData = calculateACWR(trainingRecords);
-          
-          // アラートを生成
-          const userAlerts = generateAlerts(
-            user.id,
-            user.name,
-            acwrData,
-            trainingRecords,
-            alertRules
-          );
-
-          newAlerts.push(...userAlerts);
-        }
-      }
-
-      // 既存のアラートと重複チェック
-      setAlerts(prev => {
-        const existingAlertKeys = new Set(
-          prev.map(alert => `${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
+      if (teamData) {
+        usersToCheck = teamData.flatMap((link) =>
+          (link.teams as any)?.users || []
         );
+      }
+    } else if (userRole === 'admin') {
+      // 管理者の場合は全選手
+      const { data: allAthletes } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('role', 'athlete');
 
-        const uniqueNewAlerts = newAlerts.filter(alert =>
-          !existingAlertKeys.has(`${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
-        );
-
-        if (uniqueNewAlerts.length > 0) {
-          sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch(error => {
-            console.error('Error sending alert emails:', error);
-          });
-
-          const combined = [...prev, ...uniqueNewAlerts];
-          return sortAlertsByPriority(filterActiveAlerts(combined));
-        }
-
-        return filterActiveAlerts(prev);
-      });
-
-    } catch (error) {
-      console.error('Error checking and generating alerts:', error);
+      usersToCheck = allAthletes || [];
     }
-  }, [userId, userRole, alertRules]);
+
+    const newAlerts: Alert[] = [];
+
+    // ★ ここで役割ごとに使うルールを調整
+    // staff / admin には no_data アラートを出さない
+    const effectiveRules = alertRules.filter((rule) => {
+      if (userRole !== 'athlete' && rule.type === 'no_data') {
+        return false;
+      }
+      return true;
+    });
+
+    for (const user of usersToCheck) {
+      // 練習記録を取得
+      const { data: trainingRecords } = await supabase
+        .from('training_records')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: true });
+
+      if (trainingRecords) {
+        // ACWRデータを計算
+        const acwrData = calculateACWR(trainingRecords);
+
+        // アラートを生成（有効ルールのみ）
+        const userAlerts = generateAlerts(
+          user.id,
+          user.name,
+          acwrData,
+          trainingRecords,
+          effectiveRules
+        );
+
+        newAlerts.push(...userAlerts);
+      }
+    }
+
+    // 既存のアラートと重複チェック（ここはそのまま）
+    setAlerts((prev) => {
+      const existingAlertKeys = new Set(
+        prev.map(
+          (alert) =>
+            `${alert.user_id}-${alert.type}-${
+              alert.created_at.split('T')[0]
+            }`
+        )
+      );
+
+      const uniqueNewAlerts = newAlerts.filter(
+        (alert) =>
+          !existingAlertKeys.has(
+            `${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`
+          )
+      );
+
+      if (uniqueNewAlerts.length > 0) {
+        sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch((error) => {
+          console.error('Error sending alert emails:', error);
+        });
+
+        const combined = [...prev, ...uniqueNewAlerts];
+        return sortAlertsByPriority(filterActiveAlerts(combined));
+      }
+
+      return filterActiveAlerts(prev);
+    });
+  } catch (error) {
+    console.error('Error checking and generating alerts:', error);
+  }
+}, [userId, userRole, alertRules]);
 
   // アラートルールの初期化
   const loadAlertRules = useCallback(async () => {

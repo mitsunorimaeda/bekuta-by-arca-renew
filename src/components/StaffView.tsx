@@ -1,35 +1,60 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
-import { CoachNoDataAlertCard } from './CoachNoDataAlertCard';
 import { TeamSelector } from './TeamSelector';
 import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
 import { TeamACWRChart } from './TeamACWRChart';
-const TrendAnalysisView = lazy(() => import('./TrendAnalysisView').then(m => ({ default: m.TrendAnalysisView })));
+const TrendAnalysisView = lazy(() =>
+  import('./TrendAnalysisView').then((m) => ({ default: m.TrendAnalysisView }))
+);
 import { AlertSummary } from './AlertSummary';
 import { AlertPanel } from './AlertPanel';
-const TeamExportPanel = lazy(() => import('./TeamExportPanel').then(m => ({ default: m.TeamExportPanel })));
-const ReportView = lazy(() => import('./ReportView').then(m => ({ default: m.ReportView })));
+const TeamExportPanel = lazy(() =>
+  import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
+);
+const ReportView = lazy(() =>
+  import('./ReportView').then((m) => ({ default: m.ReportView }))
+);
 import { TutorialController } from './TutorialController';
-// 変更前
-// import { useTeamACWR } from '../hooks/useTeamACWR';
-
-// 変更後
-import {
-  useTeamACWR,
-  AthleteACWRMap,
-} from '../hooks/useTeamACWR';
+import { useTeamACWR } from '../hooks/useTeamACWR';
 import { useTrendAnalysis } from '../hooks/useTrendAnalysis';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
-import { Users, BarChart3, TrendingUp, AlertTriangle, Activity, Download, HelpCircle, UserCog, UsersRound, MessageSquare, FileText, Menu, X, Shield, Building2, PieChart } from 'lucide-react';
+import {
+  Users,
+  BarChart3,
+  TrendingUp,
+  AlertTriangle,
+  Activity,
+  Download,
+  HelpCircle,
+  UserCog,
+  UsersRound,
+  MessageSquare,
+  FileText,
+  Menu,
+  X,
+  Shield,
+  Building2,
+  PieChart,
+} from 'lucide-react';
 import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
 import { TeamPerformanceComparison } from './TeamPerformanceComparison';
 import { TeamTrendAnalysis } from './TeamTrendAnalysis';
-const TeamAccessRequestManagement = lazy(() => import('./TeamAccessRequestManagement').then(m => ({ default: m.TeamAccessRequestManagement })));
-const AthleteTransferManagement = lazy(() => import('./AthleteTransferManagement').then(m => ({ default: m.AthleteTransferManagement })));
-const MessagingPanel = lazy(() => import('./MessagingPanel').then(m => ({ default: m.MessagingPanel })));
+const TeamAccessRequestManagement = lazy(() =>
+  import('./TeamAccessRequestManagement').then((m) => ({
+    default: m.TeamAccessRequestManagement,
+  }))
+);
+const AthleteTransferManagement = lazy(() =>
+  import('./AthleteTransferManagement').then((m) => ({
+    default: m.AthleteTransferManagement,
+  }))
+);
+const MessagingPanel = lazy(() =>
+  import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
+);
 import { useOrganizations } from '../hooks/useOrganizations';
 
 interface StaffViewProps {
@@ -41,30 +66,71 @@ interface StaffViewProps {
   onNavigateToHelp?: () => void;
 }
 
-  // 追加：ビューの行型（User に + α なイメージ）
-  type StaffAthleteWithActivity = User & {
-    training_days_28d: number | null;
-    training_sessions_28d: number | null;
-    last_training_date: string | null;
-  };
+// 追加：ビュー用の型（User に + α）
+type StaffAthleteWithActivity = User & {
+  training_days_28d: number | null;
+  training_sessions_28d: number | null;
+  last_training_date: string | null;
+};
 
+const NO_DATA_DAYS_THRESHOLD = 14; // 何日空いたら「途切れている」とみなすか
 
-export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: StaffViewProps) {
+export function StaffView({
+  user,
+  alerts,
+  onNavigateToPrivacy,
+  onNavigateToTerms,
+  onNavigateToCommercial,
+  onNavigateToHelp,
+}: StaffViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
-  // 元：const [athletes, setAthletes] = useState<User[]>([]);
   const [athletes, setAthletes] = useState<StaffAthleteWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'trends' | 'team-analytics' | 'reports' | 'team-access' | 'transfers' | 'messages'>('athletes');
+  const [activeTab, setActiveTab] = useState<
+    | 'athletes'
+    | 'team-average'
+    | 'trends'
+    | 'team-analytics'
+    | 'reports'
+    | 'team-access'
+    | 'transfers'
+    | 'messages'
+  >('athletes');
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showMessagingPanel, setShowMessagingPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
-  const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } = useTutorialContext();
+
+  // 🔔 練習記録なしカード用（今日だけ抑制）
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const [noDataDismissedToday, setNoDataDismissedToday] = useState<boolean>(
+    () => {
+      if (typeof window === 'undefined') return false;
+      try {
+        const key = `noDataDismissed-${user.id}-${todayKey}`;
+        return localStorage.getItem(key) === '1';
+      } catch {
+        return false;
+      }
+    }
+  );
+
+  const {
+    isActive,
+    shouldShowTutorial,
+    startTutorial,
+    completeTutorial,
+    skipTutorial,
+    currentStepIndex,
+    setCurrentStepIndex,
+  } = useTutorialContext();
   const { organizations } = useOrganizations(user.id);
-  const currentOrganizationId = selectedTeam?.organization_id || (organizations.length > 0 ? organizations[0].id : '');
+  const currentOrganizationId =
+    selectedTeam?.organization_id ||
+    (organizations.length > 0 ? organizations[0].id : '');
 
   useEffect(() => {
     if (shouldShowTutorial() && !loading) {
@@ -72,17 +138,26 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   }, [shouldShowTutorial, startTutorial, loading]);
 
-  const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } =
-  useTeamACWR(selectedTeam?.id || null);
-  const { trendAnalysis, loading: trendLoading, error: trendError, refreshAnalysis } = useTrendAnalysis(
-    selectedTeam?.id || null, 
-    'team'
-  );
+  const {
+    teamACWRData,
+    athleteACWRMap,
+    loading: teamACWRLoading,
+  } = useTeamACWR(selectedTeam?.id || null);
+  const {
+    trendAnalysis,
+    loading: trendLoading,
+    error: trendError,
+    refreshAnalysis,
+  } = useTrendAnalysis(selectedTeam?.id || null, 'team');
 
-  // チーム関連のアラート
-  const teamAthleteIds = athletes.map(athlete => athlete.id);
-  const teamAlerts = alerts.filter(alert => teamAthleteIds.includes(alert.user_id));
-  const highPriorityTeamAlerts = teamAlerts.filter(alert => alert.priority === 'high');
+  // チーム関連のアラート（no_data は useAlerts 側で既に除外済み）
+  const teamAthleteIds = athletes.map((athlete) => athlete.id);
+  const teamAlerts = alerts.filter((alert) =>
+    teamAthleteIds.includes(alert.user_id)
+  );
+  const highPriorityTeamAlerts = teamAlerts.filter(
+    (alert) => alert.priority === 'high'
+  );
 
   useEffect(() => {
     fetchStaffTeams();
@@ -94,26 +169,36 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   }, [selectedTeam]);
 
+  // 今日が変わったら localStorage を更新（ページ開きっぱなし対策）
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const key = `noDataDismissed-${user.id}-${todayKey}`;
+    setNoDataDismissedToday(localStorage.getItem(key) === '1');
+  }, [user.id, todayKey]);
+
   const fetchStaffTeams = async () => {
     try {
       const { data: staffTeamLinks, error } = await supabase
         .from('staff_team_links')
-        .select(`
+        .select(
+          `
           team_id,
           teams (
             id,
             name,
             created_at
           )
-        `)
+        `
+        )
         .eq('staff_user_id', user.id);
 
       if (error) throw error;
 
-      const teamsData = staffTeamLinks?.map(link => link.teams).filter(Boolean) as Team[];
+      const teamsData = (staffTeamLinks || [])
+        .map((link) => link.teams)
+        .filter(Boolean) as Team[];
       setTeams(teamsData || []);
-      
-      // Select first team by default
+
       if (teamsData && teamsData.length > 0) {
         setSelectedTeam(teamsData[0]);
       }
@@ -124,41 +209,38 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   };
 
+  const fetchTeamAthletes = async (teamId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('staff_team_athletes_with_activity' as any)
+        .select('*')
+        .eq('team_id', teamId);
 
+      if (error) throw error;
 
-const fetchTeamAthletes = async (teamId: string) => {
-  try {
-    const { data, error } = await supabase
-      // ★ ここを users → view 名に変更 ＋ as any で型チェック回避
-      .from('staff_team_athletes_with_activity' as any)
-      .select('*')
-      .eq('team_id', teamId);
+      setAthletes((data || []) as StaffAthleteWithActivity[]);
+    } catch (error) {
+      console.error('Error fetching team athletes:', error);
+    }
+  };
 
-    if (error) throw error;
-
-    setAthletes((data || []) as StaffAthleteWithActivity[]);
-  } catch (error) {
-    console.error('Error fetching team athletes:', error);
-  }
-};
-
-  // アラート関連のヘルパー関数
+  // アラート関連（今は中身ダミーでもOK）
   const markAsRead = async (alertId: string) => {
-    // アラートを既読にする処理（実装は useAlerts フックに依存）
     console.log('Mark as read:', alertId);
   };
 
   const dismissAlert = async (alertId: string) => {
-    // アラートを非表示にする処理（実装は useAlerts フックに依存）
     console.log('Dismiss alert:', alertId);
   };
 
   const markAllAsRead = async () => {
-    // 全てのアラートを既読にする処理（実装は useAlerts フックに依存）
     console.log('Mark all as read');
   };
 
-  const latestTeamACWR = teamACWRData.length > 0 ? teamACWRData[teamACWRData.length - 1] : null;
+  const latestTeamACWR =
+    teamACWRData.length > 0
+      ? teamACWRData[teamACWRData.length - 1]
+      : null;
 
   if (loading) {
     return (
@@ -170,7 +252,28 @@ const fetchTeamAthletes = async (teamId: string) => {
 
   const handleDismissAlert = () => {
     setAlertDismissed(true);
-    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000); // 30分後に再表示
+    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000); // 30分
+  };
+
+  // 🧮 「練習記録が途切れている選手」の算出
+  const now = new Date();
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const noDataAthletes = athletes
+    .filter((a) => a.last_training_date)
+    .map((a) => {
+      const last = new Date(a.last_training_date as string);
+      const days = Math.floor((now.getTime() - last.getTime()) / msPerDay);
+      return { athlete: a, daysSinceLast: days };
+    })
+    .filter((x) => x.daysSinceLast >= NO_DATA_DAYS_THRESHOLD)
+    .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
+
+  const handleDismissNoDataForToday = () => {
+    if (typeof window !== 'undefined') {
+      const key = `noDataDismissed-${user.id}-${todayKey}`;
+      localStorage.setItem(key, '1');
+    }
+    setNoDataDismissedToday(true);
   };
 
   return (
@@ -179,8 +282,11 @@ const fetchTeamAthletes = async (teamId: string) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Top Bar */}
           <div className="flex items-center justify-between py-3">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900">コーチダッシュボード</h1>
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900">
+              コーチダッシュボード
+            </h1>
             <div className="flex items-center space-x-1">
+              {/* 🔔 高リスクアラートがある時だけベル表示 */}
               {highPriorityTeamAlerts.length > 0 && (
                 <button
                   onClick={() => setShowAlertPanel(true)}
@@ -188,7 +294,9 @@ const fetchTeamAthletes = async (teamId: string) => {
                   title="アラート"
                 >
                   <AlertTriangle className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                    {highPriorityTeamAlerts.length}
+                  </span>
                 </button>
               )}
 
@@ -208,14 +316,18 @@ const fetchTeamAthletes = async (teamId: string) => {
                 <MessageSquare className="w-5 h-5" />
               </button>
 
-              {/* ハンバーガーメニュー */}
+              {/* Hamburger */}
               <div className="relative">
                 <button
                   onClick={() => setShowMobileMenu(!showMobileMenu)}
                   className="p-2 text-gray-600 hover:text-green-600 transition-colors"
                   title="メニュー"
                 >
-                  {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                  {showMobileMenu ? (
+                    <X className="w-5 h-5" />
+                  ) : (
+                    <Menu className="w-5 h-5" />
+                  )}
                 </button>
 
                 {showMobileMenu && (
@@ -233,10 +345,12 @@ const fetchTeamAthletes = async (teamId: string) => {
                       </button>
                     )}
 
-                    {/* 法的情報セクション */}
+                    {/* 法的情報 */}
                     <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
                     <div className="px-3 py-1.5">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">法的情報</p>
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        法的情報
+                      </p>
                     </div>
                     {onNavigateToHelp && (
                       <button
@@ -292,7 +406,7 @@ const fetchTeamAthletes = async (teamId: string) => {
             </div>
           </div>
 
-          {/* Team Selector Bar */}
+          {/* Team Selector */}
           {teams.length > 0 && (
             <div className="pb-3 border-t border-gray-100">
               <div className="flex items-center gap-3 pt-3">
@@ -300,7 +414,7 @@ const fetchTeamAthletes = async (teamId: string) => {
                 <select
                   value={selectedTeam?.id || ''}
                   onChange={(e) => {
-                    const team = teams.find(t => t.id === e.target.value);
+                    const team = teams.find((t) => t.id === e.target.value);
                     if (team) setSelectedTeam(team);
                   }}
                   className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -321,8 +435,12 @@ const fetchTeamAthletes = async (teamId: string) => {
         {teams.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">担当チームがありません</h3>
-            <p className="text-gray-600">管理者にチームの割り当てを依頼してください。</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              担当チームがありません
+            </h3>
+            <p className="text-gray-600">
+              管理者にチームの割り当てを依頼してください。
+            </p>
           </div>
         ) : (
           <div className="space-y-6 sm:space-y-8">
@@ -332,9 +450,12 @@ const fetchTeamAthletes = async (teamId: string) => {
                 <div className="flex items-center">
                   <AlertTriangle className="w-6 h-6 text-red-600 mr-3 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-red-900">高リスクアラート</h3>
+                    <h3 className="font-semibold text-red-900">
+                      高リスクアラート
+                    </h3>
                     <p className="text-sm text-red-700">
-                      {highPriorityTeamAlerts.length}名の選手に注意が必要です
+                      {highPriorityTeamAlerts.length}
+                      名の選手に注意が必要です
                     </p>
                   </div>
                   <button
@@ -348,68 +469,117 @@ const fetchTeamAthletes = async (teamId: string) => {
               </div>
             )}
 
-            {/* No Training Summary Alert */}
-              <CoachNoDataAlertCard alerts={alerts} />
+            {/* 🆕 練習記録が途切れている選手カード */}
+            {noDataAthletes.length > 0 && !noDataDismissedToday && (
+              <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-4 sm:p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">
+                      練習記録が途切れている選手
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-600">
+                      最終記録日から一定期間、記録がない選手の一覧です
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleDismissNoDataForToday}
+                    className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded-lg hover:bg-blue-50"
+                  >
+                    今日分は既読にする
+                  </button>
+                </div>
 
-                        {/* Team Overview */}
-                        {selectedTeam && (
+                <ul className="space-y-1 sm:space-y-1.5 text-sm sm:text-base">
+                  {noDataAthletes.map(({ athlete, daysSinceLast }) => (
+                    <li
+                      key={athlete.id}
+                      className="flex items-baseline justify-between border-t border-gray-100 pt-1.5 first:border-t-0 first:pt-0"
+                    >
+                      <div className="font-medium text-gray-900 truncate mr-2">
+                        {athlete.name || athlete.nickname || athlete.email}
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">
+                        最終日{' '}
+                        {athlete.last_training_date ||
+                          '-'}{' '}
+                        （{daysSinceLast}日間）
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Team Overview */}
+            {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
-                    <span className="hidden sm:inline">{selectedTeam.name} - </span>
+                    <span className="hidden sm:inline">
+                      {selectedTeam.name} -{' '}
+                    </span>
                     <span className="sm:hidden">チーム</span>概要
                   </h2>
                   <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 ml-2" />
                 </div>
 
                 {teamACWRLoading ? (
-                  // 読み込み中
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
                   </div>
                 ) : !latestTeamACWR ? (
-                  // データなし
                   <div className="py-6 text-center text-sm text-gray-500">
                     まだACWRを計算できる十分なトレーニングデータがありません。
                     <br />
                     （選手のRPEと練習時間を入力すると表示されます）
                   </div>
                 ) : (
-                  // データあり
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-6">
                     <div className="bg-purple-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-purple-600 mb-1">
                         {latestTeamACWR.averageACWR}
                       </div>
-                      <div className="text-xs sm:text-sm text-purple-700">チーム平均ACWR</div>
+                      <div className="text-xs sm:text-sm text-purple-700">
+                        チーム平均ACWR
+                      </div>
                     </div>
 
                     <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-blue-600 mb-1">
                         {latestTeamACWR.athleteCount}
                       </div>
-                      <div className="text-xs sm:text-sm text-blue-700">データ有効選手数</div>
+                      <div className="text-xs sm:text-sm text-blue-700">
+                        データ有効選手数
+                      </div>
                     </div>
 
                     <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-gray-600 mb-1">
                         {athletes.length}
                       </div>
-                      <div className="text-xs sm:text-sm text-gray-700">総選手数</div>
+                      <div className="text-xs sm:text-sm text-gray-700">
+                        総選手数
+                      </div>
                     </div>
 
                     <div className="bg-red-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-red-600 mb-1">
-                        {teamAlerts.filter(alert => alert.priority === 'high').length}
+                        {
+                          teamAlerts.filter(
+                            (alert) => alert.priority === 'high'
+                          ).length
+                        }
                       </div>
-                      <div className="text-xs sm:text-sm text-red-700">高リスク選手</div>
+                      <div className="text-xs sm:text-sm text-red-700">
+                        高リスク選手
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Tab Navigation */}
+            {/* Tabs */}
             {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm">
                 <div className="border-b border-gray-200">
@@ -528,7 +698,9 @@ const fetchTeamAthletes = async (teamId: string) => {
                   <div className="sm:hidden px-4 py-3">
                     <select
                       value={activeTab}
-                      onChange={(e) => setActiveTab(e.target.value as any)}
+                      onChange={(e) =>
+                        setActiveTab(e.target.value as typeof activeTab)
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     >
                       <option value="athletes">選手一覧</option>
@@ -546,7 +718,9 @@ const fetchTeamAthletes = async (teamId: string) => {
                   {activeTab === 'athletes' ? (
                     <div>
                       <div className="flex items-center justify-between mb-4 sm:mb-6">
-                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">選手一覧</h3>
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                          選手一覧
+                        </h3>
                         <div className="flex items-center space-x-4">
                           <span className="bg-gray-100 text-gray-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
                             {athletes.length}名
@@ -559,10 +733,10 @@ const fetchTeamAthletes = async (teamId: string) => {
                         </div>
                       </div>
                       <div data-tutorial="athlete-list">
-                      <AthleteList
-                        athletes={athletes}
-                        onAthleteSelect={setSelectedAthlete}
-                        athleteACWRMap={athleteACWRMap}
+                        <AthleteList
+                          athletes={athletes}
+                          onAthleteSelect={setSelectedAthlete}
+                          athleteACWRMap={athleteACWRMap}
                         />
                       </div>
                     </div>
@@ -573,15 +747,20 @@ const fetchTeamAthletes = async (teamId: string) => {
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                         </div>
                       ) : (
-                        <TeamACWRChart 
-                          data={teamACWRData} 
+                        <TeamACWRChart
+                          data={teamACWRData}
                           teamName={selectedTeam.name}
                         />
                       )}
                     </div>
                   ) : activeTab === 'trends' ? (
-                    /* Trend Analysis Tab */
-                    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                    <Suspense
+                      fallback={
+                        <div className="flex items-center justify-center h-64">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        </div>
+                      }
+                    >
                       <TrendAnalysisView
                         trendAnalysis={trendAnalysis}
                         loading={trendLoading}
@@ -590,21 +769,30 @@ const fetchTeamAthletes = async (teamId: string) => {
                       />
                     </Suspense>
                   ) : activeTab === 'team-analytics' ? (
-                    /* Team Analytics Tab */
                     <div className="space-y-6">
                       <TeamInjuryRiskHeatmap teamId={selectedTeam.id} />
                       <TeamPerformanceComparison teamId={selectedTeam.id} />
                       <TeamTrendAnalysis teamId={selectedTeam.id} />
                     </div>
                   ) : activeTab === 'reports' ? (
-                    /* Reports Tab */
-                    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                    <Suspense
+                      fallback={
+                        <div className="flex items-center justify-center h-64">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        </div>
+                      }
+                    >
                       <ReportView team={selectedTeam} />
                     </Suspense>
                   ) : activeTab === 'team-access' ? (
-                    /* Team Access Request Tab */
                     currentOrganizationId ? (
-                      <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                      <Suspense
+                        fallback={
+                          <div className="flex items-center justify-center h-64">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                          </div>
+                        }
+                      >
                         <TeamAccessRequestManagement
                           userId={user.id}
                           organizationId={currentOrganizationId}
@@ -617,9 +805,14 @@ const fetchTeamAthletes = async (teamId: string) => {
                       </div>
                     )
                   ) : activeTab === 'transfers' ? (
-                    /* Athlete Transfer Tab */
                     currentOrganizationId ? (
-                      <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                      <Suspense
+                        fallback={
+                          <div className="flex items-center justify-center h-64">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                          </div>
+                        }
+                      >
                         <AthleteTransferManagement
                           userId={user.id}
                           organizationId={currentOrganizationId}
@@ -632,8 +825,13 @@ const fetchTeamAthletes = async (teamId: string) => {
                       </div>
                     )
                   ) : activeTab === 'messages' ? (
-                    /* Messages Tab */
-                    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                    <Suspense
+                      fallback={
+                        <div className="flex items-center justify-center h-64">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        </div>
+                      }
+                    >
                       <MessagingPanel
                         userId={user.id}
                         userName={user.name}
@@ -670,7 +868,13 @@ const fetchTeamAthletes = async (teamId: string) => {
 
       {/* Team Export Panel */}
       {showExportPanel && selectedTeam && (
-        <Suspense fallback={<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div></div>}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            </div>
+          }
+        >
           <TeamExportPanel
             team={selectedTeam}
             onClose={() => setShowExportPanel(false)}
