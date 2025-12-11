@@ -1,25 +1,31 @@
 import React, { useState, useMemo } from 'react';
 import { User } from '../lib/supabase';
+import { Activity, AlertTriangle, ChevronRight } from 'lucide-react';
 
-type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
+// ACWR 情報の型（マップの中身）
+type RiskLevel = 'high' | 'caution' | 'good' | 'low';
 
-type AthleteACWRInfo = {
-  currentACWR?: number | null;
-  riskLevel?: RiskLevel | string;
-  hasEnoughData?: boolean;   // 28日分そろっているかどうか（なければ undefined でOK）
-  daysOfData?: number;       // ある場合だけ使う
-  minDaysRequired?: number;  // ある場合だけ使う（例：28）
+interface AthleteACWRInfo {
+  currentACWR: number | null;
+  riskLevel?: RiskLevel;
+  daysOfData?: number | null;
+}
+
+// StaffAthleteWithActivity 相当の拡張（あってもなくても動くようにオプショナル）
+type AthleteWithActivity = User & {
+  training_days_28d?: number | null;
+  training_sessions_28d?: number | null;
+  last_training_date?: string | null;
 };
 
 interface AthleteListProps {
-  athletes: (User & {
-    training_days_28d?: number | null;
-    training_sessions_28d?: number | null;
-    last_training_date?: string | null;
-  })[];
-  onAthleteSelect: (athlete: User) => void;
+  athletes: AthleteWithActivity[];
+  onAthleteSelect: (athlete: AthleteWithActivity) => void;
   athleteACWRMap?: Record<string, AthleteACWRInfo>;
 }
+
+// ACWR 分析を始めるまでに必要な日数
+const MIN_DAYS_FOR_ACWR = 21;
 
 export function AthleteList({
   athletes,
@@ -33,10 +39,26 @@ export function AthleteList({
     return athletes.filter((athlete) => {
       const acwrInfo = athleteACWRMap[athlete.id];
 
+      // daysOfData は acwrInfo があればそれを優先、なければ training_days_28d を代用
+      const daysOfData =
+        acwrInfo?.daysOfData ??
+        (typeof athlete.training_days_28d === 'number'
+          ? athlete.training_days_28d
+          : null);
+
+      const hasACWR =
+        acwrInfo &&
+        daysOfData !== null &&
+        daysOfData >= MIN_DAYS_FOR_ACWR &&
+        typeof acwrInfo.currentACWR === 'number' &&
+        acwrInfo.currentACWR > 0;
+
+      const riskLevel = hasACWR ? acwrInfo?.riskLevel : undefined;
+
       const riskMatch =
         filterRisk === 'all'
           ? true
-          : acwrInfo?.riskLevel === 'high' || acwrInfo?.riskLevel === 'caution';
+          : riskLevel === 'high' || riskLevel === 'caution';
 
       const s = search.trim().toLowerCase();
       const text =
@@ -46,13 +68,14 @@ export function AthleteList({
         ' ' +
         (athlete.nickname || '');
 
-      const searchMatch = s === '' ? true : text.toLowerCase().includes(s);
+      const searchMatch =
+        s === '' ? true : text.toLowerCase().includes(s);
 
       return riskMatch && searchMatch;
     });
   }, [athletes, search, filterRisk, athleteACWRMap]);
 
-  const renderRiskBadge = (riskLevel: string | undefined) => {
+  const renderRiskBadge = (riskLevel: RiskLevel | undefined) => {
     switch (riskLevel) {
       case 'high':
         return (
@@ -87,127 +110,166 @@ export function AthleteList({
     }
   };
 
-  const getRiskColorClass = (riskLevel: string | undefined) => {
-    switch (riskLevel) {
-      case 'high':
-        return 'text-red-600';
-      case 'caution':
-        return 'text-amber-600';
-      case 'good':
-        return 'text-emerald-600';
-      case 'low':
-        return 'text-sky-600';
-      default:
-        return 'text-gray-600';
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '記録なし';
+    try {
+      const d = new Date(dateStr);
+      if (Number.isNaN(d.getTime())) return dateStr;
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    } catch {
+      return dateStr;
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* 検索 & フィルタ */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2">
-        <div className="flex-1">
+      {/* 検索 ＋ リスクフィルタ */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="relative flex-1">
           <input
             type="text"
-            placeholder="選手名やメールアドレスで検索"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            placeholder="名前・ニックネーム・メールで検索"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
           />
+          <Activity className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
         </div>
-        <button
-          onClick={() =>
-            setFilterRisk((prev) => (prev === 'all' ? 'high' : 'all'))
-          }
-          className={`inline-flex items-center px-3 py-2 rounded-lg text-xs sm:text-sm border ${
-            filterRisk === 'high'
-              ? 'bg-red-50 border-red-200 text-red-700'
-              : 'bg-gray-50 border-gray-200 text-gray-600'
-          }`}
-        >
-          {filterRisk === 'high' ? '高リスクのみ表示中' : 'リスク高を絞り込み'}
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFilterRisk('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+              filterRisk === 'all'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            全員表示
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterRisk('high')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
+              filterRisk === 'high'
+                ? 'bg-red-50 text-red-700 border-red-200'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-red-50 hover:text-red-700'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            高リスクのみ
+          </button>
+        </div>
       </div>
 
-      {/* 一覧 */}
-      <div className="space-y-3">
-        {filteredAthletes.map((athlete) => {
-          const acwrInfo = athleteACWRMap[athlete.id];
-          const hasACWR =
-            acwrInfo &&
-            acwrInfo.hasEnoughData !== false &&
-            typeof acwrInfo.currentACWR === 'number' &&
-            acwrInfo.currentACWR > 0;
+      {/* リスト本体 */}
+      <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl bg-white">
+        {filteredAthletes.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-500">
+            条件に合う選手がいません
+          </div>
+        ) : (
+          filteredAthletes.map((athlete) => {
+            const acwrInfo = athleteACWRMap[athlete.id];
 
-          const acwrDisplay = hasACWR
-            ? acwrInfo!.currentACWR!.toFixed(2)
-            : '準備中';
+            // daysOfData 決定ロジック
+            const daysOfData =
+              acwrInfo?.daysOfData ??
+              (typeof athlete.training_days_28d === 'number'
+                ? athlete.training_days_28d
+                : null);
 
-          const riskLevel = hasACWR ? acwrInfo?.riskLevel : undefined;
-          const acwrTextColor = getRiskColorClass(riskLevel);
+            const hasACWR =
+              acwrInfo &&
+              daysOfData !== null &&
+              daysOfData >= MIN_DAYS_FOR_ACWR &&
+              typeof acwrInfo.currentACWR === 'number' &&
+              acwrInfo.currentACWR > 0;
 
-          const daysOfData = acwrInfo?.daysOfData;
-          const minDaysRequired = acwrInfo?.minDaysRequired ?? 28;
+            const acwrValue = hasACWR
+              ? acwrInfo!.currentACWR!.toFixed(2)
+              : '準備中';
 
-          return (
-            <button
-              key={athlete.id}
-              onClick={() => onAthleteSelect(athlete)}
-              className="w-full text-left bg-white border border-gray-200 rounded-xl px-3 py-3 sm:px-4 sm:py-4 hover:shadow-sm transition flex items-center justify-between"
-            >
-              {/* 左側：基本情報 */}
-              <div className="flex-1 min-w-0 pr-3">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm sm:text-base text-gray-900 truncate">
-                    {athlete.nickname || athlete.name || '名前未設定'}
+            const riskLevel: RiskLevel | undefined = hasACWR
+              ? acwrInfo?.riskLevel
+              : undefined;
+
+            const remainingDays =
+              daysOfData !== null
+                ? Math.max(MIN_DAYS_FOR_ACWR - daysOfData, 0)
+                : null;
+
+            return (
+              <button
+                key={athlete.id}
+                type="button"
+                onClick={() => onAthleteSelect(athlete)}
+                className="w-full flex items-stretch justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-gray-50 transition-colors text-left"
+              >
+                {/* 左側：基本情報 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {athlete.nickname || athlete.name || '名前未設定'}
+                    </p>
+                    {athlete.nickname && athlete.name && (
+                      <p className="text-xs text-gray-400 truncate">
+                        ({athlete.name})
+                      </p>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-gray-500 truncate">
+                    {athlete.email}
                   </p>
-                </div>
-                <p className="text-xs text-gray-500 truncate mt-0.5">
-                  {athlete.email}
-                </p>
 
-                {/* 練習状況（あれば） */}
-                <p className="mt-2 text-xs text-gray-500">
-                  直近28日間の練習日数:{' '}
-                  <span className="font-medium text-gray-700">
-                    {athlete.training_days_28d ?? 'ー'}日
-                  </span>
-                </p>
-              </div>
-
-              {/* 右側：ACWR & リスク */}
-              <div className="text-right flex flex-col items-end space-y-1">
-                <div className="text-[11px] sm:text-xs text-gray-500">
-                  ACWR
-                </div>
-                <div
-                  className={`text-lg sm:text-xl font-semibold ${acwrTextColor}`}
-                >
-                  {acwrDisplay}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-gray-500">
+                    <span>
+                      直近28日：{' '}
+                      {athlete.training_days_28d ?? 0}日 /{' '}
+                      {athlete.training_sessions_28d ?? 0}回
+                    </span>
+                    <span>
+                      最終入力：{' '}
+                      {formatDate(athlete.last_training_date ?? null)}
+                    </span>
+                  </div>
                 </div>
 
-                {hasACWR ? (
-                  renderRiskBadge(riskLevel as string | undefined)
-                ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                    分析準備中
-                  </span>
-                )}
+                {/* 右側：ACWR & リスク */}
+                <div className="flex flex-col items-end justify-center ml-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] sm:text-xs text-gray-500">
+                      ACWR
+                    </span>
+                    <span
+                      className={`text-sm sm:text-base font-semibold ${
+                        hasACWR
+                          ? 'text-gray-900'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      {acwrValue}
+                    </span>
+                  </div>
 
-                {!hasACWR && daysOfData != null && (
-                  <p className="mt-1 text-[10px] sm:text-xs text-gray-400">
-                    データ{daysOfData}日目 / {minDaysRequired}日で解析開始
-                  </p>
-                )}
-              </div>
-            </button>
-          );
-        })}
+                  <div className="flex items-center gap-2">
+                    {renderRiskBadge(riskLevel)}
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                  </div>
 
-        {filteredAthletes.length === 0 && (
-          <p className="text-center text-sm text-gray-500 py-6">
-            条件に一致する選手がいません。
-          </p>
+                  {/* 21日未満のときだけ「あと◯日」を表示 */}
+                  {!hasACWR &&
+                    remainingDays !== null &&
+                    remainingDays > 0 && (
+                      <p className="mt-1 text-[10px] sm:text-xs text-gray-400 text-right">
+                        ACWR分析まで：あと {remainingDays} 日
+                      </p>
+                    )}
+                </div>
+              </button>
+            );
+          })
         )}
       </div>
     </div>
