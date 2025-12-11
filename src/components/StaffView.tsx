@@ -11,7 +11,14 @@ import { AlertPanel } from './AlertPanel';
 const TeamExportPanel = lazy(() => import('./TeamExportPanel').then(m => ({ default: m.TeamExportPanel })));
 const ReportView = lazy(() => import('./ReportView').then(m => ({ default: m.ReportView })));
 import { TutorialController } from './TutorialController';
-import { useTeamACWR } from '../hooks/useTeamACWR';
+// 変更前
+// import { useTeamACWR } from '../hooks/useTeamACWR';
+
+// 変更後
+import {
+  useTeamACWR,
+  AthleteACWRMap,
+} from '../hooks/useTeamACWR';
 import { useTrendAnalysis } from '../hooks/useTrendAnalysis';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
@@ -64,7 +71,8 @@ export function StaffView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     }
   }, [shouldShowTutorial, startTutorial, loading]);
 
-  const { teamACWRData, loading: teamACWRLoading } = useTeamACWR(selectedTeam?.id || null);
+  const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } =
+  useTeamACWR(selectedTeam?.id || null);
   const { trendAnalysis, loading: trendLoading, error: trendError, refreshAnalysis } = useTrendAnalysis(
     selectedTeam?.id || null, 
     'team'
@@ -547,9 +555,10 @@ const fetchTeamAthletes = async (teamId: string) => {
                         </div>
                       </div>
                       <div data-tutorial="athlete-list">
-                        <AthleteList
-                          athletes={athletes}
-                          onAthleteSelect={setSelectedAthlete}
+                      <AthleteList
+                        athletes={athletes}
+                        onAthleteSelect={setSelectedAthlete}
+                        athleteACWRMap={athleteACWRMap}
                         />
                       </div>
                     </div>
