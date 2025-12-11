@@ -32,23 +32,24 @@ export function useTeamACWR(teamId: string | null) {
   const fetchTeamACWR = async (teamId: string) => {
     setLoading(true);
     try {
-      // ① チームのアスリート取得
+      // ① チーム所属選手を view から取得（★ここを users → view に変更）
       const { data: athletes, error: athletesError } = await supabase
-        .from('users')
+        .from('staff_team_athletes_with_activity' as any)
         .select('id')
-        .eq('role', 'athlete')
         .eq('team_id', teamId);
 
       if (athletesError) throw athletesError;
 
       if (!athletes || athletes.length === 0) {
+        console.log('[useTeamACWR] No athletes for team', teamId);
         setTeamACWRData([]);
         return;
       }
 
-      const athleteIds = athletes.map((a) => a.id);
+      const athleteIds = athletes.map((a: any) => a.id as string);
+      console.log('[useTeamACWR] athleteIds:', athleteIds);
 
-      // ② training_records 取得（duration_min を正しい名前で取る）
+      // ② training_records 取得（duration_min を正しいカラム名で）
       const { data: recordsRaw, error: recordsError } = await supabase
         .from('training_records')
         .select<TrainingRecordRow>('user_id, date, rpe, duration_min, load')
@@ -58,20 +59,21 @@ export function useTeamACWR(teamId: string | null) {
       if (recordsError) throw recordsError;
 
       if (!recordsRaw || recordsRaw.length === 0) {
+        console.log('[useTeamACWR] No training_records for team', teamId);
         setTeamACWRData([]);
         return;
       }
 
-      // ③ ACWR 用に load を決定
+      console.log('[useTeamACWR] training_records count:', recordsRaw.length);
+
+      // ③ ACWR 用に load を決定（なければ RPE × duration_min）
       const normalizedRecords = recordsRaw
         .map((r) => {
-          // まず load が入っていればそれを優先
           let loadNum =
             typeof r.load === 'number'
               ? r.load
               : Number(r.load ?? NaN);
 
-          // load が無い or 0 以下なら RPE × duration_min から計算
           if (
             (!loadNum || loadNum <= 0) &&
             r.rpe != null &&
@@ -92,12 +94,12 @@ export function useTeamACWR(teamId: string | null) {
               rpeNum > 0 &&
               durNum > 0
             ) {
-              loadNum = rpeNum * durNum; // sRPE 的な load
+              loadNum = rpeNum * durNum;
             }
           }
 
           if (!loadNum || Number.isNaN(loadNum) || loadNum <= 0) {
-            return null; // 負荷が成立しないレコードは捨てる
+            return null;
           }
 
           return {
@@ -109,6 +111,11 @@ export function useTeamACWR(teamId: string | null) {
         .filter(
           (r): r is { user_id: string; date: string; load: number } => !!r
         );
+
+      console.log(
+        '[useTeamACWR] normalizedRecords count:',
+        normalizedRecords.length
+      );
 
       if (normalizedRecords.length === 0) {
         setTeamACWRData([]);
@@ -176,6 +183,7 @@ export function useTeamACWR(teamId: string | null) {
         }
       });
 
+      console.log('[useTeamACWR] teamAverages:', teamAverages);
       setTeamACWRData(teamAverages);
     } catch (error) {
       console.error('Error fetching team ACWR data:', error);
