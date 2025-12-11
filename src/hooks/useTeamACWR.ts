@@ -13,8 +13,8 @@ interface TrainingRecordRow {
   user_id: string;
   date: string;
   rpe: number | null;
-  duration: number | null; // 分 or 時間（スキーマに合わせて）
-  load?: number | null;    // あれば使う
+  duration_min: number | null;
+  load: number | null;
 }
 
 export function useTeamACWR(teamId: string | null) {
@@ -48,10 +48,10 @@ export function useTeamACWR(teamId: string | null) {
 
       const athleteIds = athletes.map((a) => a.id);
 
-      // ② その選手たちの training_records を取得
+      // ② training_records 取得（duration_min を正しい名前で取る）
       const { data: recordsRaw, error: recordsError } = await supabase
         .from('training_records')
-        .select<TrainingRecordRow>('user_id, date, rpe, duration, load')
+        .select<TrainingRecordRow>('user_id, date, rpe, duration_min, load')
         .in('user_id', athleteIds)
         .order('date', { ascending: true });
 
@@ -62,70 +62,80 @@ export function useTeamACWR(teamId: string | null) {
         return;
       }
 
-      // ③ calculateACWR に渡す形に整形（load を必ず作る）
+      // ③ ACWR 用に load を決定
       const normalizedRecords = recordsRaw
         .map((r) => {
-          // 既に load カラムがあるならそれを優先
-          let load: number;
+          // まず load が入っていればそれを優先
+          let loadNum =
+            typeof r.load === 'number'
+              ? r.load
+              : Number(r.load ?? NaN);
 
-          if (typeof r.load === 'number') {
-            load = r.load;
-          } else {
+          // load が無い or 0 以下なら RPE × duration_min から計算
+          if (
+            (!loadNum || loadNum <= 0) &&
+            r.rpe != null &&
+            r.duration_min != null
+          ) {
             const rpeNum =
-              typeof r.rpe === 'number' ? r.rpe : Number(r.rpe ?? NaN);
-            const durationNum =
-              typeof r.duration === 'number'
-                ? r.duration
-                : Number(r.duration ?? NaN);
+              typeof r.rpe === 'number'
+                ? r.rpe
+                : Number(r.rpe ?? NaN);
+            const durNum =
+              typeof r.duration_min === 'number'
+                ? r.duration_min
+                : Number(r.duration_min ?? NaN);
 
             if (
-              Number.isNaN(rpeNum) ||
-              Number.isNaN(durationNum) ||
-              rpeNum <= 0 ||
-              durationNum <= 0
+              !Number.isNaN(rpeNum) &&
+              !Number.isNaN(durNum) &&
+              rpeNum > 0 &&
+              durNum > 0
             ) {
-              return null; // 無効データは捨てる
+              loadNum = rpeNum * durNum; // sRPE 的な load
             }
+          }
 
-            // ここが「詳細モーダル側」と同じ計算になっていることが重要
-            // もし useTrainingData 内で別の式を使っているなら、そちらに合わせてください
-            load = rpeNum * durationNum;
+          if (!loadNum || Number.isNaN(loadNum) || loadNum <= 0) {
+            return null; // 負荷が成立しないレコードは捨てる
           }
 
           return {
             user_id: r.user_id,
-            date: r.date, // calculateACWR もこの date を使う想定
-            load,
+            date: r.date,
+            load: loadNum,
           };
         })
-        .filter((r): r is { user_id: string; date: string; load: number } => !!r);
+        .filter(
+          (r): r is { user_id: string; date: string; load: number } => !!r
+        );
 
       if (normalizedRecords.length === 0) {
         setTeamACWRData([]);
         return;
       }
 
-      // ④ アスリートごとに ACWR を計算
-      const athleteACWRData: { [athleteId: string]: { date: string; acwr: number }[] } = {};
+      // ④ アスリートごとに ACWR 計算
+      const athleteACWRData: {
+        [athleteId: string]: { date: string; acwr: number }[];
+      } = {};
 
       for (const athleteId of athleteIds) {
         const athleteRecords = normalizedRecords.filter(
           (r) => r.user_id === athleteId
         );
-
         if (athleteRecords.length > 0) {
-          // 👇 ここが詳細モーダルと同じ呼び方になっているのが大事
           const acwrSeries = calculateACWR(athleteRecords);
           athleteACWRData[athleteId] = acwrSeries;
         }
       }
 
-      // ⑤ すべてのトレーニング日の集合を作成
+      // ⑤ 全トレーニング日の集合
       const allDates = new Set<string>();
       normalizedRecords.forEach((r) => allDates.add(r.date));
       const sortedDates = Array.from(allDates).sort();
 
-      // ⑥ 日ごとにチーム平均を計算
+      // ⑥ 日ごとのチーム平均 ACWR
       const teamAverages: TeamACWRData[] = [];
 
       sortedDates.forEach((dateStr) => {
