@@ -57,77 +57,60 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
       .filter((d: any) => d !== null);
   }, [weightRecords]);
 
-  // ---- RPE / Load / ACWR グラフ用データ（training_records ベース）----
+  // ---- RPE / Load / ACWR グラフ用データ ----
   const rpeLoadAcwrChartData = useMemo(() => {
-    if (!trainingRecords || trainingRecords.length === 0) return [];
+    // training_records の中から「RPE と duration が両方あるもの」だけピックアップ
+    const validRecords = records.filter((r: any) => {
+      const rpeRaw = r.rpe ?? r.session_rpe ?? null;
+      const durationRaw = r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
+      return rpeRaw != null && durationRaw != null;
+    });
 
     // 日付 → ACWR のマップ
     const acwrMap: Record<string, number> = {};
     acwrData.forEach((d: any) => {
       const key = d.date?.split('T')?.[0] ?? d.date;
       if (!key) return;
-      const val =
-        d.acwr ?? d.ACWR ?? d.value ?? null;
-      if (val == null) return;
-      acwrMap[key] = typeof val === 'string' ? parseFloat(val) : val;
+      acwrMap[key] = d.acwr ?? d.ACWR ?? d.value ?? null;
     });
 
-    const points = trainingRecords
-      .map((r: any) => {
-        const baseDate = r.date?.split('T')?.[0] ?? r.date;
+    const result = validRecords.map((r: any) => {
+      const baseDate = r.date?.split('T')?.[0] ?? r.date;
 
-        const rpeRaw = r.rpe ?? null;
-        const durationRaw = r.duration_min ?? null; // ← カラム名に合わせる
+      const rpeRaw = r.rpe ?? r.session_rpe ?? null;
+      const durationRaw = r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
 
-        const rpe =
-          rpeRaw == null
-            ? null
-            : typeof rpeRaw === 'string'
-            ? parseFloat(rpeRaw)
-            : rpeRaw;
+      const rpe =
+        rpeRaw == null
+          ? null
+          : typeof rpeRaw === 'string'
+          ? parseFloat(rpeRaw)
+          : rpeRaw;
 
-        const duration =
-          durationRaw == null
-            ? null
-            : typeof durationRaw === 'string'
-            ? parseFloat(durationRaw)
-            : durationRaw;
+      const duration =
+        durationRaw == null
+          ? null
+          : typeof durationRaw === 'string'
+          ? parseFloat(durationRaw)
+          : durationRaw;
 
-        // load カラムがあれば優先、なければ RPE×時間
-        const loadRaw = r.load ?? null;
-        let load: number | null = null;
+      const load = rpe != null && duration != null ? rpe * duration : null;
+      const acwr = baseDate ? acwrMap[baseDate] ?? null : null;
 
-        if (loadRaw != null) {
-          load =
-            typeof loadRaw === 'string'
-              ? parseFloat(loadRaw)
-              : loadRaw;
-        } else if (rpe != null && duration != null) {
-          load = rpe * duration;
-        }
+      return {
+        date: new Date(r.date).toLocaleDateString('ja-JP', {
+          month: 'numeric',
+          day: 'numeric',
+        }),
+        rpe,
+        load,
+        acwr,
+      };
+    });
 
-        const acwr =
-          baseDate && acwrMap[baseDate] != null ? acwrMap[baseDate] : null;
-
-        // 何も指標がなければスキップ
-        if (rpe == null && load == null && acwr == null) return null;
-
-        return {
-          date: new Date(r.date).toLocaleDateString('ja-JP', {
-            month: 'numeric',
-            day: 'numeric',
-          }),
-          rpe,
-          load,
-          acwr,
-        };
-      })
-      .filter((d: any) => d !== null);
-
-    console.log('[AthleteDetailModal] rpeLoadAcwrChartData sample:', points.slice(0, 5));
-
-    return points;
-  }, [trainingRecords, acwrData]);
+    console.log('[AthleteDetailModal] rpeLoadAcwrChartData length:', result.length, result);
+    return result;
+  }, [records, acwrData]);
 
   if (loading) {
     return (
