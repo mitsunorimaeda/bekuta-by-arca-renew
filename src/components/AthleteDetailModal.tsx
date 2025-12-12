@@ -24,29 +24,28 @@ interface AthleteDetailModalProps {
 type TabKey = 'overview' | 'weight' | 'rpe';
 
 export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps) {
-  // ✅ 必ずここで records を宣言する
   const { records, weightRecords, acwrData, loading } = useTrainingData(athlete.id);
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
-  const recentRecords = records.slice(-7); // Last 7 records
+  const recentRecords = records.slice(-7);
 
-  // ---- 体重グラフ用データ（weight_records ベース） ----
+  // ===== 体重グラフ用データ =====
   const weightChartData = useMemo(() => {
     const source = Array.isArray(weightRecords) ? weightRecords : [];
 
     const mapped = source
       .map((r: any) => {
-        const weight = r.weight_kg ?? r.weight ?? r.body_weight ?? null;
-        if (weight == null || weight === '') return null;
+        const w = r.weight_kg ?? r.weight ?? r.body_weight ?? null;
+        if (w == null || w === '' || Number.isNaN(Number(w))) return null;
 
         return {
           date: new Date(r.date).toLocaleDateString('ja-JP', {
             month: 'numeric',
             day: 'numeric',
           }),
-          weight: typeof weight === 'string' ? parseFloat(weight) : weight,
+          weight: Number(w),
         };
       })
       .filter((d) => d !== null) as { date: string; weight: number }[];
@@ -54,51 +53,71 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
     return mapped;
   }, [weightRecords]);
 
-  // ---- RPE / Load / ACWR グラフ用データ（training_records ベース） ----
+  // ===== RPE / Load / ACWR 用データ =====
   const rpeLoadAcwrChartData = useMemo(() => {
     if (!Array.isArray(records) || records.length === 0) return [];
 
     try {
-      // 日付 → ACWR のマップ
+      // 日付 → ACWR のマップを作成
       const acwrMap: Record<string, number> = {};
-
       if (Array.isArray(acwrData)) {
         acwrData.forEach((d: any) => {
           const key = (d.date ?? '').split('T')[0];
           if (!key) return;
-          const v = d.acwr ?? d.ACWR ?? d.value ?? null;
-          if (v != null) acwrMap[key] = Number(v);
+          const raw = d.acwr ?? d.ACWR ?? d.value ?? null;
+          const v = raw != null ? Number(raw) : null;
+          if (v != null && Number.isFinite(v)) {
+            acwrMap[key] = v;
+          }
         });
       }
 
-      // RPE と duration が両方あるレコードだけを使う
-      const validRecords = records.filter((r: any) => {
-        const hasRpe = r.rpe != null || r.session_rpe != null;
-        const hasDuration =
-          r.duration_min != null || r.duration_minutes != null || r.duration != null;
-        return hasRpe && hasDuration;
-      });
+      const result = records
+        .map((r: any) => {
+          const baseDate = (r.date ?? '').split('T')[0];
 
-      const result = validRecords.map((r: any) => {
-        const baseDate = (r.date ?? '').split('T')[0];
+          const rpeValue = r.rpe ?? r.session_rpe ?? null;
+          const durValue =
+            r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
 
-        const rpe = Number(r.rpe ?? r.session_rpe ?? null);
-        const duration = Number(
-          r.duration_min ?? r.duration_minutes ?? r.duration ?? null
-        );
-        const load = rpe && duration ? rpe * duration : null;
-        const acwr = baseDate ? acwrMap[baseDate] ?? null : null;
+          const rpe = rpeValue != null ? Number(rpeValue) : null;
+          const duration =
+            durValue != null ? Number(durValue) : null;
 
-        return {
-          date: new Date(r.date).toLocaleDateString('ja-JP', {
-            month: 'numeric',
-            day: 'numeric',
-          }),
-          rpe,
-          load,
-          acwr,
-        };
-      });
+          let load: number | null = null;
+          if (
+            rpe != null &&
+            duration != null &&
+            Number.isFinite(rpe) &&
+            Number.isFinite(duration)
+          ) {
+            load = rpe * duration;
+          }
+
+          const acwr =
+            baseDate && acwrMap[baseDate] != null
+              ? acwrMap[baseDate]
+              : null;
+
+          // どちらも null ならグラフの意味がないので除外
+          if (load == null && acwr == null) return null;
+
+          return {
+            date: new Date(r.date).toLocaleDateString('ja-JP', {
+              month: 'numeric',
+              day: 'numeric',
+            }),
+            rpe: rpe != null && Number.isFinite(rpe) ? rpe : null,
+            load,
+            acwr,
+          };
+        })
+        .filter((d) => d !== null) as {
+        date: string;
+        rpe: number | null;
+        load: number | null;
+        acwr: number | null;
+      }[];
 
       console.log('[AthleteDetailModal] rpeLoadAcwrChartData sample:', result.slice(0, 5));
       return result;
@@ -121,7 +140,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
+        {/* ヘッダー */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold flex items-center gap-2">
@@ -138,7 +157,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* タブ */}
         <div className="border-b border-gray-200 px-6 pt-3">
           <div className="flex gap-4 overflow-x-auto text-sm">
             <button
@@ -176,7 +195,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
           </div>
         </div>
 
-        {/* Body */}
+        {/* 本体 */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {/* --- 概要タブ --- */}
           {activeTab === 'overview' && (
@@ -195,11 +214,15 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                 </div>
                 <div className="bg-green-50 rounded-xl p-4">
                   <p className="text-xs text-green-700 mb-1">直近7日間の記録数</p>
-                  <p className="text-2xl font-bold text-green-900">{recentRecords.length}</p>
+                  <p className="text-2xl font-bold text-green-900">
+                    {recentRecords.length}
+                  </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-xs text-gray-700 mb-1">総セッション数</p>
-                  <p className="text-2xl font-bold text-gray-900">{records.length}</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {records.length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -242,13 +265,17 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
             </div>
           )}
 
-          {/* --- RPE / Load / ACWR タブ --- */}
+          {/* --- RPE / 負荷 / ACWR タブ --- */}
           {activeTab === 'rpe' && (
             <div className="space-y-4">
               <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                 <BarChart2 className="w-4 h-4 text-purple-500" />
                 RPE・セッション負荷・ACWR
               </h3>
+
+              <p className="text-xs text-gray-500">
+                データ件数：{rpeLoadAcwrChartData.length} 件
+              </p>
 
               {rpeLoadAcwrChartData.length === 0 ? (
                 <p className="text-sm text-gray-500">
@@ -257,7 +284,77 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               ) : (
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChartWithTwoAxis data={rpeLoadAcwrChartData} />
+                  <ComposedChart data={rpeLoadAcwrChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    {/* 左Y軸：負荷 */}
+                    <YAxis
+                      yAxisId="left"
+                      orientation="left"
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(v: number) => `${v.toFixed(0)}`}
+                    />
+                    {/* 右Y軸：RPE & ACWR */}
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 12 }}
+                      domain={[0, 'auto']}
+                    />
+                    <Tooltip />
+                    <Legend />
+
+                    {/* 負荷（棒） */}
+                    <Bar
+                      yAxisId="left"
+                      dataKey="load"
+                      name="負荷（RPE×時間）"
+                      fill="#60a5fa"
+                      opacity={0.85}
+                    />
+
+                    {/* RPE（線） */}
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="rpe"
+                      name="RPE"
+                      stroke="#f97316"
+                      strokeWidth={1.8}
+                      dot={{ r: 2 }}
+                      activeDot={{ r: 4 }}
+                      connectNulls
+                    />
+
+                    {/* ACWR（線） */}
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="acwr"
+                      name="ACWR"
+                      stroke="#a855f7"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                      connectNulls
+                    />
+
+                    {/* 目安ライン 0.8 / 1.3（ACWR 用） */}
+                    <ReferenceLine
+                      yAxisId="right"
+                      y={0.8}
+                      stroke="#22c55e"
+                      strokeDasharray="4 4"
+                      ifOverflow="extendDomain"
+                    />
+                    <ReferenceLine
+                      yAxisId="right"
+                      y={1.3}
+                      stroke="#f97316"
+                      strokeDasharray="4 4"
+                      ifOverflow="extendDomain"
+                    />
+                  </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               )}
@@ -273,61 +370,5 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
         </div>
       </div>
     </div>
-  );
-}
-
-function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
-  console.log('[ComposedChartWithTwoAxis] data length:', data.length, data);
-
-  return (
-    <ComposedChart data={data}>
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="date" />
-      {/* 左Y軸：Load */}
-      <YAxis
-        yAxisId="left"
-        orientation="left"
-        tick={{ fontSize: 12 }}
-        tickFormatter={(v: number) => `${v.toFixed(0)}`}
-      />
-      {/* 右Y軸：ACWR */}
-      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} domain={[0, 'auto']} />
-      <Tooltip />
-      <Legend />
-      {/* セッション負荷（棒） */}
-      <Bar
-        yAxisId="left"
-        dataKey="load"
-        name="負荷（RPE×時間）"
-        fill="#60a5fa"
-        opacity={0.8}
-      />
-      {/* ACWR（線） */}
-      <Line
-        yAxisId="right"
-        type="monotone"
-        dataKey="acwr"
-        name="ACWR"
-        stroke="#a855f7"
-        strokeWidth={2}
-        dot={{ r: 3 }}
-        activeDot={{ r: 5 }}
-      />
-      {/* 目安帯：0.8〜1.3 */}
-      <ReferenceLine
-        yAxisId="right"
-        y={0.8}
-        stroke="#22c55e"
-        strokeDasharray="4 4"
-        ifOverflow="extendDomain"
-      />
-      <ReferenceLine
-        yAxisId="right"
-        y={1.3}
-        stroke="#f97316"
-        strokeDasharray="4 4"
-        ifOverflow="extendDomain"
-      />
-    </ComposedChart>
   );
 }
