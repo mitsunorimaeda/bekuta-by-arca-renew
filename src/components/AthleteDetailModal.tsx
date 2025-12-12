@@ -89,66 +89,60 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
   // ===== RPE / Load / ACWR 用データ =====
   const rpeLoadAcwrChartData = useMemo(() => {
     if (!Array.isArray(records) || records.length === 0) return [];
-
+  
     try {
-      // 日付 → ACWR のマップ
+      // ACWRマップを作成（日付→acwr）
       const acwrMap: Record<string, number> = {};
       if (Array.isArray(acwrData)) {
         acwrData.forEach((d: any) => {
           const key = (d.date ?? '').split('T')[0];
           if (!key) return;
+  
           const raw = d.acwr ?? d.ACWR ?? d.value ?? null;
-          const v = raw != null ? Number(raw) : null;
-          if (v != null && Number.isFinite(v)) {
-            acwrMap[key] = v;
-          }
+          if (raw == null) return;
+  
+          acwrMap[key] = Number(raw);
         });
       }
-
+  
       const result = records
         .map((r: any) => {
           const baseDate = (r.date ?? '').split('T')[0];
-
-          const rpeValue = r.rpe ?? r.session_rpe ?? null;
-          const durValue =
-            r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
-
-          const rpe = rpeValue != null ? Number(rpeValue) : null;
-          const duration = durValue != null ? Number(durValue) : null;
-
-          let load: number | null = null;
-          if (
-            rpe != null &&
-            duration != null &&
-            Number.isFinite(rpe) &&
-            Number.isFinite(duration)
-          ) {
-            load = rpe * duration;
-          }
-
+  
+          const rpe = r.rpe != null ? Number(r.rpe) :
+                      r.session_rpe != null ? Number(r.session_rpe) : null;
+  
+          const duration =
+            r.duration_min != null ? Number(r.duration_min) :
+            r.duration_minutes != null ? Number(r.duration_minutes) :
+            r.duration != null ? Number(r.duration) :
+            null;
+  
+          const load =
+            rpe != null && duration != null
+              ? rpe * duration
+              : null;
+  
+          // ★ ACWRを小数1桁に丸める
           const acwr =
-            baseDate && acwrMap[baseDate] != null ? acwrMap[baseDate] : null;
-
-          // どれも値がなければ除外
-          if (load == null && acwr == null && rpe == null) return null;
-
+            baseDate && acwrMap[baseDate] != null
+              ? Number(acwrMap[baseDate].toFixed(1))
+              : null;
+  
+          if (load == null && acwr == null) return null;
+  
           return {
             date: new Date(r.date).toLocaleDateString('ja-JP', {
               month: 'numeric',
               day: 'numeric',
             }),
-            rpe: rpe != null && Number.isFinite(rpe) ? rpe : null,
+            rpe,
             load,
             acwr,
           };
         })
-        .filter((d) => d !== null) as {
-        date: string;
-        rpe: number | null;
-        load: number | null;
-        acwr: number | null;
-      }[];
-
+        .filter(Boolean);
+  
       console.log('[AthleteDetailModal] rpeLoadAcwrChartData sample:', result.slice(0, 5));
       return result;
     } catch (err) {
@@ -288,22 +282,77 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               ) : (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={weightChartData}>
+                    <ComposedChart data={rpeLoadAcwrChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
-                      <YAxis unit="kg" tick={{ fontSize: 12 }} domain={['auto', 'auto']} />
+
+                      {/* 左Y軸：負荷＋RPE */}
+                      <YAxis
+                        yAxisId="left"
+                        orientation="left"
+                        tick={{ fontSize: 12 }}
+                      />
+
+                      {/* 右Y軸：ACWR */}
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 12 }}
+                        domain={[0, 'auto']}
+                      />
+
                       <Tooltip />
                       <Legend />
+
+                      {/* 負荷（棒グラフ） */}
+                      <Bar
+                        yAxisId="left"
+                        dataKey="load"
+                        name="負荷（RPE×時間）"
+                        fill="#60a5fa"
+                        opacity={0.85}
+                      />
+
+                      {/* ★ RPE（スムース線） */}
                       <Line
+                        yAxisId="left"
                         type="monotone"
-                        dataKey="weight"
-                        name="体重"
-                        stroke="#22c55e"
+                        dataKey="rpe"
+                        name="RPE"
+                        stroke="#facc15"
                         strokeWidth={2}
                         dot={{ r: 3 }}
                         activeDot={{ r: 5 }}
+                        connectNulls
                       />
-                    </LineChart>
+
+                      {/* ★ ACWR（スムース線・小数1桁） */}
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="acwr"
+                        name="ACWR"
+                        stroke="#a855f7"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+
+                      {/* 0.8 / 1.3 の基準線 */}
+                      <ReferenceLine
+                        yAxisId="right"
+                        y={0.8}
+                        stroke="#22c55e"
+                        strokeDasharray="4 4"
+                      />
+                      <ReferenceLine
+                        yAxisId="right"
+                        y={1.3}
+                        stroke="#f97316"
+                        strokeDasharray="4 4"
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               )}
