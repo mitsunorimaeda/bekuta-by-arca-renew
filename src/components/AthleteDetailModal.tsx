@@ -293,6 +293,10 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
 function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
   console.log('[ComposedChartWithTwoAxis] data length:', data.length, data);
 
+  if (!data || data.length === 0) {
+    return null;
+  }
+
   return (
     <ComposedChart
       data={data}
@@ -301,8 +305,12 @@ function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
       <CartesianGrid strokeDasharray="3 3" />
       <XAxis dataKey="date" />
 
-      {/* 左Y軸：Load（シンプルに。formatter は一旦ナシ） */}
-      <YAxis yAxisId="left" orientation="left" />
+      {/* 左Y軸：Load */}
+      <YAxis
+        yAxisId="left"
+        orientation="left"
+        domain={[0, 'auto']}
+      />
 
       {/* 右Y軸：ACWR */}
       <YAxis
@@ -333,6 +341,7 @@ function ComposedChartWithTwoAxis({ data }: { data: any[] }) {
         strokeWidth={2}
         dot={{ r: 3 }}
         activeDot={{ r: 5 }}
+        connectNulls
       />
 
       {/* 目安帯：0.8〜1.3 */}
