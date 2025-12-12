@@ -23,6 +23,39 @@ interface AthleteDetailModalProps {
 
 type TabKey = 'overview' | 'weight' | 'rpe';
 
+// ===== RPE / 負荷 / ACWR 用カスタム Tooltip =====
+const RpeAcwrTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload || payload.length === 0) return null;
+
+  const load = payload.find((p: any) => p.dataKey === 'load')?.value;
+  const rpe = payload.find((p: any) => p.dataKey === 'rpe')?.value;
+  const acwr = payload.find((p: any) => p.dataKey === 'acwr')?.value;
+
+  return (
+    <div className="bg-white/95 shadow-lg rounded-lg px-3 py-2 text-xs border border-gray-200">
+      <p className="font-semibold text-gray-800 mb-1">{label}</p>
+      {load != null && (
+        <p className="text-blue-600">
+          負荷: <span className="font-semibold">{Math.round(load)}</span>
+        </p>
+      )}
+      {rpe != null && (
+        <p className="text-orange-500">
+          RPE: <span className="font-semibold">{rpe}</span>
+        </p>
+      )}
+      {acwr != null && (
+        <p className="text-purple-500">
+          ACWR:{' '}
+          <span className="font-semibold">
+            {typeof acwr === 'number' ? acwr.toFixed(2) : acwr}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+};
+
 export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps) {
   const { records, weightRecords, acwrData, loading } = useTrainingData(athlete.id);
 
@@ -58,7 +91,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
     if (!Array.isArray(records) || records.length === 0) return [];
 
     try {
-      // 日付 → ACWR のマップを作成
+      // 日付 → ACWR のマップ
       const acwrMap: Record<string, number> = {};
       if (Array.isArray(acwrData)) {
         acwrData.forEach((d: any) => {
@@ -81,8 +114,7 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
             r.duration_min ?? r.duration_minutes ?? r.duration ?? null;
 
           const rpe = rpeValue != null ? Number(rpeValue) : null;
-          const duration =
-            durValue != null ? Number(durValue) : null;
+          const duration = durValue != null ? Number(durValue) : null;
 
           let load: number | null = null;
           if (
@@ -95,12 +127,10 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
           }
 
           const acwr =
-            baseDate && acwrMap[baseDate] != null
-              ? acwrMap[baseDate]
-              : null;
+            baseDate && acwrMap[baseDate] != null ? acwrMap[baseDate] : null;
 
-          // どちらも null ならグラフの意味がないので除外
-          if (load == null && acwr == null) return null;
+          // どれも値がなければ除外
+          if (load == null && acwr == null && rpe == null) return null;
 
           return {
             date: new Date(r.date).toLocaleDateString('ja-JP', {
@@ -126,6 +156,21 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
       return [];
     }
   }, [records, acwrData]);
+
+  // Y軸スケールの目安を計算（右軸：RPE & ACWR）
+  const { maxLoad, maxRight } = useMemo(() => {
+    if (!rpeLoadAcwrChartData.length) {
+      return { maxLoad: 0, maxRight: 0 };
+    }
+    let maxL = 0;
+    let maxR = 0;
+    rpeLoadAcwrChartData.forEach((d) => {
+      if (d.load != null && d.load > maxL) maxL = d.load;
+      if (d.rpe != null && d.rpe > maxR) maxR = d.rpe;
+      if (d.acwr != null && d.acwr > maxR) maxR = d.acwr;
+    });
+    return { maxLoad: maxL, maxRight: maxR };
+  }, [rpeLoadAcwrChartData]);
 
   if (loading) {
     return (
@@ -284,83 +329,89 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
               ) : (
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={rpeLoadAcwrChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    {/* 左Y軸：負荷 */}
-                    <YAxis
-                      yAxisId="left"
-                      orientation="left"
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(v: number) => `${v.toFixed(0)}`}
-                    />
-                    {/* 右Y軸：RPE & ACWR */}
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      tick={{ fontSize: 12 }}
-                      domain={[0, 'auto']}
-                    />
-                    <Tooltip />
-                    <Legend />
+                    <ComposedChart
+                      data={rpeLoadAcwrChartData}
+                      margin={{ top: 16, right: 32, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
 
-                    {/* 負荷（棒） */}
-                    <Bar
-                      yAxisId="left"
-                      dataKey="load"
-                      name="負荷（RPE×時間）"
-                      fill="#60a5fa"
-                      opacity={0.85}
-                    />
+                      {/* 左Y軸：負荷 */}
+                      <YAxis
+                        yAxisId="left"
+                        orientation="left"
+                        tick={{ fontSize: 12 }}
+                        domain={[0, maxLoad ? Math.ceil(maxLoad * 1.1) : 'auto']}
+                        tickFormatter={(v: number) => `${v.toFixed(0)}`}
+                      />
 
-                    {/* RPE（線） */}
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="rpe"
-                      name="RPE"
-                      stroke="#f97316"
-                      strokeWidth={1.8}
-                      dot={{ r: 2 }}
-                      activeDot={{ r: 4 }}
-                      connectNulls
-                    />
+                      {/* 右Y軸：RPE & ACWR */}
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 12 }}
+                        domain={[0, maxRight ? Math.max(4, maxRight * 1.2) : 4]}
+                      />
 
-                    {/* ACWR（線） */}
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="acwr"
-                      name="ACWR"
-                      stroke="#a855f7"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
+                      <Tooltip content={<RpeAcwrTooltip />} />
+                      <Legend />
 
-                    {/* 目安ライン 0.8 / 1.3（ACWR 用） */}
-                    <ReferenceLine
-                      yAxisId="right"
-                      y={0.8}
-                      stroke="#22c55e"
-                      strokeDasharray="4 4"
-                      ifOverflow="extendDomain"
-                    />
-                    <ReferenceLine
-                      yAxisId="right"
-                      y={1.3}
-                      stroke="#f97316"
-                      strokeDasharray="4 4"
-                      ifOverflow="extendDomain"
-                    />
-                  </ComposedChart>
+                      <Bar
+                        yAxisId="left"
+                        dataKey="load"
+                        name="負荷（RPE×時間）"
+                        fill="#60a5fa"
+                        opacity={0.85}
+                        barSize={16}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="rpe"
+                        name="RPE"
+                        stroke="#fb923c"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="acwr"
+                        name="ACWR"
+                        stroke="#a855f7"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+
+                      {/* ACWR 目安ライン 0.8 / 1.3 */}
+                      <ReferenceLine
+                        yAxisId="right"
+                        y={0.8}
+                        stroke="#22c55e"
+                        strokeDasharray="4 4"
+                        ifOverflow="extendDomain"
+                      />
+                      <ReferenceLine
+                        yAxisId="right"
+                        y={1.3}
+                        stroke="#f97316"
+                        strokeDasharray="4 4"
+                        ifOverflow="extendDomain"
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               )}
 
               <p className="text-xs text-gray-500 leading-relaxed">
-                ・棒グラフ：負荷（RPE × 練習時間 or load カラム）　
+                ・青い棒グラフ：負荷（RPE × 練習時間 or load カラム）
+                <br />
+                ・オレンジの線：RPE（主観的運動強度）
+                <br />
                 ・紫の線：ACWR（急性/慢性負荷比）
                 <br />
                 ※ いずれかの指標がない日はグラフに表示されません。
