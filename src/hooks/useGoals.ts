@@ -1,71 +1,60 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { normalizeGoalMetadata } from '../lib/goalMetadata';
-import { getGoalProgress } from '../lib/goalUtils';
 
-export interface Goal {
+export interface Streak {
   id: string;
   user_id: string;
-  goal_type: 'performance' | 'weight' | 'streak' | 'habit' | 'custom';
-  title: string;
-  description: string | null;
-  target_value: number | null;
-  current_value: number;
-  unit: string | null;
-  deadline: string | null;
-  status: 'active' | 'completed' | 'failed' | 'abandoned';
-  completed_at: string | null;
-  metadata: any;
-  created_at: string;
-  updated_at: string;
+  streak_type: 'training' | 'weight' | 'sleep' | 'motivation' | 'all';
+  current_streak: number;
+  longest_streak: number;
+  last_recorded_date: string | null;
+  streak_freeze_count: number;
+  total_records: number;
 }
 
-export function useGoals(userId: string) {
-  const [goals, setGoals] = useState<Goal[]>([]);
+export function useStreaks(userId: string) {
+  const [streaks, setStreaks] = useState<Streak[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ このhookインスタンス固有ID（同一userIdでも衝突しない）
+  // ✅ このhookインスタンス固有ID（同じuserIdで複数回呼ばれても衝突しない）
   const instanceIdRef = useRef(
     (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
   );
 
-  // ✅ Realtime channel の参照（多重subscribe防止）
+  // ✅ channel参照（多重subscribe防止）
   const channelRef = useRef<any>(null);
 
-  const fetchGoals = useCallback(async () => {
+  const fetchStreaks = useCallback(async () => {
     if (!userId) return;
 
     try {
       setLoading(true);
-
       const { data, error } = await supabase
-        .from('user_goals')
+        .from('user_streaks')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('streak_type');
 
       if (error) throw error;
 
-      const normalized = (data || []).map((g: any) => ({
-        ...g,
-        metadata: normalizeGoalMetadata(g.metadata),
-      }));
-
-      setGoals(normalized);
+      setStreaks(data || []);
       setError(null);
     } catch (err) {
-      console.error(err);
-      setError('目標の取得に失敗しました');
+      console.error('Error fetching streaks:', err);
+      setError(err instanceof Error ? err.message : 'ストリークの取得に失敗しました');
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
 
-    fetchGoals();
+    fetchStreaks();
 
     // ✅ 既存channelが残ってたら必ず破棄
     if (channelRef.current) {
@@ -75,17 +64,17 @@ export function useGoals(userId: string) {
 
     // ✅ userId + instanceId で完全ユニーク化
     const channel = supabase
-      .channel(`goals:${userId}:${instanceIdRef.current}`)
+      .channel(`user-streaks:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'user_goals',
+          table: 'user_streaks',
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          fetchGoals();
+          fetchStreaks();
         }
       );
 
@@ -99,126 +88,57 @@ export function useGoals(userId: string) {
         channelRef.current = null;
       }
     };
-  }, [userId, fetchGoals]);
+  }, [userId, fetchStreaks]);
 
-  const createGoal = async (goalData: Partial<Goal>) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_goals')
-        .insert({
-          user_id: userId,
-          ...goalData,
-          current_value: goalData.current_value ?? 0,
-          status: 'active',
-          metadata: normalizeGoalMetadata(goalData.metadata),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      await fetchGoals();
-      return { data, error: null };
-    } catch (err) {
-      console.error(err);
-      return { data: null, error: '目標の作成に失敗しました' };
-    }
+  const getStreakByType = (type: Streak['streak_type']) => {
+    return streaks.find((s) => s.streak_type === type) || null;
   };
 
-  const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
-    try {
-      const { error } = await supabase
-        .from('user_goals')
-        .update({
-          ...updates,
-          metadata: updates.metadata ? normalizeGoalMetadata(updates.metadata) : undefined,
-        })
-        .eq('id', goalId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      await fetchGoals();
-      return { error: null };
-    } catch {
-      return { error: '目標の更新に失敗しました' };
-    }
+  const getTotalStreak = () => {
+    return streaks.find((s) => s.streak_type === 'all') || null;
   };
 
-  const updateGoalProgress = async (goalId: string, currentValue: number) => {
-    const goal = goals.find((g) => g.id === goalId);
-    if (!goal) return { error: '目標が見つかりません' };
-
-    const progress = getGoalProgress({ ...goal, current_value: currentValue });
-
-    const updates: Partial<Goal> = {
-      current_value: currentValue,
-      ...(progress.is_completed
-        ? { status: 'completed', completed_at: new Date().toISOString() }
-        : {}),
-    };
-
-    return await updateGoal(goalId, updates);
-  };
-
-  const deleteGoal = async (goalId: string) => {
-    try {
-      const { error } = await supabase
-        .from('user_goals')
-        .delete()
-        .eq('id', goalId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      await fetchGoals();
-      return { error: null };
-    } catch {
-      return { error: '目標の削除に失敗しました' };
-    }
-  };
-
-  function getActiveGoals() {
-    return goals.filter((g) => g.status === 'active');
-  }
-
-  function calculateGoalProgress(goal: Goal) {
-    return getGoalProgress(goal);
-  }
-
-  function getDaysUntilDeadline(goal: Goal) {
-    if (!goal.deadline) return null;
-    const now = new Date();
-    const deadline = new Date(goal.deadline);
-    const diff = deadline.getTime() - now.getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
-  }
-
-  function isGoalOverdue(goal: Goal) {
-    if (!goal.deadline) return false;
-    return new Date(goal.deadline) < new Date() && goal.status !== 'completed';
-  }
-
-  async function completeGoal(goalId: string) {
-    return await updateGoal(goalId, {
-      status: 'completed',
-      completed_at: new Date().toISOString(),
+  const updateStreak = async (type: Streak['streak_type'], recordDate: string) => {
+    const { error } = await supabase.rpc('update_user_streak', {
+      p_user_id: userId,
+      p_streak_type: type,
+      p_record_date: recordDate,
     });
-  }
+    if (error) throw error;
+    await fetchStreaks();
+  };
+
+  const isStreakAtRisk = (streak: Streak | null) => {
+    if (!streak || !streak.last_recorded_date) return false;
+    const lastDate = new Date(streak.last_recorded_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    lastDate.setHours(0, 0, 0, 0);
+    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    return daysDiff >= 1;
+  };
+
+  const getStreakStatus = (streak: Streak | null): 'safe' | 'at_risk' | 'broken' => {
+    if (!streak || !streak.last_recorded_date) return 'broken';
+    const lastDate = new Date(streak.last_recorded_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    lastDate.setHours(0, 0, 0, 0);
+    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff === 0) return 'safe';
+    if (daysDiff === 1) return 'at_risk';
+    return 'broken';
+  };
 
   return {
-    goals,
+    streaks,
     loading,
     error,
-    createGoal,
-    updateGoal,
-    updateGoalProgress,
-    deleteGoal,
-    refresh: fetchGoals,
-    getActiveGoals,
-    getGoalProgress: calculateGoalProgress,
-    getDaysUntilDeadline,
-    isGoalOverdue,
-    completeGoal,
+    getStreakByType,
+    getTotalStreak,
+    updateStreak,
+    isStreakAtRisk,
+    getStreakStatus,
+    refresh: fetchStreaks,
   };
 }
