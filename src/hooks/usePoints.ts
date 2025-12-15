@@ -22,6 +22,31 @@ export interface PointTransaction {
   created_at: string;
 }
 
+const calcLevelInfo = (totalPoints: number) => {
+  let level = 1;
+  let nextLevelPoints = 100;
+
+  while (totalPoints >= nextLevelPoints) {
+    level += 1;
+    nextLevelPoints += level * 50;
+  }
+
+  return { level, nextLevelPoints };
+};
+
+const calcLevelProgress = (totalPoints: number) => {
+  const { level, nextLevelPoints } = calcLevelInfo(totalPoints);
+
+  // 今のレベルの開始点（直前の閾値）
+  const currentLevelStartPoints = nextLevelPoints - (level * 50);
+
+  const into = totalPoints - currentLevelStartPoints;
+  const span = nextLevelPoints - currentLevelStartPoints;
+
+  const progress = span > 0 ? (into / span) * 100 : 0;
+  return Math.min(100, Math.max(0, progress));
+};
+
 export function usePoints(userId: string) {
   const [userPoints, setUserPoints] = useState<UserPoints | null>(null);
   const [transactions, setTransactions] = useState<PointTransaction[]>([]);
@@ -142,16 +167,11 @@ export function usePoints(userId: string) {
 
   const getLevelProgress = () => {
     if (!userPoints) return 0;
+    return calcLevelProgress(userPoints.total_points);
 
-    const totalPointsForCurrentLevel = userPoints.total_points;
-    const pointsForNextLevel = totalPointsForCurrentLevel + userPoints.points_to_next_level;
-    const pointsNeededForCurrentLevel = pointsForNextLevel - (userPoints.current_level * 50);
+    const { level } = calcLevelInfo(userPoints.total_points);
+    console.log('DB current_level:', userPoints.current_level, 'Calculated level:', level);
 
-    const progress =
-      ((totalPointsForCurrentLevel - pointsNeededForCurrentLevel) /
-      (pointsForNextLevel - pointsNeededForCurrentLevel)) * 100;
-
-    return Math.min(100, Math.max(0, progress));
   };
 
   const getRecentTransactions = (limit: number = 10) => {
