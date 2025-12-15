@@ -1,5 +1,5 @@
 // src/lib/engineClient.ts
-import { supabase } from './supabaseClient';
+import { supabase } from './supabase';
 
 export type EngineEventType =
   | 'training_saved'
