@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface Streak {
@@ -17,36 +17,14 @@ export function useStreaks(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+  // ✅ チャンネル多重subscribe防止（インスタンス固有ID）
+  const instanceIdRef = useRef(
+    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+  );
+  const channelRef = useRef<any>(null);
 
-    fetchStreaks();
-
-    const subscription = supabase
-      .channel('user_streaks_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_streaks',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchStreaks();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [userId]);
-
-  const fetchStreaks = async () => {
+  const fetchStreaks = useCallback(async () => {
+    if (!userId) return;
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -65,7 +43,49 @@ export function useStreaks(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    fetchStreaks();
+
+    // ✅ 既存チャネルが残ってたら必ず破棄
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // ✅ userId + instanceId で完全ユニーク化
+    const channel = supabase
+      .channel(`user-streaks:${userId}:${instanceIdRef.current}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_streaks',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchStreaks();
+        }
+      );
+
+    channel.subscribe();
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, fetchStreaks]);
 
   const getStreakByType = (type: Streak['streak_type']) => {
     return streaks.find((s) => s.streak_type === type) || null;
@@ -76,45 +96,32 @@ export function useStreaks(userId: string) {
   };
 
   const updateStreak = async (type: Streak['streak_type'], recordDate: string) => {
-    try {
-      const { error } = await supabase.rpc('update_user_streak', {
-        p_user_id: userId,
-        p_streak_type: type,
-        p_record_date: recordDate,
-      });
-
-      if (error) throw error;
-
-      await fetchStreaks();
-    } catch (err) {
-      console.error('Error updating streak:', err);
-      throw err;
-    }
+    const { error } = await supabase.rpc('update_user_streak', {
+      p_user_id: userId,
+      p_streak_type: type,
+      p_record_date: recordDate,
+    });
+    if (error) throw error;
+    await fetchStreaks();
   };
 
   const isStreakAtRisk = (streak: Streak | null) => {
     if (!streak || !streak.last_recorded_date) return false;
-
     const lastDate = new Date(streak.last_recorded_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     lastDate.setHours(0, 0, 0, 0);
-
     const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
     return daysDiff >= 1;
   };
 
   const getStreakStatus = (streak: Streak | null): 'safe' | 'at_risk' | 'broken' => {
     if (!streak || !streak.last_recorded_date) return 'broken';
-
     const lastDate = new Date(streak.last_recorded_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     lastDate.setHours(0, 0, 0, 0);
-
     const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
     if (daysDiff === 0) return 'safe';
     if (daysDiff === 1) return 'at_risk';
     return 'broken';
