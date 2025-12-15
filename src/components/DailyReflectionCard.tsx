@@ -21,6 +21,8 @@ export function DailyReflectionCard({ userId, defaultExpanded = true }: Props) {
     remove,
   } = useDailyReflections(userId);
 
+  console.log('[DailyReflectionCard] mounted. userId=', userId);
+
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [text, setText] = useState('');
 
