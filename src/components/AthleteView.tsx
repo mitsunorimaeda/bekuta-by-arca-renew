@@ -41,6 +41,7 @@ import { UnifiedDailyCheckIn } from './UnifiedDailyCheckIn';
 import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
 import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
+import { DailyReflectionCard } from './DailyReflectionCard';
 import {
   Activity,
   TrendingUp,
@@ -842,6 +843,9 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 showLimited={true}
                 limitCount={10}
               />
+            </div>
+            <div className="mt-6">
+              <DailyReflectionCard userId={user.id} />
             </div>
           </>
         ) : activeTab === 'trends' ? (
