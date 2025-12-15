@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface Badge {
@@ -31,37 +31,10 @@ export function useBadges(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+  // ✅ Realtime channel の参照（多重subscribe防止）
+  const channelRef = useRef<any>(null);
 
-    fetchBadges();
-    fetchUserBadges();
-
-    const subscription = supabase
-      .channel('user_badges_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'user_badges',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchUserBadges();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [userId]);
-
-  const fetchBadges = async () => {
+  const fetchBadges = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('badges')
@@ -69,22 +42,23 @@ export function useBadges(userId: string) {
         .order('sort_order');
 
       if (error) throw error;
-
       setAllBadges(data || []);
     } catch (err) {
       console.error('Error fetching badges:', err);
     }
-  };
+  }, []);
 
-  const fetchUserBadges = async () => {
+  const fetchUserBadges = useCallback(async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('user_badges')
-        .select(`
+        .select(
+          `
           *,
           badge:badges(*)
-        `)
+        `
+        )
         .eq('user_id', userId)
         .order('earned_at', { ascending: false });
 
@@ -98,7 +72,56 @@ export function useBadges(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // 初期取得
+    fetchBadges();
+    fetchUserBadges();
+
+    // ✅ 既存channelが残ってたら必ず破棄
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // ✅ userIdでユニークなchannel名にする（重要）
+    const channel = supabase
+      .channel(`user-badges:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_badges',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchUserBadges();
+        }
+      );
+
+    // ✅ subscribeは1回だけ
+    channel.subscribe((status) => {
+      // 必要ならデバッグ用
+      // console.log('[user-badges realtime]', status);
+    });
+
+    channelRef.current = channel;
+
+    // ✅ cleanup は removeChannel
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, fetchBadges, fetchUserBadges]);
 
   const earnBadge = async (badgeName: string, metadata: any = {}) => {
     try {
@@ -138,25 +161,18 @@ export function useBadges(userId: string) {
     }
   };
 
-  const getNewBadges = () => {
-    return userBadges.filter((ub) => ub.is_new);
-  };
+  const getNewBadges = () => userBadges.filter((ub) => ub.is_new);
 
-  const hasBadge = (badgeName: string) => {
-    return userBadges.some((ub) => ub.badge?.name === badgeName);
-  };
+  const hasBadge = (badgeName: string) =>
+    userBadges.some((ub) => ub.badge?.name === badgeName);
 
-  const getBadgesByCategory = (category: Badge['category']) => {
-    return userBadges.filter((ub) => ub.badge?.category === category);
-  };
+  const getBadgesByCategory = (category: Badge['category']) =>
+    userBadges.filter((ub) => ub.badge?.category === category);
 
-  const getBadgesByRarity = (rarity: Badge['rarity']) => {
-    return userBadges.filter((ub) => ub.badge?.rarity === rarity);
-  };
+  const getBadgesByRarity = (rarity: Badge['rarity']) =>
+    userBadges.filter((ub) => ub.badge?.rarity === rarity);
 
-  const getEarnedBadgeIds = () => {
-    return new Set(userBadges.map((ub) => ub.badge_id));
-  };
+  const getEarnedBadgeIds = () => new Set(userBadges.map((ub) => ub.badge_id));
 
   const getUnearnedBadges = () => {
     const earnedIds = getEarnedBadgeIds();

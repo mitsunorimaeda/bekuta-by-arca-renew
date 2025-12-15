@@ -78,21 +78,14 @@ export function TeamAchievementNotification({ userId }: Props) {
   // 🔥 Realtime サブスク（安全版）
   // ========================
   const setupSubscription = () => {
+    // 🔒 既にあれば必ず破棄（topic判定しない）
     if (channelRef.current) {
-      // すでに subscribe 済みなら再作成しない
-      return;
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
-
-    const channelName = `team-achievements-${userId}`;
-
-    // 念のため古いチャネルを削除
-    supabase.getChannels().forEach((c) => {
-      if (c.topic === channelName) supabase.removeChannel(c);
-    });
-
-    const channel = supabase.channel(channelName);
-
-    channel
+  
+    const channel = supabase
+      .channel(`team-achievements:${userId}`)
       .on(
         "postgres_changes",
         {
@@ -104,11 +97,13 @@ export function TeamAchievementNotification({ userId }: Props) {
         () => {
           loadUnreadNotifications();
         }
-      )
-      .subscribe((status) => {
-        console.log("🔔 Notification channel status:", status);
-      });
-
+      );
+  
+    // ✅ subscribe は1回だけ
+    channel.subscribe((status) => {
+      console.log("🔔 TeamAchievement channel:", status);
+    });
+  
     channelRef.current = channel;
   };
 

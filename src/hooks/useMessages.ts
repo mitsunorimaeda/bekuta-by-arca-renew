@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -41,20 +41,27 @@ export function useMessages(userId: string) {
   const [error, setError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
 
+  // ✅ active thread の realtime channel を保持（多重subscribe防止）
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
   // Fetch all threads for the user
   const fetchThreads = useCallback(async () => {
+    if (!userId) return;
+
     try {
       setLoading(true);
 
       const { data: threadsData, error: threadsError } = await supabase
         .from('message_threads')
-        .select(`
+        .select(
+          `
           id,
           participant1_id,
           participant2_id,
           last_message_at,
           created_at
-        `)
+        `
+        )
         .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
         .order('last_message_at', { ascending: false });
 
@@ -64,18 +71,14 @@ export function useMessages(userId: string) {
       const threadsWithDetails = await Promise.all(
         (threadsData || []).map(async (thread) => {
           const otherUserId =
-            thread.participant1_id === userId
-              ? thread.participant2_id
-              : thread.participant1_id;
+            thread.participant1_id === userId ? thread.participant2_id : thread.participant1_id;
 
-          // Fetch other user details
           const { data: userData } = await supabase
             .from('users')
             .select('id, name, email, role')
             .eq('id', otherUserId)
             .single();
 
-          // Fetch unread count
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
@@ -83,7 +86,6 @@ export function useMessages(userId: string) {
             .eq('receiver_id', userId)
             .eq('is_read', false);
 
-          // Fetch last message preview
           const { data: lastMessage } = await supabase
             .from('messages')
             .select('content')
@@ -116,7 +118,8 @@ export function useMessages(userId: string) {
     try {
       const { data: messagesData, error: messagesError } = await supabase
         .from('messages')
-        .select(`
+        .select(
+          `
           id,
           thread_id,
           sender_id,
@@ -126,10 +129,11 @@ export function useMessages(userId: string) {
           created_at,
           updated_at,
           sender:users!messages_sender_id_fkey(id, name, email)
-        `)
+        `
+        )
         .eq('thread_id', threadId)
         .order('created_at', { ascending: true })
-        .limit(100); // Limit to last 100 messages for performance
+        .limit(100);
 
       if (messagesError) throw messagesError;
 
@@ -146,93 +150,62 @@ export function useMessages(userId: string) {
   // Create or get existing thread with another user
   const getOrCreateThread = useCallback(
     async (otherUserId: string) => {
-      try {
-        // Determine participant order (smaller id first using string comparison)
-        const [participant1, participant2] = [userId, otherUserId].sort();
+      // Determine participant order (smaller id first using string comparison)
+      const [participant1, participant2] = [userId, otherUserId].sort();
 
-        console.log('Creating/finding thread:', {
-          userId,
-          otherUserId,
-          participant1,
-          participant2
-        });
+      // Check if both users are in the same organization
+      const { data: userOrgs } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', userId);
 
-        // Check if both users are in the same organization
-        const { data: userOrgs } = await supabase
-          .from('organization_members')
-          .select('organization_id')
-          .eq('user_id', userId);
+      const { data: otherUserOrgs } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', otherUserId);
 
-        const { data: otherUserOrgs } = await supabase
-          .from('organization_members')
-          .select('organization_id')
-          .eq('user_id', otherUserId);
-
-        console.log('User organizations:', {
-          userOrgs,
-          otherUserOrgs
-        });
-
-        if (!userOrgs || userOrgs.length === 0) {
-          throw new Error('あなたは組織に所属していません。メッセージを送信するには組織に所属する必要があります。');
-        }
-
-        if (!otherUserOrgs || otherUserOrgs.length === 0) {
-          throw new Error('相手が組織に所属していません。');
-        }
-
-        const userOrgIds = userOrgs.map(o => o.organization_id);
-        const otherUserOrgIds = otherUserOrgs.map(o => o.organization_id);
-        const commonOrgs = userOrgIds.filter(id => otherUserOrgIds.includes(id));
-
-        if (commonOrgs.length === 0) {
-          throw new Error('相手と同じ組織に所属していません。同じ組織のメンバーとのみメッセージのやり取りができます。');
-        }
-
-        // Try to find existing thread
-        const { data: existingThread, error: findError } = await supabase
-          .from('message_threads')
-          .select('id')
-          .eq('participant1_id', participant1)
-          .eq('participant2_id', participant2)
-          .maybeSingle();
-
-        if (findError) {
-          console.error('Error finding thread:', findError);
-          throw new Error('既存のスレッド検索に失敗しました: ' + findError.message);
-        }
-
-        if (existingThread) {
-          console.log('Found existing thread:', existingThread.id);
-          return existingThread.id;
-        }
-
-        // Create new thread if it doesn't exist
-        console.log('Creating new thread...');
-        const { data: newThread, error: createError } = await supabase
-          .from('message_threads')
-          .insert({
-            participant1_id: participant1,
-            participant2_id: participant2,
-          })
-          .select('id')
-          .single();
-
-        if (createError) {
-          console.error('Error creating thread:', createError);
-          throw new Error('スレッド作成に失敗しました: ' + createError.message);
-        }
-
-        console.log('Created new thread:', newThread.id);
-
-        // Refresh threads list
-        await fetchThreads();
-
-        return newThread.id;
-      } catch (err) {
-        console.error('Error in getOrCreateThread:', err);
-        throw err;
+      if (!userOrgs || userOrgs.length === 0) {
+        throw new Error(
+          'あなたは組織に所属していません。メッセージを送信するには組織に所属する必要があります。'
+        );
       }
+      if (!otherUserOrgs || otherUserOrgs.length === 0) {
+        throw new Error('相手が組織に所属していません。');
+      }
+
+      const userOrgIds = userOrgs.map((o) => o.organization_id);
+      const otherUserOrgIds = otherUserOrgs.map((o) => o.organization_id);
+      const commonOrgs = userOrgIds.filter((id) => otherUserOrgIds.includes(id));
+
+      if (commonOrgs.length === 0) {
+        throw new Error(
+          '相手と同じ組織に所属していません。同じ組織のメンバーとのみメッセージのやり取りができます。'
+        );
+      }
+
+      const { data: existingThread, error: findError } = await supabase
+        .from('message_threads')
+        .select('id')
+        .eq('participant1_id', participant1)
+        .eq('participant2_id', participant2)
+        .maybeSingle();
+
+      if (findError) throw new Error('既存のスレッド検索に失敗しました: ' + findError.message);
+      if (existingThread) return existingThread.id;
+
+      const { data: newThread, error: createError } = await supabase
+        .from('message_threads')
+        .insert({
+          participant1_id: participant1,
+          participant2_id: participant2,
+        })
+        .select('id')
+        .single();
+
+      if (createError) throw new Error('スレッド作成に失敗しました: ' + createError.message);
+
+      await fetchThreads();
+      return newThread.id;
     },
     [userId, fetchThreads]
   );
@@ -242,13 +215,8 @@ export function useMessages(userId: string) {
     async (threadId: string, content: string, receiverId: string) => {
       try {
         const trimmedContent = content.trim();
-        if (!trimmedContent) {
-          throw new Error('メッセージを入力してください');
-        }
-
-        if (trimmedContent.length > 2000) {
-          throw new Error('メッセージは2000文字以内で入力してください');
-        }
+        if (!trimmedContent) throw new Error('メッセージを入力してください');
+        if (trimmedContent.length > 2000) throw new Error('メッセージは2000文字以内で入力してください');
 
         const { error: sendError } = await supabase.from('messages').insert({
           thread_id: threadId,
@@ -259,9 +227,8 @@ export function useMessages(userId: string) {
 
         if (sendError) throw sendError;
 
-        // Refresh messages for this thread
         await fetchMessages(threadId);
-        await fetchThreads(); // Update thread list with new last message
+        await fetchThreads();
 
         return { success: true, error: null };
       } catch (err) {
@@ -276,90 +243,98 @@ export function useMessages(userId: string) {
   );
 
   // Mark message as read
-  const markAsRead = useCallback(async (messageId: string) => {
-    try {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('id', messageId)
-        .eq('receiver_id', userId);
+  const markAsRead = useCallback(
+    async (messageId: string) => {
+      try {
+        const { error } = await supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('id', messageId)
+          .eq('receiver_id', userId);
 
-      if (error) throw error;
-    } catch (err) {
-      console.error('Error marking message as read:', err);
-    }
-  }, [userId]);
+        if (error) throw error;
+      } catch (err) {
+        console.error('Error marking message as read:', err);
+      }
+    },
+    [userId]
+  );
 
   // Mark all messages in a thread as read
-  const markThreadAsRead = useCallback(async (threadId: string) => {
-    try {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('thread_id', threadId)
-        .eq('receiver_id', userId)
-        .eq('is_read', false);
+  const markThreadAsRead = useCallback(
+    async (threadId: string) => {
+      try {
+        const { error } = await supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('thread_id', threadId)
+          .eq('receiver_id', userId)
+          .eq('is_read', false);
 
-      if (error) throw error;
+        if (error) throw error;
+        await fetchThreads();
+      } catch (err) {
+        console.error('Error marking thread as read:', err);
+      }
+    },
+    [userId, fetchThreads]
+  );
 
-      // Refresh threads to update unread counts
-      await fetchThreads();
-    } catch (err) {
-      console.error('Error marking thread as read:', err);
-    }
-  }, [userId, fetchThreads]);
-
-  // Subscribe to realtime updates for active thread only
+  // ✅ Subscribe to realtime updates for active thread only（安全版）
   useEffect(() => {
+    // まず前のchannelを必ず破棄
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
     if (!activeThreadId) return;
 
-    let channel: RealtimeChannel;
+    const channel = supabase
+      .channel(`messages:${activeThreadId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `thread_id=eq.${activeThreadId}`,
+        },
+        () => {
+          fetchMessages(activeThreadId);
+          fetchThreads();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `thread_id=eq.${activeThreadId}`,
+        },
+        () => {
+          fetchMessages(activeThreadId);
+        }
+      );
 
-    const setupRealtimeSubscription = async () => {
-      channel = supabase
-        .channel(`messages:${activeThreadId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `thread_id=eq.${activeThreadId}`,
-          },
-          () => {
-            fetchMessages(activeThreadId);
-            fetchThreads(); // Update thread list
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'messages',
-            filter: `thread_id=eq.${activeThreadId}`,
-          },
-          () => {
-            fetchMessages(activeThreadId);
-          }
-        )
-        .subscribe();
-    };
+    channel.subscribe((status) => {
+      // console.log('[messages realtime]', status);
+    });
 
-    setupRealtimeSubscription();
+    channelRef.current = channel;
 
     return () => {
-      if (channel) {
-        channel.unsubscribe();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, [activeThreadId, fetchMessages, fetchThreads]);
 
   // Initial fetch
   useEffect(() => {
-    if (userId) {
-      fetchThreads();
-    }
+    if (userId) fetchThreads();
   }, [userId, fetchThreads]);
 
   // Get total unread count across all threads

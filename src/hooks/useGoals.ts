@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeGoalMetadata } from '../lib/goalMetadata';
 import { getGoalProgress } from '../lib/goalUtils';
@@ -25,26 +25,12 @@ export function useGoals(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) return;
-  
-    fetchGoals();
-  
-    const subscription = supabase
-      .channel('goals_changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_goals', filter: `user_id=eq.${userId}` },
-        fetchGoals
-      )
-      .subscribe();
-  
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [userId]);
+  // ✅ Realtime channel の参照（多重subscribe防止）
+  const channelRef = useRef<any>(null);
 
-  const fetchGoals = async () => {
+  const fetchGoals = useCallback(async () => {
+    if (!userId) return;
+
     try {
       setLoading(true);
 
@@ -56,7 +42,7 @@ export function useGoals(userId: string) {
 
       if (error) throw error;
 
-      const normalized = (data || []).map(g => ({
+      const normalized = (data || []).map((g: any) => ({
         ...g,
         metadata: normalizeGoalMetadata(g.metadata),
       }));
@@ -69,7 +55,50 @@ export function useGoals(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    fetchGoals();
+
+    // ✅ 既存channelが残ってたら必ず破棄
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // ✅ userIdでユニークなchannel名
+    const channel = supabase
+      .channel(`goals:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_goals',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchGoals();
+        }
+      );
+
+    // ✅ subscribe は1回だけ
+    channel.subscribe((status) => {
+      // console.log('[goals realtime]', status);
+    });
+
+    channelRef.current = channel;
+
+    // ✅ cleanup は removeChannel
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, fetchGoals]);
 
   const createGoal = async (goalData: Partial<Goal>) => {
     try {
@@ -116,7 +145,7 @@ export function useGoals(userId: string) {
   };
 
   const updateGoalProgress = async (goalId: string, currentValue: number) => {
-    const goal = goals.find(g => g.id === goalId);
+    const goal = goals.find((g) => g.id === goalId);
     if (!goal) return { error: '目標が見つかりません' };
 
     const progress = getGoalProgress({ ...goal, current_value: currentValue });
@@ -151,9 +180,9 @@ export function useGoals(userId: string) {
     }
   };
 
-    // 進行中の目標
+  // 進行中の目標
   function getActiveGoals() {
-    return goals.filter(g => g.status === 'active');
+    return goals.filter((g) => g.status === 'active');
   }
 
   // 進捗計算（goalUtils のラッパー）
@@ -184,7 +213,7 @@ export function useGoals(userId: string) {
     });
   }
 
-return {
+  return {
     goals,
     loading,
     error,
@@ -193,7 +222,7 @@ return {
     updateGoalProgress,
     deleteGoal,
     refresh: fetchGoals,
-  
+
     // 🔥 GamificationView が必要とする関数
     getActiveGoals,
     getGoalProgress: calculateGoalProgress,
