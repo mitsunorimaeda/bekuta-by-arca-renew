@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Trophy, X, Users, Award, TrendingUp } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import confetti from "canvas-confetti";
@@ -14,7 +14,7 @@ interface TeamAchievement {
   celebrated: boolean;
 }
 
-interface TeamAchievementNotification {
+interface TeamAchievementNotificationRow {
   id: string;
   team_id: string;
   user_id: string;
@@ -29,41 +29,16 @@ interface Props {
 }
 
 export function TeamAchievementNotification({ userId }: Props) {
-  const [notifications, setNotifications] = useState<TeamAchievementNotification[]>([]);
+  const [notifications, setNotifications] = useState<TeamAchievementNotificationRow[]>([]);
   const [showNotification, setShowNotification] = useState(false);
   const [currentNotification, setCurrentNotification] =
-    useState<TeamAchievementNotification | null>(null);
+    useState<TeamAchievementNotificationRow | null>(null);
 
-  // 💡 二重 subscribe を防ぐフラグ
   const channelRef = useRef<any>(null);
 
-  // ------- 初期読み込み -------
-  useEffect(() => {
+  const loadUnreadNotifications = useCallback(async () => {
     if (!userId) return;
 
-    loadUnreadNotifications();
-    //setupSubscription();
-
-    return () => {
-      // 🔥 クリーンアップで必ず unsubscribe
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [userId]);
-
-  // ------- 新しい通知があれば表示 -------
-  useEffect(() => {
-    if (notifications.length > 0 && !showNotification) {
-      showNextNotification();
-    }
-  }, [notifications]);
-
-  // ========================
-  // 🔥 未読通知の読み込み
-  // ========================
-  const loadUnreadNotifications = async () => {
     const { data, error } = await supabase
       .from("team_achievement_notifications")
       .select(`*, team_achievements:achievement_id (*)`)
@@ -72,18 +47,19 @@ export function TeamAchievementNotification({ userId }: Props) {
       .order("created_at", { ascending: true });
 
     if (!error && data) setNotifications(data as any[]);
-  };
+  }, [userId]);
 
-  // ========================
-  // 🔥 Realtime サブスク（安全版）
-  // ========================
-  const setupSubscription = () => {
-    // 🔒 既にあれば必ず破棄（topic判定しない）
+  useEffect(() => {
+    if (!userId) return;
+
+    loadUnreadNotifications();
+
+    // ✅ 既存channelを破棄（同名channel再利用対策）
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-  
+
     const channel = supabase
       .channel(`team-achievements:${userId}`)
       .on(
@@ -98,54 +74,43 @@ export function TeamAchievementNotification({ userId }: Props) {
           loadUnreadNotifications();
         }
       );
-  
-    // ✅ subscribe は1回だけ
-    channel.subscribe((status) => {
-      console.log("🔔 TeamAchievement channel:", status);
-    });
-  
-    channelRef.current = channel;
-  };
 
-  // ========================
-  // 🔥 次の通知をポップアップ表示
-  // ========================
-  const showNextNotification = () => {
+    channel.subscribe(); // ✅ 1回だけ
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, loadUnreadNotifications]);
+
+  useEffect(() => {
     if (notifications.length > 0 && !showNotification) {
       setCurrentNotification(notifications[0]);
       setShowNotification(true);
       triggerConfetti();
     }
-  };
+  }, [notifications, showNotification]);
 
-  // ========================
-  // 🎉 Confetti 演出
-  // ========================
   const triggerConfetti = () => {
     const duration = 2500;
     const end = Date.now() + duration;
 
-    const defaults = {
-      startVelocity: 25,
-      spread: 360,
-      ticks: 60,
-      zIndex: 9999,
-    };
+    const defaults = { startVelocity: 25, spread: 360, ticks: 60, zIndex: 9999 };
 
     const interval: any = setInterval(() => {
       const timeLeft = end - Date.now();
       if (timeLeft <= 0) return clearInterval(interval);
 
       const particleCount = 50 * (timeLeft / duration);
-
       confetti({ ...defaults, particleCount, origin: { x: 0.2, y: 0.2 } });
       confetti({ ...defaults, particleCount, origin: { x: 0.8, y: 0.2 } });
     }, 200);
   };
 
-  // ========================
-  // ❌ 通知閉じる
-  // ========================
   const handleClose = async () => {
     if (!currentNotification) return;
 
@@ -154,19 +119,10 @@ export function TeamAchievementNotification({ userId }: Props) {
     });
 
     setShowNotification(false);
-
-    setNotifications((prev) =>
-      prev.filter((n) => n.id !== currentNotification.id)
-    );
-
+    setNotifications((prev) => prev.filter((n) => n.id !== currentNotification.id));
     setCurrentNotification(null);
-
-    setTimeout(showNextNotification, 500);
   };
 
-  // ========================
-  // アイコン選択
-  // ========================
   const getAchievementIcon = (type: string) => {
     switch (type) {
       case "team_streak":
@@ -187,9 +143,6 @@ export function TeamAchievementNotification({ userId }: Props) {
   const achievement = currentNotification.team_achievements;
   const Icon = getAchievementIcon(achievement.achievement_type);
 
-  // ========================
-  // 🎨 UI
-  // ========================
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/30 dark:to-orange-900/30 rounded-2xl shadow-2xl max-w-md w-full p-8 border-4 border-yellow-400 dark:border-yellow-600 animate-bounce-in">
@@ -215,9 +168,7 @@ export function TeamAchievementNotification({ userId }: Props) {
             <h3 className="text-xl font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
               {achievement.title}
             </h3>
-            <p className="text-gray-700 dark:text-gray-300">
-              {achievement.description}
-            </p>
+            <p className="text-gray-700 dark:text-gray-300">{achievement.description}</p>
           </div>
 
           <button

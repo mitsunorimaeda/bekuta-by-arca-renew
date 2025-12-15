@@ -17,7 +17,6 @@ export function useStreaks(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Realtime channel 参照（多重 subscribe 防止）
   const channelRef = useRef<any>(null);
 
   const fetchStreaks = useCallback(async () => {
@@ -49,16 +48,15 @@ export function useStreaks(userId: string) {
       return;
     }
 
-    // 初回取得
     fetchStreaks();
 
-    // ✅ 既存channelが残ってたら必ず破棄（重要）
+    // ✅ 既存があれば必ず破棄（同名channel再利用対策）
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
-    // ✅ userId を含めて channel 名をユニーク化（重要）
+    // ✅ userIdを含めてユニーク化
     const channel = supabase
       .channel(`user-streaks:${userId}`)
       .on(
@@ -74,12 +72,10 @@ export function useStreaks(userId: string) {
         }
       );
 
-    // ✅ subscribe は1回だけ
-    channel.subscribe();
+    channel.subscribe(); // ✅ 1回だけ
 
     channelRef.current = channel;
 
-    // ✅ cleanup は removeChannel で統一（unsubscribeより安定）
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -88,53 +84,38 @@ export function useStreaks(userId: string) {
     };
   }, [userId, fetchStreaks]);
 
-  const getStreakByType = (type: Streak['streak_type']) => {
-    return streaks.find((s) => s.streak_type === type) || null;
-  };
+  const getStreakByType = (type: Streak['streak_type']) =>
+    streaks.find((s) => s.streak_type === type) || null;
 
-  const getTotalStreak = () => {
-    return streaks.find((s) => s.streak_type === 'all') || null;
-  };
+  const getTotalStreak = () => streaks.find((s) => s.streak_type === 'all') || null;
 
   const updateStreak = async (type: Streak['streak_type'], recordDate: string) => {
-    try {
-      const { error } = await supabase.rpc('update_user_streak', {
-        p_user_id: userId,
-        p_streak_type: type,
-        p_record_date: recordDate,
-      });
-
-      if (error) throw error;
-
-      await fetchStreaks();
-    } catch (err) {
-      console.error('Error updating streak:', err);
-      throw err;
-    }
+    const { error } = await supabase.rpc('update_user_streak', {
+      p_user_id: userId,
+      p_streak_type: type,
+      p_record_date: recordDate,
+    });
+    if (error) throw error;
+    await fetchStreaks();
   };
 
   const isStreakAtRisk = (streak: Streak | null) => {
-    if (!streak || !streak.last_recorded_date) return false;
-
+    if (!streak?.last_recorded_date) return false;
     const lastDate = new Date(streak.last_recorded_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     lastDate.setHours(0, 0, 0, 0);
-
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
     return daysDiff >= 1;
   };
 
   const getStreakStatus = (streak: Streak | null): 'safe' | 'at_risk' | 'broken' => {
-    if (!streak || !streak.last_recorded_date) return 'broken';
-
+    if (!streak?.last_recorded_date) return 'broken';
     const lastDate = new Date(streak.last_recorded_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     lastDate.setHours(0, 0, 0, 0);
-
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-
+    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
     if (daysDiff === 0) return 'safe';
     if (daysDiff === 1) return 'at_risk';
     return 'broken';
