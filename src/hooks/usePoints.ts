@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface UserPoints {
@@ -36,8 +36,6 @@ const calcLevelInfo = (totalPoints: number) => {
 
 const calcLevelProgress = (totalPoints: number) => {
   const { level, nextLevelPoints } = calcLevelInfo(totalPoints);
-
-  // 今のレベルの開始点（直前の閾値）
   const currentLevelStartPoints = nextLevelPoints - (level * 50);
 
   const into = totalPoints - currentLevelStartPoints;
@@ -53,54 +51,11 @@ export function usePoints(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+  // ✅ 多重subscribe防止（念のため）
+  const channelsRef = useRef<{ points?: any; tx?: any }>({});
 
-    fetchUserPoints();
-    fetchTransactions();
-
-    const pointsSubscription = supabase
-      .channel('user_points_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_points',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchUserPoints();
-        }
-      )
-      .subscribe();
-
-    const transactionsSubscription = supabase
-      .channel('point_transactions_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'point_transactions',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchTransactions();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      pointsSubscription.unsubscribe();
-      transactionsSubscription.unsubscribe();
-    };
-  }, [userId]);
-
-  const fetchUserPoints = async () => {
+  const fetchUserPoints = useCallback(async () => {
+    if (!userId) return;
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -111,7 +66,7 @@ export function usePoints(userId: string) {
 
       if (error) throw error;
 
-      setUserPoints(data);
+      setUserPoints(data ?? null);
       setError(null);
     } catch (err) {
       console.error('Error fetching user points:', err);
@@ -119,9 +74,10 @@ export function usePoints(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
+    if (!userId) return;
     try {
       const { data, error } = await supabase
         .from('point_transactions')
@@ -136,7 +92,66 @@ export function usePoints(userId: string) {
     } catch (err) {
       console.error('Error fetching transactions:', err);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // 初回取得
+    fetchUserPoints();
+    fetchTransactions();
+
+    // ✅ 既存があれば必ず remove（多重subscribe防止）
+    if (channelsRef.current.points) {
+      supabase.removeChannel(channelsRef.current.points);
+      channelsRef.current.points = undefined;
+    }
+    if (channelsRef.current.tx) {
+      supabase.removeChannel(channelsRef.current.tx);
+      channelsRef.current.tx = undefined;
+    }
+
+    // ✅ userId を含めて channel をユニーク化
+    const pointsChannel = supabase
+      .channel(`user_points_changes:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_points', filter: `user_id=eq.${userId}` },
+        () => {
+          fetchUserPoints();
+        }
+      )
+      .subscribe();
+
+    const txChannel = supabase
+      .channel(`point_transactions_changes:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'point_transactions', filter: `user_id=eq.${userId}` },
+        () => {
+          fetchTransactions();
+        }
+      )
+      .subscribe();
+
+    channelsRef.current.points = pointsChannel;
+    channelsRef.current.tx = txChannel;
+
+    return () => {
+      // ✅ unsubscribe より removeChannel が安定
+      if (channelsRef.current.points) {
+        supabase.removeChannel(channelsRef.current.points);
+        channelsRef.current.points = undefined;
+      }
+      if (channelsRef.current.tx) {
+        supabase.removeChannel(channelsRef.current.tx);
+        channelsRef.current.tx = undefined;
+      }
+    };
+  }, [userId, fetchUserPoints, fetchTransactions]);
 
   const awardPoints = async (
     points: number,
@@ -168,10 +183,6 @@ export function usePoints(userId: string) {
   const getLevelProgress = () => {
     if (!userPoints) return 0;
     return calcLevelProgress(userPoints.total_points);
-
-    const { level } = calcLevelInfo(userPoints.total_points);
-    console.log('DB current_level:', userPoints.current_level, 'Calculated level:', level);
-
   };
 
   const getRecentTransactions = (limit: number = 10) => {
