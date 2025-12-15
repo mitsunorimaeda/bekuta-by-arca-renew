@@ -25,6 +25,11 @@ export function useGoals(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ このhookインスタンス固有ID（同一userIdでも衝突しない）
+  const instanceIdRef = useRef(
+    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+  );
+
   // ✅ Realtime channel の参照（多重subscribe防止）
   const channelRef = useRef<any>(null);
 
@@ -68,9 +73,9 @@ export function useGoals(userId: string) {
       channelRef.current = null;
     }
 
-    // ✅ userIdでユニークなchannel名
+    // ✅ userId + instanceId で完全ユニーク化
     const channel = supabase
-      .channel(`goals:${userId}`)
+      .channel(`goals:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {
@@ -84,14 +89,10 @@ export function useGoals(userId: string) {
         }
       );
 
-    // ✅ subscribe は1回だけ
-    channel.subscribe((status) => {
-      // console.log('[goals realtime]', status);
-    });
+    channel.subscribe();
 
     channelRef.current = channel;
 
-    // ✅ cleanup は removeChannel
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -153,10 +154,7 @@ export function useGoals(userId: string) {
     const updates: Partial<Goal> = {
       current_value: currentValue,
       ...(progress.is_completed
-        ? {
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-          }
+        ? { status: 'completed', completed_at: new Date().toISOString() }
         : {}),
     };
 
@@ -180,17 +178,14 @@ export function useGoals(userId: string) {
     }
   };
 
-  // 進行中の目標
   function getActiveGoals() {
     return goals.filter((g) => g.status === 'active');
   }
 
-  // 進捗計算（goalUtils のラッパー）
   function calculateGoalProgress(goal: Goal) {
     return getGoalProgress(goal);
   }
 
-  // 締切までの日数
   function getDaysUntilDeadline(goal: Goal) {
     if (!goal.deadline) return null;
     const now = new Date();
@@ -199,13 +194,11 @@ export function useGoals(userId: string) {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 
-  // 締切超過しているか
   function isGoalOverdue(goal: Goal) {
     if (!goal.deadline) return false;
     return new Date(goal.deadline) < new Date() && goal.status !== 'completed';
   }
 
-  // 完了処理
   async function completeGoal(goalId: string) {
     return await updateGoal(goalId, {
       status: 'completed',
@@ -222,8 +215,6 @@ export function useGoals(userId: string) {
     updateGoalProgress,
     deleteGoal,
     refresh: fetchGoals,
-
-    // 🔥 GamificationView が必要とする関数
     getActiveGoals,
     getGoalProgress: calculateGoalProgress,
     getDaysUntilDeadline,
