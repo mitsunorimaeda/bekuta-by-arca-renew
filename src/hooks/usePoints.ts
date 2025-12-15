@@ -124,7 +124,7 @@ export function usePoints(userId: string) {
           fetchUserPoints();
         }
       )
-      .subscribe();
+      //.subscribe();
 
     const txChannel = supabase
       .channel(`point_transactions_changes:${userId}`)
@@ -135,7 +135,7 @@ export function usePoints(userId: string) {
           fetchTransactions();
         }
       )
-      .subscribe();
+      //.subscribe();
 
     channelsRef.current.points = pointsChannel;
     channelsRef.current.tx = txChannel;

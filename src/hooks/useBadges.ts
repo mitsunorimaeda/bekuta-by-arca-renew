@@ -79,18 +79,18 @@ export function useBadges(userId: string) {
       setLoading(false);
       return;
     }
-
+  
     // 初期取得
     fetchBadges();
     fetchUserBadges();
-
-    // ✅ 既存channelが残ってたら必ず破棄
+  
+    // 既存channelが残ってたら必ず破棄
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-
-    // ✅ userIdでユニークなchannel名にする（重要）
+  
+    // userIdでユニークなchannel名
     const channel = supabase
       .channel(`user-badges:${userId}`)
       .on(
@@ -105,16 +105,12 @@ export function useBadges(userId: string) {
           fetchUserBadges();
         }
       );
-
-    // ✅ subscribeは1回だけ
-    //channel.subscribe((status) => {
-      // 必要ならデバッグ用
-      // console.log('[user-badges realtime]', status);
-    });
-
+  
+    channel.subscribe();
+  
     channelRef.current = channel;
-
-    // ✅ cleanup は removeChannel
+  
+    // ✅ ここは return () => {...} で終わり。余計な }; を入れない
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
