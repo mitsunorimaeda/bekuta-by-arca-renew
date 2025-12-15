@@ -107,7 +107,7 @@ export function useBadges(userId: string) {
       );
 
     // ✅ subscribeは1回だけ
-    channel.subscribe((status) => {
+    //channel.subscribe((status) => {
       // 必要ならデバッグ用
       // console.log('[user-badges realtime]', status);
     });

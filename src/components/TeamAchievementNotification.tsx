@@ -42,7 +42,7 @@ export function TeamAchievementNotification({ userId }: Props) {
     if (!userId) return;
 
     loadUnreadNotifications();
-    setupSubscription();
+    //setupSubscription();
 
     return () => {
       // 🔥 クリーンアップで必ず unsubscribe
