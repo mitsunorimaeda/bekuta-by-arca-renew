@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface Streak {
@@ -17,10 +17,12 @@ export function useStreaks(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ channelを保持して多重subscribe防止
+  // ✅ Realtime channel 参照（多重 subscribe 防止）
   const channelRef = useRef<any>(null);
 
-  const fetchStreaks = async () => {
+  const fetchStreaks = useCallback(async () => {
+    if (!userId) return;
+
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -39,7 +41,7 @@ export function useStreaks(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -50,13 +52,13 @@ export function useStreaks(userId: string) {
     // 初回取得
     fetchStreaks();
 
-    // ✅ 既存channelが残ってたら必ず破棄
+    // ✅ 既存channelが残ってたら必ず破棄（重要）
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
-    // ✅ userIdを含めてチャンネル名をユニーク化
+    // ✅ userId を含めて channel 名をユニーク化（重要）
     const channel = supabase
       .channel(`user-streaks:${userId}`)
       .on(
@@ -72,18 +74,19 @@ export function useStreaks(userId: string) {
         }
       );
 
-    // ✅ subscribeは1回だけ
+    // ✅ subscribe は1回だけ
     channel.subscribe();
+
     channelRef.current = channel;
 
+    // ✅ cleanup は removeChannel で統一（unsubscribeより安定）
     return () => {
-      // ✅ cleanup は removeChannel が安定
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, [userId]);
+  }, [userId, fetchStreaks]);
 
   const getStreakByType = (type: Streak['streak_type']) => {
     return streaks.find((s) => s.streak_type === type) || null;
