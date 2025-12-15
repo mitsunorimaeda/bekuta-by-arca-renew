@@ -694,6 +694,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             />
 
             <div className="mt-6">
+              <DailyReflectionCard userId={user.id} />
+            </div>
+
+            <div className="mt-6">
               <MultiMetricTimeline
                 acwrData={acwrData}
                 weightRecords={weightRecords}
@@ -706,9 +710,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               />
             </div>
             
-            <div className="mt-6">
-              <DailyReflectionCard userId={user.id} />
-            </div>
 
             {highPriorityAlerts.length > 0 && (
               <div className="mt-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">

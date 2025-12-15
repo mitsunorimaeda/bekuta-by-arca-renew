@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { emitEvent } from '../lib/engineClient';
 
 export type DailyReflectionVisibility = 'private' | 'team' | 'staff';
 
@@ -61,10 +62,15 @@ export function useDailyReflections(userId: string) {
   }, [userId, selectedDate, fetchByDate]);
 
   const save = useCallback(
-    async (text: string, visibility: DailyReflectionVisibility = 'private') => {
+    async (
+      text: string,
+      visibility: DailyReflectionVisibility = 'private'
+    ) => {
       if (!userId) return false;
+  
       setSaving(true);
       setError(null);
+  
       try {
         // unique(user_id, reflection_date) 前提で upsert
         const { data, error } = await supabase
@@ -76,13 +82,35 @@ export function useDailyReflections(userId: string) {
               text,
               visibility,
             },
-            { onConflict: 'user_id,reflection_date' },
+            { onConflict: 'user_id,reflection_date' }
           )
           .select('*')
           .single();
-
+  
         if (error) throw error;
+  
+        // ローカル状態更新
         setReflection(data);
+  
+        // ✅ AI / Engine 用イベント通知（失敗しても保存は成功扱い）
+        try {
+          await emitEvent({
+            userId,
+            eventType: 'daily_reflection_saved',
+            eventDate: selectedDate,
+            payload: {
+              reflectionId: data.id,
+              chars: text.length,
+              visibility,
+            },
+          });
+        } catch (err) {
+          console.warn(
+            '[useDailyReflections] emitEvent failed (non-blocking)',
+            err
+          );
+        }
+  
         return true;
       } catch (e: any) {
         console.error('[useDailyReflections] save error', e);
@@ -92,7 +120,7 @@ export function useDailyReflections(userId: string) {
         setSaving(false);
       }
     },
-    [userId, selectedDate],
+    [userId, selectedDate]
   );
 
   const remove = useCallback(async () => {
