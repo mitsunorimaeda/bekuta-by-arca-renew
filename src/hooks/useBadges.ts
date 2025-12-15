@@ -45,7 +45,7 @@ export function useBadges(userId: string) {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'user_badges',
           filter: `user_id=eq.${userId}`,

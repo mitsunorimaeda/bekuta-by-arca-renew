@@ -11,6 +11,7 @@ import { WelcomePage } from './components/WelcomePage';
 import { AthleteView }  from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
+import { BadgeModalController } from './components/BadgeModalController';
 // 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
 // import { PasswordResetConfirm } from './components/PasswordResetConfirm';
 
@@ -447,6 +448,7 @@ function App() {
 
         {/* Main Content */}
         <div className="relative">
+          <BadgeModalController userId={userProfile.id} />
           {effectiveRole === 'athlete' ? (
             <AthleteView
               user={userProfile}
