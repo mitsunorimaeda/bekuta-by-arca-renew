@@ -56,6 +56,14 @@ function App() {
     acceptTerms,
   } = useAuth();
 
+    useRealtimeHub(userProfile?.id || '', {
+      onPointsChanged: () => console.log('[hub] points changed'),
+      onBadgesChanged: () => console.log('[hub] badges changed'),
+      onGoalsChanged: () => console.log('[hub] goals changed'),
+      onStreaksChanged: () => console.log('[hub] streaks changed'),
+      onTeamAchievementNoti: () => console.log('[hub] team achievement arrived'),
+    });
+
   const effectiveRole: AppUserRole =
     userProfile?.role === 'staff' ||
     userProfile?.role === 'admin' ||
@@ -331,8 +339,8 @@ function App() {
 
   console.log('✅ Showing main application');
 
-    // user/userProfile が確定したあと
-    useRealtimeHub(userProfile.id);
+  
+  });
 
 
   return (
