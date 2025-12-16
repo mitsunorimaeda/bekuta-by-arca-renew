@@ -330,6 +330,26 @@ function App() {
 
   console.log('✅ Showing main application');
 
+  // 🔔 Realtime subscribe を中央集約（ここ！！）
+  useRealtimeHub(userProfile.id, {
+    onPointsChanged: () => {
+      console.log('[hub] points changed');
+    },
+    onBadgesChanged: () => {
+      console.log('[hub] badges changed');
+    },
+    onGoalsChanged: () => {
+      console.log('[hub] goals changed');
+    },
+    onStreaksChanged: () => {
+      console.log('[hub] streaks changed');
+    },
+    onTeamAchievementNoti: () => {
+      console.log('[hub] team achievement arrived');
+    },
+  });
+
+
   return (
     <TutorialProvider userId={userProfile.id} role={effectiveRole}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">

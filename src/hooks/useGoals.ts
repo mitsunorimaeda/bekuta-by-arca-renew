@@ -1,60 +1,66 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizeGoalMetadata } from '../lib/goalMetadata';
+import { getGoalProgress } from '../lib/goalUtils';
 
-export interface Streak {
+export interface Goal {
   id: string;
   user_id: string;
-  streak_type: 'training' | 'weight' | 'sleep' | 'motivation' | 'all';
-  current_streak: number;
-  longest_streak: number;
-  last_recorded_date: string | null;
-  streak_freeze_count: number;
-  total_records: number;
+  goal_type: 'performance' | 'weight' | 'streak' | 'habit' | 'custom';
+  title: string;
+  description: string | null;
+  target_value: number | null;
+  current_value: number;
+  unit: string | null;
+  deadline: string | null;
+  status: 'active' | 'completed' | 'failed' | 'abandoned';
+  completed_at: string | null;
+  metadata: any;
+  created_at: string;
+  updated_at: string;
 }
 
-export function useStreaks(userId: string) {
-  const [streaks, setStreaks] = useState<Streak[]>([]);
+export function useGoals(userId: string) {
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ このhookインスタンス固有ID（同じuserIdで複数回呼ばれても衝突しない）
-  const instanceIdRef = useRef(
-    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
-  );
-
-  // ✅ channel参照（多重subscribe防止）
+  // ✅ Realtime channel の参照（多重subscribe防止）
   const channelRef = useRef<any>(null);
 
-  const fetchStreaks = useCallback(async () => {
+  const fetchGoals = useCallback(async () => {
     if (!userId) return;
 
     try {
       setLoading(true);
+
       const { data, error } = await supabase
-        .from('user_streaks')
+        .from('user_goals')
         .select('*')
         .eq('user_id', userId)
-        .order('streak_type');
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      setStreaks(data || []);
+      const normalized = (data || []).map((g: any) => ({
+        ...g,
+        metadata: normalizeGoalMetadata(g.metadata),
+      }));
+
+      setGoals(normalized);
       setError(null);
     } catch (err) {
-      console.error('Error fetching streaks:', err);
-      setError(err instanceof Error ? err.message : 'ストリークの取得に失敗しました');
+      console.error(err);
+      setError('目標の取得に失敗しました');
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+    if (!userId) return;
 
-    fetchStreaks();
+    fetchGoals();
 
     // ✅ 既存channelが残ってたら必ず破棄
     if (channelRef.current) {
@@ -62,83 +68,166 @@ export function useStreaks(userId: string) {
       channelRef.current = null;
     }
 
-    // ✅ userId + instanceId で完全ユニーク化
+    // ✅ userIdでユニークなchannel名
     const channel = supabase
-      .channel(`user-streaks:${userId}:${instanceIdRef.current}`)
+      .channel(`goals:${userId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'user_streaks',
+          table: 'user_goals',
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          fetchStreaks();
+          fetchGoals();
         }
       );
 
-    channel.subscribe();
+    // ✅ subscribe は1回だけ
+    channel.subscribe((status) => {
+      // console.log('[goals realtime]', status);
+    });
 
     channelRef.current = channel;
 
+    // ✅ cleanup は removeChannel
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, [userId, fetchStreaks]);
+  }, [userId, fetchGoals]);
 
-  const getStreakByType = (type: Streak['streak_type']) => {
-    return streaks.find((s) => s.streak_type === type) || null;
+  const createGoal = async (goalData: Partial<Goal>) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_goals')
+        .insert({
+          user_id: userId,
+          ...goalData,
+          current_value: goalData.current_value ?? 0,
+          status: 'active',
+          metadata: normalizeGoalMetadata(goalData.metadata),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await fetchGoals();
+      return { data, error: null };
+    } catch (err) {
+      console.error(err);
+      return { data: null, error: '目標の作成に失敗しました' };
+    }
   };
 
-  const getTotalStreak = () => {
-    return streaks.find((s) => s.streak_type === 'all') || null;
+  const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
+    try {
+      const { error } = await supabase
+        .from('user_goals')
+        .update({
+          ...updates,
+          metadata: updates.metadata ? normalizeGoalMetadata(updates.metadata) : undefined,
+        })
+        .eq('id', goalId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      await fetchGoals();
+      return { error: null };
+    } catch {
+      return { error: '目標の更新に失敗しました' };
+    }
   };
 
-  const updateStreak = async (type: Streak['streak_type'], recordDate: string) => {
-    const { error } = await supabase.rpc('update_user_streak', {
-      p_user_id: userId,
-      p_streak_type: type,
-      p_record_date: recordDate,
+  const updateGoalProgress = async (goalId: string, currentValue: number) => {
+    const goal = goals.find((g) => g.id === goalId);
+    if (!goal) return { error: '目標が見つかりません' };
+
+    const progress = getGoalProgress({ ...goal, current_value: currentValue });
+
+    const updates: Partial<Goal> = {
+      current_value: currentValue,
+      ...(progress.is_completed
+        ? {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          }
+        : {}),
+    };
+
+    return await updateGoal(goalId, updates);
+  };
+
+  const deleteGoal = async (goalId: string) => {
+    try {
+      const { error } = await supabase
+        .from('user_goals')
+        .delete()
+        .eq('id', goalId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      await fetchGoals();
+      return { error: null };
+    } catch {
+      return { error: '目標の削除に失敗しました' };
+    }
+  };
+
+  // 進行中の目標
+  function getActiveGoals() {
+    return goals.filter((g) => g.status === 'active');
+  }
+
+  // 進捗計算（goalUtils のラッパー）
+  function calculateGoalProgress(goal: Goal) {
+    return getGoalProgress(goal);
+  }
+
+  // 締切までの日数
+  function getDaysUntilDeadline(goal: Goal) {
+    if (!goal.deadline) return null;
+    const now = new Date();
+    const deadline = new Date(goal.deadline);
+    const diff = deadline.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  }
+
+  // 締切超過しているか
+  function isGoalOverdue(goal: Goal) {
+    if (!goal.deadline) return false;
+    return new Date(goal.deadline) < new Date() && goal.status !== 'completed';
+  }
+
+  // 完了処理
+  async function completeGoal(goalId: string) {
+    return await updateGoal(goalId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
     });
-    if (error) throw error;
-    await fetchStreaks();
-  };
-
-  const isStreakAtRisk = (streak: Streak | null) => {
-    if (!streak || !streak.last_recorded_date) return false;
-    const lastDate = new Date(streak.last_recorded_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-    return daysDiff >= 1;
-  };
-
-  const getStreakStatus = (streak: Streak | null): 'safe' | 'at_risk' | 'broken' => {
-    if (!streak || !streak.last_recorded_date) return 'broken';
-    const lastDate = new Date(streak.last_recorded_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDiff === 0) return 'safe';
-    if (daysDiff === 1) return 'at_risk';
-    return 'broken';
-  };
+  }
 
   return {
-    streaks,
+    goals,
     loading,
     error,
-    getStreakByType,
-    getTotalStreak,
-    updateStreak,
-    isStreakAtRisk,
-    getStreakStatus,
-    refresh: fetchStreaks,
+    createGoal,
+    updateGoal,
+    updateGoalProgress,
+    deleteGoal,
+    refresh: fetchGoals,
+
+    // 🔥 GamificationView が必要とする関数
+    getActiveGoals,
+    getGoalProgress: calculateGoalProgress,
+    getDaysUntilDeadline,
+    isGoalOverdue,
+    completeGoal,
   };
 }
