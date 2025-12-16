@@ -17,6 +17,11 @@ export function useStreaks(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ hookインスタンス固有ID（同名channel衝突防止）
+  const instanceIdRef = useRef(
+    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+  );
+
   const channelRef = useRef<any>(null);
 
   const fetchStreaks = useCallback(async () => {
@@ -50,15 +55,14 @@ export function useStreaks(userId: string) {
 
     fetchStreaks();
 
-    // ✅ 既存があれば必ず破棄（同名channel再利用対策）
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
-    // ✅ userIdを含めてユニーク化
+    // ✅ userId + instanceId で完全ユニーク化
     const channel = supabase
-      .channel(`user-streaks:${userId}`)
+      .channel(`user-streaks:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {
@@ -72,7 +76,7 @@ export function useStreaks(userId: string) {
         }
       );
 
-    channel.subscribe(); // ✅ 1回だけ
+    channel.subscribe();
 
     channelRef.current = channel;
 
