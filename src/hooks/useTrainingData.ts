@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase, TrainingRecord, WeightRecord } from '../lib/supabase';
 import { calculateACWR, ACWRData } from '../lib/acwr';
+import { logEvent } from '../lib/logEvent'; // ★追加：あなたのlogEventのパスに合わせて調整
 
 export function useTrainingData(userId: string) {
-  // training_records
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
-  // weight_records
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([]);
   const [acwrData, setACWRData] = useState<ACWRData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +15,6 @@ export function useTrainingData(userId: string) {
   }, [userId]);
 
   useEffect(() => {
-    // trainingRecords が変わったら ACWR 再計算
     const calculatedACWR = calculateACWR(trainingRecords);
     setACWRData(calculatedACWR);
   }, [trainingRecords]);
@@ -77,6 +75,7 @@ export function useTrainingData(userId: string) {
 
   const addTrainingRecord = async (recordData: { rpe: number; duration_min: number; date: string }) => {
     console.log('[useTrainingData] addTrainingRecord called with:', recordData);
+
     try {
       const { data, error } = await supabase
         .from('training_records')
@@ -98,7 +97,32 @@ export function useTrainingData(userId: string) {
 
       console.log('[useTrainingData] Insert successful:', data);
 
+      // ✅ event（失敗しても保存は成功なのでthrowしない）
+      try {
+        await logEvent('training_completed', {
+          date: recordData.date,
+          rpe: recordData.rpe,
+          duration_min: recordData.duration_min,
+          overwrite: false,
+        });
+      } catch (e) {
+        console.warn('[logEvent] failed after insert:', e);
+      }
+
+      // addTrainingRecord の insert成功後（data が取れた後）に追加
+      await logEvent({
+        userId,
+        eventType: 'training_completed',
+        payload: {
+          date: recordData.date,
+          rpe: recordData.rpe,
+          duration_min: recordData.duration_min,
+          overwrite: false,
+        },
+      });
+
       await fetchAll();
+      return data;
     } catch (error) {
       console.error('[useTrainingData] Error adding training record:', error);
       if (error && typeof error === 'object') {
@@ -127,6 +151,27 @@ export function useTrainingData(userId: string) {
 
       if (error) throw error;
 
+      // ✅ event（updateでも必ず出す）
+      // dateが渡ってこないケースに備えて、更新後data.dateを優先
+      const eventDate = (recordData.date ?? (data as any)?.date) as string | undefined;
+
+      try {
+        await logEvent('training_completed', {
+          date: eventDate,
+          rpe: recordData.rpe,
+          duration_min: recordData.duration_min,
+          overwrite: true,
+        });
+      } catch (e) {
+        console.warn('[logEvent] failed after update:', e);
+      }
+
+      await logEvent({
+        userId,
+        eventType: 'training_updated',
+        payload: { record_id: recordId, ...recordData },
+      });
+
       await fetchAll();
       return data;
     } catch (error) {
@@ -153,7 +198,6 @@ export function useTrainingData(userId: string) {
   };
 
   return {
-    // 互換性のため records という名前も維持（中身は training_records）
     records: trainingRecords,
     weightRecords,
     acwrData,

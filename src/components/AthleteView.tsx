@@ -101,6 +101,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     acwrData
   } = useTrainingData(user.id);
 
+
   const { trendAnalysis, loading: trendLoading, error: trendError, refreshAnalysis } = useTrendAnalysis(user.id, 'user');
 
   const {
