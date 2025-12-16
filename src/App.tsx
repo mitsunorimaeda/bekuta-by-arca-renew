@@ -340,7 +340,6 @@ function App() {
   console.log('✅ Showing main application');
 
   
-  });
 
 
   return (
