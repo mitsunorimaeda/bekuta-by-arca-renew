@@ -36,7 +36,7 @@ const calcLevelInfo = (totalPoints: number) => {
 
 const calcLevelProgress = (totalPoints: number) => {
   const { level, nextLevelPoints } = calcLevelInfo(totalPoints);
-  const currentLevelStartPoints = nextLevelPoints - (level * 50);
+  const currentLevelStartPoints = nextLevelPoints - level * 50;
 
   const into = totalPoints - currentLevelStartPoints;
   const span = nextLevelPoints - currentLevelStartPoints;
@@ -51,7 +51,12 @@ export function usePoints(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ 多重subscribe防止（念のため）
+  // ✅ hookインスタンス固有ID（同名channel衝突防止）
+  const instanceIdRef = useRef(
+    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+  );
+
+  // ✅ チャンネル参照
   const channelsRef = useRef<{ points?: any; tx?: any }>({});
 
   const fetchUserPoints = useCallback(async () => {
@@ -100,11 +105,10 @@ export function usePoints(userId: string) {
       return;
     }
 
-    // 初回取得
     fetchUserPoints();
     fetchTransactions();
 
-    // ✅ 既存があれば必ず remove（多重subscribe防止）
+    // ✅ 既存があれば必ず remove
     if (channelsRef.current.points) {
       supabase.removeChannel(channelsRef.current.points);
       channelsRef.current.points = undefined;
@@ -114,34 +118,35 @@ export function usePoints(userId: string) {
       channelsRef.current.tx = undefined;
     }
 
-    // ✅ userId を含めて channel をユニーク化
+    // ✅ userId + instanceId で完全ユニーク化
     const pointsChannel = supabase
-      .channel(`user_points_changes:${userId}`)
+      .channel(`user_points_changes:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_points', filter: `user_id=eq.${userId}` },
         () => {
           fetchUserPoints();
         }
-      )
-      //.subscribe();
+      );
 
     const txChannel = supabase
-      .channel(`point_transactions_changes:${userId}`)
+      .channel(`point_transactions_changes:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'point_transactions', filter: `user_id=eq.${userId}` },
         () => {
           fetchTransactions();
         }
-      )
-      //.subscribe();
+      );
+
+    // ✅ subscribe は各channel 1回だけ
+    pointsChannel.subscribe();
+    txChannel.subscribe();
 
     channelsRef.current.points = pointsChannel;
     channelsRef.current.tx = txChannel;
 
     return () => {
-      // ✅ unsubscribe より removeChannel が安定
       if (channelsRef.current.points) {
         supabase.removeChannel(channelsRef.current.points);
         channelsRef.current.points = undefined;
@@ -172,7 +177,6 @@ export function usePoints(userId: string) {
 
       await fetchUserPoints();
       await fetchTransactions();
-
       return true;
     } catch (err) {
       console.error('Error awarding points:', err);
