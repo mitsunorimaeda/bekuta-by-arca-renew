@@ -12,6 +12,7 @@ import { AthleteView }  from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
+import { useRealtimeHub } from './hooks/useRealtimeHub';
 // 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
 // import { PasswordResetConfirm } from './components/PasswordResetConfirm';
 
@@ -330,24 +331,8 @@ function App() {
 
   console.log('✅ Showing main application');
 
-  // 🔔 Realtime subscribe を中央集約（ここ！！）
-  useRealtimeHub(userProfile.id, {
-    onPointsChanged: () => {
-      console.log('[hub] points changed');
-    },
-    onBadgesChanged: () => {
-      console.log('[hub] badges changed');
-    },
-    onGoalsChanged: () => {
-      console.log('[hub] goals changed');
-    },
-    onStreaksChanged: () => {
-      console.log('[hub] streaks changed');
-    },
-    onTeamAchievementNoti: () => {
-      console.log('[hub] team achievement arrived');
-    },
-  });
+    // user/userProfile が確定したあと
+    useRealtimeHub(userProfile.id);
 
 
   return (
