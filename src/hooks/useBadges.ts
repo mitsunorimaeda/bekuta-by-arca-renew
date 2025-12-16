@@ -31,7 +31,12 @@ export function useBadges(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Realtime channel の参照（多重subscribe防止）
+  // ✅ hookインスタンス固有ID（同名channel衝突防止）
+  const instanceIdRef = useRef(
+    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+  );
+
+  // ✅ Realtime channel の参照
   const channelRef = useRef<any>(null);
 
   const fetchBadges = useCallback(async () => {
@@ -49,6 +54,7 @@ export function useBadges(userId: string) {
   }, []);
 
   const fetchUserBadges = useCallback(async () => {
+    if (!userId) return;
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -79,20 +85,19 @@ export function useBadges(userId: string) {
       setLoading(false);
       return;
     }
-  
-    // 初期取得
+
     fetchBadges();
     fetchUserBadges();
-  
-    // 既存channelが残ってたら必ず破棄
+
+    // ✅ 既存channelが残ってたら必ず破棄
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-  
-    // userIdでユニークなchannel名
+
+    // ✅ userId + instanceId で完全ユニーク化
     const channel = supabase
-      .channel(`user-badges:${userId}`)
+      .channel(`user-badges:${userId}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {
@@ -105,12 +110,11 @@ export function useBadges(userId: string) {
           fetchUserBadges();
         }
       );
-  
+
     channel.subscribe();
-  
+
     channelRef.current = channel;
-  
-    // ✅ ここは return () => {...} で終わり。余計な }; を入れない
+
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -133,7 +137,6 @@ export function useBadges(userId: string) {
         await fetchUserBadges();
         return true;
       }
-
       return false;
     } catch (err) {
       console.error('Error earning badge:', err);
@@ -200,4 +203,4 @@ export function useBadges(userId: string) {
     getBadgeProgress,
     refresh: fetchUserBadges,
   };
-}
+}ß
