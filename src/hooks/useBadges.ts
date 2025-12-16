@@ -203,4 +203,4 @@ export function useBadges(userId: string) {
     getBadgeProgress,
     refresh: fetchUserBadges,
   };
-}ß
+}
