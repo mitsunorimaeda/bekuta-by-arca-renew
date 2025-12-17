@@ -258,39 +258,107 @@ function App() {
   if (currentPage === 'reset-password') {
     console.log('🔐 Showing reset password flow');
 
-    // まだセッションが立っていない間はローディング表示
+    // ✅ PKCE code を拾う（最近のメールはこれが多い）
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+
+    // まだセッションが立っていない間の表示
     if (!user || !userProfile) {
       return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center space-y-3">
+          <div className="text-center space-y-4 w-full max-w-sm px-6">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
             <p className="text-sm text-gray-600 dark:text-gray-300">
               パスワードリセットリンクを確認しています…
             </p>
+
+            {/* ✅ code があるのに user が立たない＝exchangeできてない */}
+            {code && (
+              <>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  うまく進まない場合は、下のボタンで認証を確定してください（メールリンク先読み対策）。
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      console.log('[reset-password] confirm exchange start', { codeExists: !!code });
+
+                      // ① code → session 交換
+                      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+                      console.log('[reset-password] exchange result', { data, error });
+                      if (error) throw error;
+
+                      // ② session 確認
+                      const { data: sess } = await supabase.auth.getSession();
+                      console.log('[reset-password] session exists?', !!sess.session);
+
+                      if (!sess.session) {
+                        throw new Error('セッションが確立できませんでした（リンクが失効している可能性）');
+                      }
+
+                      // ③ URL から code を消す（再読み込みで再exchangeしないため）
+                      window.history.replaceState({}, '', '/reset-password');
+
+                      // ④ 認証状態を再評価させる（useAuth が拾って user/userProfile が立つ）
+                      window.location.reload();
+                    } catch (e: any) {
+                      console.error('[reset-password] exchange failed', e);
+                      alert(
+                        '認証に失敗しました。メールリンクの先読み等で失効している可能性があります。\n「招待リンク切れ」から再送してください。'
+                      );
+                      window.location.href = '/invite-expired';
+                    }
+                  }}
+                  className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                >
+                  認証を確定する
+                </button>
+              </>
+            )}
+
+            {/* code すら無い＝完全にURLがおかしい or 期限切れ */}
+            {!code && (
+              <button
+                type="button"
+                onClick={() => (window.location.href = '/invite-expired')}
+                className="w-full px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-900 text-white font-medium"
+              >
+                招待リンク切れ（再送）へ
+              </button>
+            )}
           </div>
         </div>
       );
     }
 
-    // セッションがある → 新しいパスワードを入力してもらう
-    return (
-      <PasswordChangeForm
-        onPasswordChange={async (password: string) => {
-          try {
-            await changePassword(password);
-            setRequiresPasswordChange(false);
-            setCurrentPage('app');
-            window.history.replaceState({}, '', '/');
-            console.log('✅ Password changed successfully (from recovery link)');
-          } catch (error) {
-            console.error('❌ Password change failed:', error);
-            throw error;
+  // セッションがある → 新しいパスワードを入力してもらう
+  return (
+    <PasswordChangeForm
+      onPasswordChange={async (password: string) => {
+        try {
+          // ✅ 念のため：updateUser の直前に session を確認
+          const { data: { session } } = await supabase.auth.getSession();
+          console.log('[PasswordChangeForm] session exists?', !!session);
+
+          if (!session) {
+            throw new Error('セッションがありません。メールリンクからやり直してください。');
           }
-        }}
-        userName={userProfile.name}
-      />
-    );
-  }
+
+          await changePassword(password);
+          setRequiresPasswordChange(false);
+          setCurrentPage('app');
+          window.history.replaceState({}, '', '/');
+          console.log('✅ Password changed successfully (from recovery link)');
+        } catch (error) {
+          console.error('❌ Password change failed:', error);
+          throw error;
+        }
+      }}
+      userName={userProfile.name}
+    />
+  );
+}
 
     // 🔐 招待リンク切れ救済ページ
   if (currentPage === 'invite-expired') {
