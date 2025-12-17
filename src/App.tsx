@@ -14,6 +14,8 @@ import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
 import { useRealtimeHub } from './hooks/useRealtimeHub';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
+import InviteExpired from './pages/InviteExpired';
+
 // 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
 // import { PasswordResetConfirm } from './components/PasswordResetConfirm';
 
@@ -85,7 +87,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback'>('app');
+    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback'| 'invite-expired'>('app');
   const [welcomeToken, setWelcomeToken] = React.useState<string | null>(null);
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [showMobileMenu, setShowMobileMenu] = React.useState(false);
@@ -111,14 +113,25 @@ function App() {
       return;
     }
   
+    
+    // ②-2 招待リンク切れ救済
+    if (pathname.startsWith('/invite-expired')) {
+      console.log('🔐 /invite-expired route detected');
+      setCurrentPage('invite-expired');
+      return;
+    }
+
     // ② パスワードリセット
     if (pathname.startsWith('/reset-password')) {
       console.log('🔐 /reset-password route detected');
       setCurrentPage('reset-password');
       return;
     }
+    
   
     // ③ welcome トークン（初回セットアップ専用）
+    // welcomeToken は「通常ログイン後 or 正規URL」のみ有効
+    // invite-expired / reset-password よりは優先しない
     const token = searchParams.get('token');
     if (token) {
       console.log('🎉 welcome token detected');
@@ -278,6 +291,12 @@ function App() {
       />
     );
   }
+
+    // 🔐 招待リンク切れ救済ページ
+  if (currentPage === 'invite-expired') {
+    return <InviteExpired />;
+  }
+
 
   // Welcome トークンがある場合（初回セットアップフロー）
   if (welcomeToken) {

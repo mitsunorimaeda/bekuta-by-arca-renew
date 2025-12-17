@@ -4,6 +4,7 @@ interface InvitationEmailData {
   role: string;
   teamName?: string;
   passwordSetupLink: string;
+  inviteExpiredUrl: string; 
   inviterName?: string;
   expiresInHours: number;
 }
@@ -329,6 +330,13 @@ export function generateInvitationEmailHTML(data: InvitationEmailData): string {
           ボタンが機能しない場合は、以下のURLをコピーしてブラウザに貼り付けてください：<br>
           <span style="word-break: break-all; color: #667eea;">${data.passwordSetupLink}</span>
         </p>
+      </div>
+
+      <div style="margin-top: 18px; font-size: 13px; color: #4a5568; line-height: 1.6;">
+        もしリンクが開けない／期限切れの場合は、こちらから再発行できます：<br />
+        <a href="${data.inviteExpiredUrl}" style="color:#667eea; text-decoration: underline;">
+          招待リンクの再発行ページを開く
+        </a>
       </div>
 
       <div class="footer">
@@ -715,6 +723,9 @@ ${data.teamName ? `チーム: ${data.teamName}\n` : ''}
 ⏰ このリンクは ${data.expiresInHours}時間後に期限切れになります。
    期限が切れた場合は、招待を送った管理者に
    新しい招待またはパスワードリセットの発行を依頼してください。
+
+  リンクが開けない／期限切れの場合は、こちらから再発行できます：
+  ${data.inviteExpiredUrl}
 
 このメールに心当たりがない場合は、無視していただいて構いません。
 質問がある場合は、招待を送った管理者にお問い合わせください。

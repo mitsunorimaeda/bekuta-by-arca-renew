@@ -5,6 +5,7 @@ import { generateInvitationEmailHTML, generateInvitationEmailText } from '../lib
 import { organizationQueries } from '../lib/organizationQueries';
 import { getTodayJSTString } from '../lib/date';
 
+
 interface UserInvitationProps {
   teams: Team[];
   onUserInvited: () => void;
@@ -144,6 +145,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
       });
 
       const userResult = await userResponse.json();
+      
 
       if (!userResponse.ok) {
         throw new Error(userResult.error || 'ユーザーの作成に失敗しました');
@@ -165,12 +167,16 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
 
       // Step 3: Send email with password setup link
       console.log('📧 Preparing to send invitation email...');
+
+      const inviteExpiredUrl = `${window.location.origin}/invite-expired`;
+
       const emailHTML = generateInvitationEmailHTML({
         name: formData.name,
         email: formData.email,
         role: formData.role,
         teamName: teamName || organizationName,
         passwordSetupLink: passwordSetupLink,
+        inviteExpiredUrl,
         inviterName: currentUser?.name,
         expiresInHours: 24,
       });
@@ -181,6 +187,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         role: formData.role,
         teamName: teamName || organizationName,
         passwordSetupLink: passwordSetupLink,
+        inviteExpiredUrl,
         inviterName: currentUser?.name,
         expiresInHours: 24,
       });
@@ -199,7 +206,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
           },
           body: JSON.stringify({
             to: formData.email,
-            subject: `🎉 ${teamName || organizationName || 'Bekuta'}への招待`,
+            subject: `【Bekuta】 ${teamName || organizationName || 'Bekuta'}初回ログイン設定のご案内`,
             html: emailHTML,
             text: emailText,
           }),
@@ -233,6 +240,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         invitedAt: new Date().toLocaleString('ja-JP'),
         emailSent,
         inviteUrl: passwordSetupLink,
+        
       };
 
       setInvitedUsers(prev => [newInvitedUser, ...prev]);
