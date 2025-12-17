@@ -1,6 +1,7 @@
 // supabase/functions/request-password-reset/index.ts
 // recoveryリンクを発行して Resend でメール送信
 // typeで「パスワード忘れ」or「招待リンク再送」を切り替える
+// ★先読み対策：Supabase verify URL を直接メールに載せず /auth/callback?verify=...&next=... で包む
 
 declare const Deno: any;
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -27,8 +28,16 @@ interface ResetRequestBody {
    * 任意:
    * - フルURL: https://bekuta.netlify.app/reset-password
    * - 省略時: CLIENT_URL + "/reset-password"
+   *
+   * ※ここは「Supabase verify後の着地先」(redirectTo) なので、基本は /reset-password のままでOK
    */
   redirectUrl?: string;
+
+  /**
+   * 任意: 認証確定後の遷移先（/auth/callback 経由で使う）
+   * - 省略時: type に応じて自動設定（password_reset -> /reset-password, invitation_resend -> /）
+   */
+  next?: string;
 }
 
 // ---------------------------
@@ -49,7 +58,6 @@ function buildEmailCopy(params: {
     : "🔑 Bekuta パスワードリセット";
 
   const title = isInviteResend ? "🔁 招待リンク再送" : "🔑 パスワードリセット";
-
   const lead = isInviteResend
     ? "Bekutaへの招待リンクの再発行リクエストを受け付けました。"
     : "Bekutaのパスワードリセットのリクエストを受け付けました。";
@@ -58,7 +66,7 @@ function buildEmailCopy(params: {
     ? "※このリンクは一定時間後に無効になります。"
     : "※このリンクは一定時間後に無効になります。\n※以前と同じパスワードは使用できません。";
 
-  const buttonText = isInviteResend ? "招待リンクを開く" : "パスワードを再設定する";
+  const buttonText = isInviteResend ? "手続きを進める" : "パスワードを再設定する";
 
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title></head>
 <body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#f3f4f6;">
@@ -115,10 +123,16 @@ function normalizeBaseUrl(url: string) {
 
 function ensureResetPasswordPath(baseOrFullUrl: string) {
   const url = normalizeBaseUrl(baseOrFullUrl);
-  // すでに /reset-password を含むならそのまま
   if (url.endsWith("/reset-password")) return url;
-  // base の場合は付与
   return `${url}/reset-password`;
+}
+
+function normalizeNextPath(next?: string | null) {
+  // オープンリダイレクト対策：相対パスのみ許可
+  if (!next) return null;
+  if (next.startsWith("http://") || next.startsWith("https://")) return null;
+  if (!next.startsWith("/")) return null;
+  return next;
 }
 
 // ---------------------------
@@ -139,7 +153,8 @@ Deno.serve(async (req) => {
   try {
     const body: ResetRequestBody = await req.json();
     const email = normalizeEmail(body.email || "");
-    const type: EmailType = body.type === "invitation_resend" ? "invitation_resend" : "password_reset";
+    const type: EmailType =
+      body.type === "invitation_resend" ? "invitation_resend" : "password_reset";
 
     if (!email) {
       return new Response(JSON.stringify({ error: "Missing email" }), {
@@ -154,10 +169,16 @@ Deno.serve(async (req) => {
       Deno.env.get("CLIENT_URL") || "https://bekuta.netlify.app",
     );
 
-    // redirectTo は「必ず /reset-password」に寄せる（上書き可）
+    // redirectTo は「Supabase verify後の着地」
     const redirectTo = body.redirectUrl
       ? ensureResetPasswordPath(body.redirectUrl)
       : `${clientUrl}/reset-password`;
+
+    // next は「認証確定後に最終的に行きたい場所」
+    const nextFromBody = normalizeNextPath(body.next);
+    const next =
+      nextFromBody ??
+      (type === "invitation_resend" ? "/" : "/reset-password");
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
@@ -168,11 +189,12 @@ Deno.serve(async (req) => {
       .eq("email", email)
       .maybeSingle();
 
-    if (profileError) {
-      console.error("❌ Error fetching user profile:", profileError);
-      // ここで失敗しても「存在漏洩防止」のため success 返す方針にするなら後続の処理を落とす
-      // ただし recovery link の発行もできないので、ここは内部エラー扱いでもOK。
-      // 今回は“確実性”より“安全性(存在非公開)”優先で success を返す。
+    // 存在漏洩防止：失敗/未存在でも success を返す
+    if (profileError || !profile) {
+      console.log("ℹ️ Profile lookup failed or not found (silent):", {
+        email,
+        profileError: profileError?.message,
+      });
       return new Response(
         JSON.stringify({
           success: true,
@@ -186,23 +208,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ユーザーが存在しない場合でも「成功」と返す（存在漏洩防止）
-    if (!profile) {
-      console.log("ℹ️ No user found for email (silent):", email);
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message:
-            "メールを送信しました（存在しない場合もこのメッセージが表示されます）。",
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    // 2) Supabaseの「recovery」リンクを発行
+    // 2) Supabaseの「recovery」リンク（verify URL）を発行
     const { data: linkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({
         type: "recovery",
@@ -221,8 +227,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const actionUrl = linkData.properties.action_link;
-    console.log("🔗 Generated recovery link:", { email, type, redirectTo });
+    // ★危険：この verify URL をそのままメールに載せると先読みで消費される
+    const verifyUrl = linkData.properties.action_link;
+
+    // ✅ 先読み対策：/auth/callback に包んでメールに載せる
+    const callbackBase = `${clientUrl}/auth/callback`;
+    const wrappedActionUrl =
+      `${callbackBase}?verify=${encodeURIComponent(verifyUrl)}&next=${encodeURIComponent(next)}`;
+
+    console.log("🔗 Generated wrapped link:", { email, type, redirectTo, next });
 
     // 3) Resend でメール送信
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
@@ -231,7 +244,7 @@ Deno.serve(async (req) => {
     const { subject, html, text } = buildEmailCopy({
       type,
       userName: profile.name,
-      actionUrl,
+      actionUrl: wrappedActionUrl,
     });
 
     let deliveryStatus: "sent" | "failed" | "simulated" = "simulated";
@@ -240,7 +253,6 @@ Deno.serve(async (req) => {
 
     if (resendApiKey && resendApiKey.startsWith("re_")) {
       try {
-        console.log("📮 Sending email via Resend...", { email, type });
         const r = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
@@ -281,14 +293,15 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("email_delivery_log").insert({
         to_email: email,
         subject,
-        email_type: type, // ✅ type をそのまま保存
+        email_type: type,
         status: deliveryStatus,
         resend_id: resendId,
         error_message: errorMessage,
-        sent_by: profile.id, // 実運用上は「リクエストした本人」等にしたければ別設計
+        sent_by: profile.id,
         metadata: {
           source: "request-password-reset",
           redirectTo,
+          next,
         },
       });
     } catch (logErr) {
