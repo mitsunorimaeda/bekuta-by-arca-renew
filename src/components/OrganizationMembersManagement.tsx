@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { organizationQueries } from '../lib/organizationQueries';
 import { supabase } from '../lib/supabase';
-import { Users, Plus, Trash2, Shield, Eye, Search, UserPlus } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Search, UserPlus, RefreshCcw, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { Database } from '../lib/database.types';
 
 type OrganizationMember = Database['public']['Tables']['organization_members']['Row'];
@@ -10,6 +10,12 @@ type User = Database['public']['Tables']['users']['Row'];
 interface OrganizationMembersManagementProps {
   organizationId: string;
   organizationName: string;
+}
+
+type SendStatus = 'idle' | 'sending' | 'success' | 'error';
+
+function normalizeEmail(v: string) {
+  return v.trim().toLowerCase();
 }
 
 export function OrganizationMembersManagement({
@@ -25,10 +31,15 @@ export function OrganizationMembersManagement({
   const [selectedMemberForTeam, setSelectedMemberForTeam] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ✅ 再送の状態（行単位で管理）
+  const [sendStateByEmail, setSendStateByEmail] = useState<Record<string, SendStatus>>({});
+  const [sendMsgByEmail, setSendMsgByEmail] = useState<Record<string, string>>({});
+
   useEffect(() => {
     loadMembers();
     loadAvailableUsers();
     loadOrganizationTeams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
 
   const loadMembers = async () => {
@@ -128,6 +139,50 @@ export function OrganizationMembersManagement({
     }
   };
 
+  // ✅ ここが追加：管理者が“パスワード再設定リンク（recovery）”を再送する
+  const handleResendPasswordLink = async (rawEmail: string) => {
+    const email = normalizeEmail(rawEmail);
+    if (!email) return;
+
+    // 送信中なら二重送信しない
+    if (sendStateByEmail[email] === 'sending') return;
+
+    setSendStateByEmail((prev) => ({ ...prev, [email]: 'sending' }));
+    setSendMsgByEmail((prev) => ({ ...prev, [email]: '' }));
+
+    try {
+      const { data, error } = await supabase.functions.invoke('request-password-reset', {
+        body: {
+          email,
+          redirectUrl: `${window.location.origin}/reset-password`,
+        },
+      });
+
+      if (error) {
+        console.error('[OrganizationMembersManagement] request-password-reset error:', error);
+        setSendStateByEmail((prev) => ({ ...prev, [email]: 'error' }));
+        setSendMsgByEmail((prev) => ({ ...prev, [email]: '送信に失敗しました。時間をおいて再度お試しください。' }));
+        return;
+      }
+
+      console.log('[OrganizationMembersManagement] request-password-reset result:', data);
+
+      // “存在しないメールでも success” の設計（存在漏洩防止）に合わせて成功表示でOK
+      setSendStateByEmail((prev) => ({ ...prev, [email]: 'success' }));
+      setSendMsgByEmail((prev) => ({ ...prev, [email]: '再設定メールを送信しました（迷惑メールも確認してください）。' }));
+
+      // 成功表示は一定時間で戻す（任意）
+      window.setTimeout(() => {
+        setSendStateByEmail((prev) => ({ ...prev, [email]: 'idle' }));
+        setSendMsgByEmail((prev) => ({ ...prev, [email]: '' }));
+      }, 5000);
+    } catch (err: any) {
+      console.error('[OrganizationMembersManagement] exception:', err);
+      setSendStateByEmail((prev) => ({ ...prev, [email]: 'error' }));
+      setSendMsgByEmail((prev) => ({ ...prev, [email]: err?.message || '送信に失敗しました。' }));
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'organization_admin':
@@ -161,16 +216,18 @@ export function OrganizationMembersManagement({
     }
   };
 
-  const filteredMembers = members.filter(member => {
-    if (!searchQuery) return true;
-    const user = member.users;
-    if (!user) return false;
-    const searchLower = searchQuery.toLowerCase();
-    return (
-      user.name?.toLowerCase().includes(searchLower) ||
-      user.email?.toLowerCase().includes(searchLower)
-    );
-  });
+  const filteredMembers = useMemo(() => {
+    return members.filter(member => {
+      if (!searchQuery) return true;
+      const user = member.users;
+      if (!user) return false;
+      const searchLower = searchQuery.toLowerCase();
+      return (
+        user.name?.toLowerCase().includes(searchLower) ||
+        user.email?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [members, searchQuery]);
 
   if (loading) {
     return (
@@ -235,10 +292,13 @@ export function OrganizationMembersManagement({
                 member={member}
                 onUpdateRole={handleUpdateRole}
                 onRemove={handleRemoveMember}
-                onAssignTeam={(member) => {
-                  setSelectedMemberForTeam(member);
+                onAssignTeam={(m) => {
+                  setSelectedMemberForTeam(m);
                   setShowAssignTeamModal(true);
                 }}
+                onResendPasswordLink={handleResendPasswordLink}
+                sendStateByEmail={sendStateByEmail}
+                sendMsgByEmail={sendMsgByEmail}
                 getRoleIcon={getRoleIcon}
                 getRoleLabel={getRoleLabel}
                 getRoleBadgeColor={getRoleBadgeColor}
@@ -280,6 +340,9 @@ function MemberCard({
   onUpdateRole,
   onRemove,
   onAssignTeam,
+  onResendPasswordLink,
+  sendStateByEmail,
+  sendMsgByEmail,
   getRoleIcon,
   getRoleLabel,
   getRoleBadgeColor
@@ -288,6 +351,9 @@ function MemberCard({
   onUpdateRole: (memberId: string, role: OrganizationMember['role']) => void;
   onRemove: (memberId: string) => void;
   onAssignTeam: (member: any) => void;
+  onResendPasswordLink: (email: string) => void;
+  sendStateByEmail: Record<string, SendStatus>;
+  sendMsgByEmail: Record<string, string>;
   getRoleIcon: (role: string) => React.ReactNode;
   getRoleLabel: (role: string) => string;
   getRoleBadgeColor: (role: string) => string;
@@ -295,9 +361,14 @@ function MemberCard({
   const user = member.users;
   if (!user) return null;
 
+  const emailKey = normalizeEmail(user.email || '');
+  const sendState = sendStateByEmail[emailKey] || 'idle';
+  const sendMsg = sendMsgByEmail[emailKey] || '';
+  const isSending = sendState === 'sending';
+
   return (
     <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <div className="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
             <span className="text-blue-600 dark:text-blue-200 font-semibold">
@@ -305,7 +376,7 @@ function MemberCard({
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h4 className="font-medium text-gray-900 dark:text-white truncate">
                 {user.name || 'Unknown User'}
               </h4>
@@ -320,9 +391,30 @@ function MemberCard({
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
               追加日: {new Date(member.created_at).toLocaleDateString('ja-JP')}
             </p>
+
+            {/* ✅ 再送結果（行の下に表示） */}
+            {sendMsg && (
+              <div
+                className={`mt-2 text-xs rounded-md px-2 py-1 inline-flex items-start gap-1 border ${
+                  sendState === 'success'
+                    ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200'
+                    : sendState === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200'
+                      : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200'
+                }`}
+              >
+                {sendState === 'success' ? (
+                  <CheckCircle className="h-3.5 w-3.5 mt-0.5" />
+                ) : sendState === 'error' ? (
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5" />
+                ) : null}
+                <span>{sendMsg}</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 ml-4">
+
+        <div className="flex items-center gap-2 ml-2 flex-shrink-0">
           <button
             onClick={() => onAssignTeam(member)}
             className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1"
@@ -331,6 +423,28 @@ function MemberCard({
             <UserPlus className="h-4 w-4" />
             <span className="hidden sm:inline">チーム割当</span>
           </button>
+
+          {/* ✅ 追加：再送ボタン */}
+          <button
+            onClick={() => onResendPasswordLink(user.email)}
+            disabled={!user.email || isSending}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+            title="パスワード再設定リンクを再送"
+          >
+            {isSending ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span className="hidden sm:inline">送信中</span>
+              </>
+            ) : (
+              <>
+                <RefreshCcw className="h-4 w-4" />
+                <span className="hidden sm:inline">再送</span>
+              </>
+            )}
+          </button>
+
           <select
             value={member.role}
             onChange={(e) => onUpdateRole(member.id, e.target.value as OrganizationMember['role'])}
@@ -339,6 +453,7 @@ function MemberCard({
             <option value="organization_admin">組織管理者</option>
             <option value="member">一般メンバー</option>
           </select>
+
           <button
             onClick={() => onRemove(member.id)}
             className="p-2 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors"
