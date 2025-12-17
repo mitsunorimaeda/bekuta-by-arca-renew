@@ -96,7 +96,21 @@ export function PasswordChangeForm({ onPasswordChange, userName }: PasswordChang
       await onPasswordChange(newPassword);
     } catch (err: any) {
       console.error('Password change error:', err);
-      setError('パスワードの変更に失敗しました。もう一度お試しください。');
+    
+      const message =
+        err?.message ||
+        err?.error_description ||
+        '';
+    
+      if (message.includes('different from the old password')) {
+        setError('以前と同じパスワードは使用できません。別のパスワードを設定してください。');
+      } else if (message.includes('Password should be at least')) {
+        setError('パスワードの形式が要件を満たしていません。');
+      } else if (message.includes('Auth session missing')) {
+        setError('セッションの有効期限が切れました。もう一度リンクからやり直してください。');
+      } else {
+        setError('パスワードの変更に失敗しました。もう一度お試しください。');
+      }
     } finally {
       setLoading(false);
     }
@@ -290,7 +304,6 @@ export function PasswordChangeForm({ onPasswordChange, userName }: PasswordChang
             </div>
           </div>
 
-          {/* Password Match Indicator */}
           {confirmPassword.length > 0 && (
             <div className={`flex items-center text-sm transition-colors ${
               passwordsMatch 
