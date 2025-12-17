@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
           break;
 
         case 'invitation':
-          emailSubject = `🎉 ${data.teamName || 'Bekuta'}への招待`;
+          emailSubject = ` ${data.teamName || 'Bekuta'}への招待`;
           emailHtml = generateInvitationEmailHTML(data);
           emailText = generateInvitationEmailText(data);
           break;

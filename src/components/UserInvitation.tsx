@@ -129,7 +129,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         role: formData.role,
         teamId: formData.role === 'athlete' || formData.role === 'staff' ? formData.teamId : undefined,
         organizationId: formData.organizationId || undefined,
-        redirectUrl: window.location.origin
+        redirectUrl: `${window.location.origin}/reset-password`,
       };
 
       console.log('📤 Sending user creation request...');

@@ -263,7 +263,7 @@ export function BulkUserInvitation({
               role: row.role,
               teamId: teamId,
               organizationId: org.id,
-              redirectUrl: window.location.origin,
+              redirectUrl: `${window.location.origin}/reset-password`,
             }),
           }
         );
