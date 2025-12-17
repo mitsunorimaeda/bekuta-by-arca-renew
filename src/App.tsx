@@ -13,6 +13,7 @@ import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
 import { useRealtimeHub } from './hooks/useRealtimeHub';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
 // import { PasswordResetConfirm } from './components/PasswordResetConfirm';
 
@@ -84,7 +85,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password'>('app');
+    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback'>('app');
   const [welcomeToken, setWelcomeToken] = React.useState<string | null>(null);
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [showMobileMenu, setShowMobileMenu] = React.useState(false);
@@ -96,20 +97,33 @@ function App() {
   React.useEffect(() => {
     setRequiresPasswordChange(authRequiresPasswordChange);
   }, [authRequiresPasswordChange]);
-
-  // URL（token / reset-password）チェック
+  
+  // URL チェック（auth-callback / reset-password / welcome token）
   React.useEffect(() => {
     const url = new URL(window.location.href);
-    const urlParams = url.searchParams;
-    const token = urlParams.get('token');
-    if (token) {
-      setWelcomeToken(token);
+    const pathname = url.pathname;
+    const searchParams = url.searchParams;
+  
+    // ① auth callback（招待・マジックリンク・OTP）
+    if (pathname.startsWith('/auth/callback')) {
+      console.log('🔐 /auth/callback route detected');
+      setCurrentPage('auth-callback');
+      return;
     }
-
-    // パスワードリセット用の専用パス
-    if (url.pathname.startsWith('/reset-password')) {
+  
+    // ② パスワードリセット
+    if (pathname.startsWith('/reset-password')) {
       console.log('🔐 /reset-password route detected');
       setCurrentPage('reset-password');
+      return;
+    }
+  
+    // ③ welcome トークン（初回セットアップ専用）
+    const token = searchParams.get('token');
+    if (token) {
+      console.log('🎉 welcome token detected');
+      setWelcomeToken(token);
+      return;
     }
   }, []);
 
@@ -204,6 +218,18 @@ function App() {
   console.log('  - user exists:', !!user);
   console.log('  - userProfile exists:', !!userProfile);
   console.log('  - requiresPasswordChange:', requiresPasswordChange);
+
+  // ✅ auth callback 専用ページ（authLoading より優先）
+  if (currentPage === 'auth-callback') {
+    return (
+      <AuthCallbackPage
+        onDone={() => {
+          setCurrentPage('app');
+          window.history.replaceState({}, '', '/');
+        }}
+      />
+    );
+  }
 
   // 🔄 認証ローディング中
   if (authLoading) {

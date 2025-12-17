@@ -75,6 +75,7 @@ import { BasalBodyTemperatureForm } from './BasalBodyTemperatureForm';
 import { MenstrualCycleChart } from './MenstrualCycleChart';
 import { MenstrualCycleCalendar } from './MenstrualCycleCalendar';
 import { CyclePerformanceCorrelation } from './CyclePerformanceCorrelation';
+import { supabase } from '../lib/supabase';
 
 type AthleteViewProps = {
   user: any; // 実際の型があればそれでOK

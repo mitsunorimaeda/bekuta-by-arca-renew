@@ -363,6 +363,3 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # この関数は JWT 検証をしない（Cron から叩く専用）
 verify_jwt = false
 
-[functions.alert-daily-summary.schedule]
-# UTC 21:00 = 日本時間 朝 6:00（翌日）
-cron = "0 21 * * *"
