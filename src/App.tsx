@@ -8,7 +8,7 @@ import { TutorialProvider } from './contexts/TutorialContext';
 import { LoginForm } from './components/LoginForm';
 import { PasswordChangeForm } from './components/PasswordChangeForm';
 import { WelcomePage } from './components/WelcomePage';
-import { AthleteView }  from './components/AthleteView';
+import { AthleteView } from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
@@ -16,15 +16,12 @@ import { useRealtimeHub } from './hooks/useRealtimeHub';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import InviteExpired from './pages/InviteExpired';
 
-// 🔽 ここはもう使わないのでコメントアウトしてOK（ファイル自体は残しておいても問題なし）
-// import { PasswordResetConfirm } from './components/PasswordResetConfirm';
-
-// Lazy load heavy components for better performance
 const OrganizationAdminView = lazy(() =>
   import('./components/OrganizationAdminView').then((m) => ({
     default: m.OrganizationAdminView,
   })),
 );
+
 import { AlertBadge } from './components/AlertBadge';
 const AlertPanel = lazy(() =>
   import('./components/AlertPanel').then((m) => ({ default: m.AlertPanel })),
@@ -39,15 +36,11 @@ import { TermsOfService } from './pages/TermsOfService';
 import { CommercialTransactions } from './pages/CommercialTransactions';
 import { HelpPage } from './pages/HelpPage';
 import { TeamAchievementNotification } from './components/TeamAchievementNotification';
-
-// 🔽 Supabase クライアントを使う
 import { supabase } from './lib/supabase';
 
 type AppUserRole = 'athlete' | 'staff' | 'admin';
 
 function App() {
-  console.log('🎯 App component is rendering');
-
   const {
     user,
     userProfile,
@@ -59,8 +52,7 @@ function App() {
     acceptTerms,
   } = useAuth();
 
-    // ✅ Realtime hub は必ず呼ばれる位置に置く
-    useRealtimeHub(userProfile?.id ?? '');  
+  useRealtimeHub(userProfile?.id ?? '');
 
   const effectiveRole: AppUserRole =
     userProfile?.role === 'staff' ||
@@ -87,122 +79,72 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback'| 'invite-expired'>('app');
-  const [welcomeToken, setWelcomeToken] = React.useState<string | null>(null);
+    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome'>('app');
+
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [showMobileMenu, setShowMobileMenu] = React.useState(false);
-
-  // 🔹 ローカルでの「同意済み」フラグ
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
 
-  // パスワード変更フラグを同期
   React.useEffect(() => {
     setRequiresPasswordChange(authRequiresPasswordChange);
   }, [authRequiresPasswordChange]);
-  
-  // URL チェック（auth-callback / reset-password / welcome token）
+
+  // 🌐 URL 判定
   React.useEffect(() => {
     const url = new URL(window.location.href);
     const pathname = url.pathname;
     const searchParams = url.searchParams;
-  
-    // ① auth callback（招待・マジックリンク・OTP）
+
     if (pathname.startsWith('/auth/callback')) {
-      console.log('🔐 /auth/callback route detected');
       setCurrentPage('auth-callback');
       return;
     }
-  
-    
-    // ②-2 招待リンク切れ救済
+
     if (pathname.startsWith('/invite-expired')) {
-      console.log('🔐 /invite-expired route detected');
       setCurrentPage('invite-expired');
       return;
     }
 
-    // ② パスワードリセット
     if (pathname.startsWith('/reset-password')) {
-      console.log('🔐 /reset-password route detected');
       setCurrentPage('reset-password');
       return;
     }
-    
-  
-    // ③ welcome トークン（初回セットアップ専用）
-    // welcomeToken は「通常ログイン後 or 正規URL」のみ有効
-    // invite-expired / reset-password よりは優先しない
-    const token = searchParams.get('token');
-    if (token) {
-      console.log('🎉 welcome token detected');
-      setWelcomeToken(token);
+
+    // ✅ welcome（token は WelcomePage 側で読む）
+    if (pathname.startsWith('/welcome') || searchParams.get('token')) {
+      setCurrentPage('welcome');
       return;
     }
   }, []);
 
-  // ✅ recovery リンク（ハッシュ）からセッションを貼る
+  // recovery hash
   React.useEffect(() => {
-    // 例: #access_token=xxx&refresh_token=yyy&type=recovery
     const hash = window.location.hash;
     if (!hash) return;
 
     const params = new URLSearchParams(hash.replace('#', ''));
-    const type = params.get('type');
-
-    if (type !== 'recovery') return;
-
-    console.log('🔐 Recovery hash detected in URL');
+    if (params.get('type') !== 'recovery') return;
 
     const access_token = params.get('access_token');
     const refresh_token = params.get('refresh_token');
-
-    if (!access_token || !refresh_token) {
-      console.warn('⚠️ recovery URL に access_token または refresh_token がありません');
-      return;
-    }
+    if (!access_token || !refresh_token) return;
 
     (async () => {
-      const { data, error } = await supabase.auth.setSession({
+      const { data } = await supabase.auth.setSession({
         access_token,
         refresh_token,
       });
 
-      if (error) {
-        console.error('❌ Failed to set recovery session:', error);
-        return;
-      }
-
       if (data.session?.user) {
-        console.log('👤 Recovery session user set');
-
-        // パスワード変更フローに入る想定なのでフラグをオン
         setRequiresPasswordChange(true);
-
-        // URL の # 以下を消す
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname + window.location.search,
-        );
-
-        // 念のため reset-password ページであることを保証
+        window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentPage('reset-password');
-      } else {
-        console.log('⚠️ No user found after setSession');
       }
     })();
   }, []);
 
-  // ✅ DB の terms_accepted を見て同意モーダルを制御
+  // 利用規約
   React.useEffect(() => {
-    console.log('👀 Checking terms consent state:', {
-      hasUser: !!user,
-      hasProfile: !!userProfile,
-      requiresPasswordChange,
-      profileTermsAccepted: userProfile?.terms_accepted,
-      termsAcceptedLocally,
-    });
-
     if (user && userProfile && !requiresPasswordChange) {
       if (!userProfile.terms_accepted && !termsAcceptedLocally) {
         setShowConsentModal(true);
@@ -214,25 +156,8 @@ function App() {
     }
   }, [user, userProfile, requiresPasswordChange, termsAcceptedLocally]);
 
-  const handleLogout = async (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
+  // --- ページ分岐 ---
 
-  const hasHighPriorityAlerts = getAlertsByPriority('high').length > 0;
-
-  console.log('🔐 App render - Auth states:');
-  console.log('  - authLoading:', authLoading);
-  console.log('  - user exists:', !!user);
-  console.log('  - userProfile exists:', !!userProfile);
-  console.log('  - requiresPasswordChange:', requiresPasswordChange);
-
-  // ✅ auth callback 専用ページ（authLoading より優先）
   if (currentPage === 'auth-callback') {
     return (
       <AuthCallbackPage
@@ -244,211 +169,68 @@ function App() {
     );
   }
 
-  // 🔄 認証ローディング中
   if (authLoading) {
-    console.log('⏳ Showing auth loading spinner');
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
 
-  // 🔐 パスワードリセット専用ページ
-  if (currentPage === 'reset-password') {
-    console.log('🔐 Showing reset password flow');
-
-    // ✅ PKCE code を拾う（最近のメールはこれが多い）
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get('code');
-
-    // まだセッションが立っていない間の表示
-    if (!user || !userProfile) {
-      return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center space-y-4 w-full max-w-sm px-6">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              パスワードリセットリンクを確認しています…
-            </p>
-
-            {/* ✅ code があるのに user が立たない＝exchangeできてない */}
-            {code && (
-              <>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  うまく進まない場合は、下のボタンで認証を確定してください（メールリンク先読み対策）。
-                </p>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      console.log('[reset-password] confirm exchange start', { codeExists: !!code });
-
-                      // ① code → session 交換
-                      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-                      console.log('[reset-password] exchange result', { data, error });
-                      if (error) throw error;
-
-                      // ② session 確認
-                      const { data: sess } = await supabase.auth.getSession();
-                      console.log('[reset-password] session exists?', !!sess.session);
-
-                      if (!sess.session) {
-                        throw new Error('セッションが確立できませんでした（リンクが失効している可能性）');
-                      }
-
-                      // ③ URL から code を消す（再読み込みで再exchangeしないため）
-                      window.history.replaceState({}, '', '/reset-password');
-
-                      // ④ 認証状態を再評価させる（useAuth が拾って user/userProfile が立つ）
-                      window.location.reload();
-                    } catch (e: any) {
-                      console.error('[reset-password] exchange failed', e);
-                      alert(
-                        '認証に失敗しました。メールリンクの先読み等で失効している可能性があります。\n「招待リンク切れ」から再送してください。'
-                      );
-                      window.location.href = '/invite-expired';
-                    }
-                  }}
-                  className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                >
-                  認証を確定する
-                </button>
-              </>
-            )}
-
-            {/* code すら無い＝完全にURLがおかしい or 期限切れ */}
-            {!code && (
-              <button
-                type="button"
-                onClick={() => (window.location.href = '/invite-expired')}
-                className="w-full px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-900 text-white font-medium"
-              >
-                招待リンク切れ（再送）へ
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-  // セッションがある → 新しいパスワードを入力してもらう
-  return (
-    <PasswordChangeForm
-      onPasswordChange={async (password: string) => {
-        try {
-          // ✅ 念のため：updateUser の直前に session を確認
-          const { data: { session } } = await supabase.auth.getSession();
-          console.log('[PasswordChangeForm] session exists?', !!session);
-
-          if (!session) {
-            throw new Error('セッションがありません。メールリンクからやり直してください。');
-          }
-
-          await changePassword(password);
-          setRequiresPasswordChange(false);
-          setCurrentPage('app');
-          window.history.replaceState({}, '', '/');
-          console.log('✅ Password changed successfully (from recovery link)');
-        } catch (error) {
-          console.error('❌ Password change failed:', error);
-          throw error;
-        }
-      }}
-      userName={userProfile.name}
-    />
-  );
-}
-
-    // 🔐 招待リンク切れ救済ページ
   if (currentPage === 'invite-expired') {
     return <InviteExpired />;
   }
 
-
-  // Welcome トークンがある場合（初回セットアップフロー）
-  if (welcomeToken) {
+  // ✅ Welcome（token は WelcomePage 内）
+  if (currentPage === 'welcome') {
     return (
       <WelcomePage
-        token={welcomeToken}
         onContinue={() => {
-          setWelcomeToken(null);
+          setCurrentPage('app');
           window.history.replaceState({}, '', '/');
         }}
       />
     );
   }
 
-  // 未ログイン or userProfile がまだ取れていない場合
   if (!user || !userProfile) {
-    return (
-      <LoginForm
-        onLogin={async (email, password) => {
-          await signIn(email, password);
-        }}
-      />
-    );
+    return <LoginForm onLogin={signIn} />;
   }
 
-  // パスワード変更が必要な場合（通常ログイン後の強制変更など）
   if (requiresPasswordChange) {
-    console.log('🔑 Showing password change form (authRequiresPasswordChange)');
     return (
       <PasswordChangeForm
-        onPasswordChange={async (password: string) => {
-          try {
-            await changePassword(password);
-            setRequiresPasswordChange(false);
-            window.history.replaceState({}, '', '/');
-            console.log('✅ Password changed successfully');
-          } catch (error) {
-            console.error('❌ Password change failed:', error);
-            throw error;
-          }
+        onPasswordChange={async (password) => {
+          await changePassword(password);
+          setRequiresPasswordChange(false);
+          window.history.replaceState({}, '', '/');
         }}
         userName={userProfile.name}
       />
     );
   }
 
-  // ✅ 利用規約モーダル
   if (showConsentModal) {
     return (
       <ConsentModal
         onAccept={async () => {
-          try {
-            await acceptTerms();
-            setTermsAcceptedLocally(true);
-            setShowConsentModal(false);
-          } catch (error) {
-            console.error('❌ acceptTerms failed:', error);
-          }
+          await acceptTerms();
+          setTermsAcceptedLocally(true);
+          setShowConsentModal(false);
         }}
-        onDecline={async () => {
-          await signOut();
-        }}
+        onDecline={signOut}
       />
     );
   }
 
-  // 法的ページ
-  if (currentPage === 'privacy') {
-    return <PrivacyPolicy onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'terms') {
-    return <TermsOfService onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'commercial') {
-    return <CommercialTransactions onBack={() => setCurrentPage('app')} />;
-  }
-  if (currentPage === 'help') {
-    return <HelpPage user={userProfile} onBack={() => setCurrentPage('app')} />;
-  }
+  const hasHighPriorityAlerts = getAlertsByPriority('high').length > 0;
 
-  console.log('✅ Showing main application');
-
-  
-
+  const handleLogout = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    await signOut();
+    setCurrentPage('app');
+    window.history.replaceState({}, '', '/');
+  };
 
   return (
     <TutorialProvider userId={userProfile.id} role={effectiveRole}>
@@ -458,42 +240,42 @@ function App() {
           <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 relative z-20 transition-colors">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    console.log('🏠 Bekuta logo clicked');
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log('🏠 Bekuta logo clicked');
 
-                    // ① アプリの内部状態を「ホーム」に寄せる
-                    setCurrentPage('app');       // 法的ページ等から戻る
-                    setDashboardMode('staff');   // コーチ／組織管理のトグルをコーチ側に戻す
-                    setShowMobileMenu(false);    // モバイルメニューを閉じる
-                    setShowAlertPanel(false);    // アラートパネルを閉じる
+                      // ① アプリの内部状態を「ホーム」に寄せる
+                      setCurrentPage('app');
+                      setDashboardMode('staff');
+                      setShowMobileMenu(false);
+                      setShowAlertPanel(false);
 
-                    // ② window.location.reload() は一旦やめる
-                    //    iOS PWA での挙動も不安定なので、まずは状態リセットだけで様子を見る
-                  }}
-                  className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  <span
-                    className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
-                    style={{
-                      fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                      letterSpacing: '-0.02em',
+                      // ② window.location.reload() は一旦やめる
                     }}
+                    className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
-                    Bekuta
-                  </span>
-                  <span
-                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
-                    style={{ letterSpacing: '0.05em' }}
-                  >
-                    by ARCA
-                  </span>
-                </button>
-              </div>
+                    <span
+                      className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
+                      style={{
+                        fontFamily:
+                          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                        letterSpacing: '-0.02em',
+                      }}
+                    >
+                      Bekuta
+                    </span>
+                    <span
+                      className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
+                      style={{ letterSpacing: '0.05em' }}
+                    >
+                      by ARCA
+                    </span>
+                  </button>
+                </div>
+
                 <div className="flex items-center space-x-3">
                   {/* デスクトップ: ユーザー名 + アラート + ログアウト */}
                   <span className="text-sm text-gray-600 dark:text-gray-300 hidden md:block transition-colors">
@@ -569,6 +351,7 @@ function App() {
         {/* Main Content */}
         <div className="relative">
           <BadgeModalController userId={userProfile.id} />
+
           {effectiveRole === 'athlete' ? (
             <AthleteView
               user={userProfile}
@@ -576,14 +359,10 @@ function App() {
               onLogout={signOut}
               onHome={() => {
                 console.log('🏠 Athlete Bekuta home tapped');
-                // 念のため「app」ページに戻す（保険）
                 setCurrentPage('app');
-
-                // もし何かモーダル開いていたら閉じたい場合はここで制御もOK
                 setShowAlertPanel(false);
                 setShowMobileMenu(false);
 
-                // UI状態も含めて「ホームに戻る」感を出したいならリロードもアリ
                 setTimeout(() => {
                   window.location.reload();
                 }, 50);
@@ -603,7 +382,6 @@ function App() {
               onNavigateToHelp={() => setCurrentPage('help')}
             />
           ) : (
-            // Staff or Organization Admin
             <>
               {/* Dashboard Mode Switcher for Staff who are also Org Admins */}
               {isOrganizationAdmin() && (
@@ -636,6 +414,7 @@ function App() {
                   </div>
                 </div>
               )}
+
               {dashboardMode === 'staff' ? (
                 <StaffView
                   user={userProfile}

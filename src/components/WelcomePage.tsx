@@ -3,8 +3,7 @@ import { Users, Sparkles, ArrowRight, Clock, CheckCircle2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface WelcomePageProps {
-  token: string;
-  onContinue: (email: string, token: string) => void;
+  onContinue: () => void;
 }
 
 interface InvitationData {
@@ -17,15 +16,25 @@ interface InvitationData {
   expires_at: string;
 }
 
-export function WelcomePage({ token, onContinue }: WelcomePageProps) {
+export function WelcomePage({ onContinue }: WelcomePageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invitationData, setInvitationData] = useState<InvitationData | null>(null);
   const [animationStep, setAnimationStep] = useState(0);
 
+  // ✅ URL から token を取得（/welcome?token=xxx）
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('token') ?? '';
+
   useEffect(() => {
     const fetchInvitationData = async () => {
       try {
+        if (!token) {
+          setError('招待トークンが見つかりません（URLに token がありません）');
+          setLoading(false);
+          return;
+        }
+
         console.log('🔍 Fetching invitation with token:', token);
         console.log('📡 Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
 
@@ -33,12 +42,12 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
           `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/invitation_tokens?token=eq.${token}&select=email,name,role,team_id,organization_id,invited_by,expires_at`,
           {
             headers: {
-              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
               'Content-Type': 'application/json',
-              'Prefer': 'return=representation'
-            }
-          }
+              Prefer: 'return=representation',
+            },
+          },
         );
 
         console.log('📬 Response status:', response.status);
@@ -64,18 +73,18 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
         const invitation = data[0];
         console.log('✅ Invitation found:', invitation);
 
-        let teamName = undefined;
+        let teamName: string | undefined = undefined;
         if (invitation.team_id) {
           console.log('🏢 Fetching team info for:', invitation.team_id);
           const teamResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/teams?id=eq.${invitation.team_id}&select=name`,
             {
               headers: {
-                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              }
-            }
+                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+            },
           );
 
           if (teamResponse.ok) {
@@ -87,18 +96,18 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
           }
         }
 
-        let organizationName = undefined;
+        let organizationName: string | undefined = undefined;
         if (invitation.organization_id) {
           console.log('🏢 Fetching organization info for:', invitation.organization_id);
           const orgResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/organizations?id=eq.${invitation.organization_id}&select=name`,
             {
               headers: {
-                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              }
-            }
+                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+            },
           );
 
           if (orgResponse.ok) {
@@ -129,10 +138,9 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
           confetti({
             particleCount: 100,
             spread: 70,
-            origin: { y: 0.6 }
+            origin: { y: 0.6 },
           });
         }, 1200);
-
       } catch (err) {
         console.error('❌ Error fetching invitation:', err);
         setError('招待情報の取得に失敗しました。ネットワーク接続を確認してください。');
@@ -149,27 +157,33 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
         particleCount: 50,
         angle: 60,
         spread: 55,
-        origin: { x: 0 }
+        origin: { x: 0 },
       });
       confetti({
         particleCount: 50,
         angle: 120,
         spread: 55,
-        origin: { x: 1 }
+        origin: { x: 1 },
       });
 
       setTimeout(() => {
-        onContinue(invitationData.email, token);
+        // ✅ ここでは onContinue() だけ呼ぶ
+        // （App.tsx 側で /auth/callback?next=... に誘導する運用が安全）
+        onContinue();
       }, 500);
     }
   };
 
   const getRoleDisplay = (role: string) => {
-    switch(role) {
-      case 'athlete': return 'アスリート';
-      case 'staff': return 'スタッフ';
-      case 'admin': return '管理者';
-      default: return role;
+    switch (role) {
+      case 'athlete':
+        return 'アスリート';
+      case 'staff':
+        return 'スタッフ';
+      case 'admin':
+        return '管理者';
+      default:
+        return role;
     }
   };
 
@@ -180,11 +194,8 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
     const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
-    if (diffHrs > 0) {
-      return `あと${diffHrs}時間`;
-    } else if (diffMins > 0) {
-      return `あと${diffMins}分`;
-    }
+    if (diffHrs > 0) return `あと${diffHrs}時間`;
+    if (diffMins > 0) return `あと${diffMins}分`;
     return '間もなく期限切れ';
   };
 
@@ -206,9 +217,7 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
           <div className="bg-red-100 dark:bg-red-900 rounded-full p-4 w-16 h-16 mx-auto mb-4">
             <Clock className="w-8 h-8 text-red-600 dark:text-red-400" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            招待リンクが無効です
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">招待リンクが無効です</h1>
           <p className="text-gray-600 dark:text-gray-300 mb-6">
             {error || '招待リンクが見つからないか、期限切れです'}
           </p>
@@ -230,24 +239,25 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
         >
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-700 dark:to-indigo-700 px-8 py-12 text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-white dark:bg-gray-900 opacity-10">
-              <div className="absolute top-0 left-0 w-full h-full"
-                   style={{
-                     backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-                     backgroundSize: '30px 30px'
-                   }}>
-              </div>
+              <div
+                className="absolute top-0 left-0 w-full h-full"
+                style={{
+                  backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+                  backgroundSize: '30px 30px',
+                }}
+              />
             </div>
 
-            <div className={`transform transition-all duration-700 delay-200 ${
-              animationStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-            }`}>
+            <div
+              className={`transform transition-all duration-700 delay-200 ${
+                animationStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+              }`}
+            >
               <div className="bg-white dark:bg-gray-800 rounded-full p-4 w-20 h-20 mx-auto mb-6 shadow-lg">
                 <Sparkles className="w-12 h-12 text-indigo-600 dark:text-indigo-400" />
               </div>
 
-              <h1 className="text-4xl font-bold text-white mb-3">
-                ようこそ、{invitationData.name}さん！
-              </h1>
+              <h1 className="text-4xl font-bold text-white mb-3">ようこそ、{invitationData.name}さん！</h1>
 
               {(invitationData.organization_name || invitationData.team_name) && (
                 <div className="space-y-2">
@@ -256,9 +266,7 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
                       <Users className="w-5 h-5" />
                       <span className="font-semibold">{invitationData.organization_name}</span>
                       {invitationData.team_name && <span>-</span>}
-                      {invitationData.team_name && (
-                        <span className="font-semibold">{invitationData.team_name}</span>
-                      )}
+                      {invitationData.team_name && <span className="font-semibold">{invitationData.team_name}</span>}
                       <span>があなたを待っています</span>
                     </div>
                   )}
@@ -272,28 +280,24 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
                 </div>
               )}
 
-              <p className="text-blue-100 dark:text-blue-200 text-lg mt-2">
-                Bekuta への招待
-              </p>
+              <p className="text-blue-100 dark:text-blue-200 text-lg mt-2">Bekuta への招待</p>
             </div>
           </div>
 
           <div className="px-8 py-10">
-            <div className={`transform transition-all duration-700 delay-400 ${
-              animationStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-            }`}>
+            <div
+              className={`transform transition-all duration-700 delay-400 ${
+                animationStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+              }`}
+            >
               <div className="space-y-6 mb-8">
                 <div className="flex items-start space-x-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
                   <div className="flex-shrink-0 mt-1">
                     <CheckCircle2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                      あなたの役割
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {getRoleDisplay(invitationData.role)}として参加します
-                    </p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">あなたの役割</h3>
+                    <p className="text-gray-600 dark:text-gray-300">{getRoleDisplay(invitationData.role)}として参加します</p>
                   </div>
                 </div>
 
@@ -302,12 +306,8 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
                     <CheckCircle2 className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                      メールアドレス
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {invitationData.email}
-                    </p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">メールアドレス</h3>
+                    <p className="text-gray-600 dark:text-gray-300">{invitationData.email}</p>
                   </div>
                 </div>
 
@@ -316,31 +316,31 @@ export function WelcomePage({ token, onContinue }: WelcomePageProps) {
                     <Clock className="w-6 h-6 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                      招待の有効期限
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {getTimeRemaining(invitationData.expires_at)}
-                    </p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">招待の有効期限</h3>
+                    <p className="text-gray-600 dark:text-gray-300">{getTimeRemaining(invitationData.expires_at)}</p>
                   </div>
                 </div>
               </div>
 
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 mb-8">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3 text-center">
-                  次のステップ
-                </h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-3 text-center">次のステップ</h3>
                 <ol className="space-y-2 text-gray-600 dark:text-gray-300 text-sm">
                   <li className="flex items-start space-x-2">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      1
+                    </span>
                     <span>メールに記載された一時パスワードでログイン</span>
                   </li>
                   <li className="flex items-start space-x-2">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      2
+                    </span>
                     <span>セキュリティのため新しいパスワードに変更</span>
                   </li>
                   <li className="flex items-start space-x-2">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      3
+                    </span>
                     <span>チームに参加完了！</span>
                   </li>
                 </ol>
