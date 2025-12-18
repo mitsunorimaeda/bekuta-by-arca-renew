@@ -2597,6 +2597,10 @@ export type Database = {
           load: number | null
           rpe: number
           user_id: string
+      
+          // ✅ 追加
+          arrow_score: number | null
+          signal_score: number | null
         }
         Insert: {
           created_at?: string | null
@@ -2606,6 +2610,10 @@ export type Database = {
           load?: number | null
           rpe: number
           user_id: string
+      
+          // ✅ 追加
+          arrow_score?: number | null
+          signal_score?: number | null
         }
         Update: {
           created_at?: string | null
@@ -2615,6 +2623,10 @@ export type Database = {
           load?: number | null
           rpe?: number
           user_id?: string
+      
+          // ✅ 追加
+          arrow_score?: number | null
+          signal_score?: number | null
         }
         Relationships: [
           {

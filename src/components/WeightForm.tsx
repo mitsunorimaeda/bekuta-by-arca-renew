@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Scale, Calendar, AlertCircle, FileText } from 'lucide-react';
 import { WeightRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
@@ -9,18 +9,47 @@ interface WeightFormProps {
   onCheckExisting: (date: string) => Promise<WeightRecord | null>;
   onUpdate: (id: string, data: { weight_kg: number; notes?: string }) => Promise<void>;
   loading: boolean;
-  lastRecord?: WeightRecord | null; // ★ 追加
+  lastRecord?: WeightRecord | null;
 }
 
 export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastRecord }: WeightFormProps) {
-  const [weight, setWeight] = useState<string>(lastRecord ? String(lastRecord.weight_kg) : ''); // ★ 初期値に前回体重
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayJSTString());
+  const today = useMemo(() => getTodayJSTString(), []);
+
+  const [weight, setWeight] = useState<string>(''); // ★ lastRecordは後から入るのでここは空でOK
+  const [selectedDate, setSelectedDate] = useState<string>(today);
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [existingRecord, setExistingRecord] = useState<WeightRecord | null>(null);
   const [pendingData, setPendingData] = useState<{ weight_kg: number; date: string; notes?: string } | null>(null);
+
+  // ✅ lastRecordが後から来たときに初期値を入れる（ユーザーが入力してなければ）
+  useEffect(() => {
+    if (!lastRecord) return;
+    if (weight.trim() !== '') return; // すでに入力があるなら上書きしない
+    setWeight(String(lastRecord.weight_kg ?? ''));
+  }, [lastRecord, weight]);
+
+  // ✅ 日付が変わったら既存チェックして、既存があればフォームに反映
+  useEffect(() => {
+    const run = async () => {
+      setError('');
+      const existing = await onCheckExisting(selectedDate);
+      setExistingRecord(existing);
+
+      if (existing) {
+        setWeight(String(existing.weight_kg ?? ''));
+        setNotes((existing as any).notes ?? ''); // notes列がある前提。無いなら消してOK
+      } else {
+        // その日が未記録なら、フォームは空（もしくは lastRecord を入れたいならここで入れる）
+        setNotes('');
+        // setWeight(''); // ←「毎回空にする」ならこれ。今は現状維持で触らない方が安全。
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,30 +68,26 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
       setPendingData({
         weight_kg: weightNum,
         date: selectedDate,
-        notes: notes.trim() || undefined
+        notes: notes.trim() || undefined,
       });
       setShowDuplicateModal(true);
       return;
     }
 
     setSubmitting(true);
-
     try {
       await onSubmit({
         weight_kg: weightNum,
         date: selectedDate,
-        notes: notes.trim() || undefined
+        notes: notes.trim() || undefined,
       });
+
       setWeight('');
       setNotes('');
-      setSelectedDate(getTodayJSTString());
+      setSelectedDate(today);
     } catch (error) {
       console.error('Error submitting weight record:', error);
-      if (error instanceof Error) {
-        setError(error.message || '記録の追加に失敗しました。');
-      } else {
-        setError('記録の追加に失敗しました。');
-      }
+      setError(error instanceof Error ? error.message || '記録の追加に失敗しました。' : '記録の追加に失敗しました。');
     } finally {
       setSubmitting(false);
     }
@@ -77,12 +102,12 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
     try {
       await onUpdate(existingRecord.id, {
         weight_kg: pendingData.weight_kg,
-        notes: pendingData.notes
+        notes: pendingData.notes,
       });
 
       setWeight('');
       setNotes('');
-      setSelectedDate(getTodayJSTString());
+      setSelectedDate(today);
       setExistingRecord(null);
       setPendingData(null);
     } catch (error) {
@@ -108,12 +133,8 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
         onCancel={handleCancelOverwrite}
         title="体重記録"
         date={selectedDate}
-        existingValues={[
-          { label: '体重', value: `${existingRecord?.weight_kg || 0} kg` }
-        ]}
-        newValues={[
-          { label: '体重', value: `${pendingData?.weight_kg || 0} kg` }
-        ]}
+        existingValues={[{ label: '体重', value: `${existingRecord?.weight_kg || 0} kg` }]}
+        newValues={[{ label: '体重', value: `${pendingData?.weight_kg || 0} kg` }]}
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -126,12 +147,12 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            max={getTodayJSTString()}
+            max={today}
             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
             style={{ fontSize: '16px' }}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {selectedDate === getTodayJSTString() ? '今日の体重記録' : '過去の体重記録'}
+            {selectedDate === today ? '今日の体重記録' : '過去の体重記録'}
           </p>
         </div>
 
@@ -152,15 +173,11 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
             required
             style={{ fontSize: '16px' }}
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            小数点第1位まで入力可能（例: 65.5kg）
-          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">小数点第1位まで入力可能（例: 65.5kg）</p>
 
           {lastRecord && (
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-              前回: {Number(lastRecord.weight_kg).toFixed(1)} kg（
-              {new Date(lastRecord.date).toLocaleDateString('ja-JP')}
-              ）
+              前回: {Number(lastRecord.weight_kg).toFixed(1)} kg（{new Date(lastRecord.date).toLocaleDateString('ja-JP')}）
             </p>
           )}
         </div>
@@ -179,9 +196,7 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
             maxLength={500}
             style={{ fontSize: '16px' }}
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {notes.length}/500文字
-          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{notes.length}/500文字</p>
         </div>
 
         {error && (
@@ -197,10 +212,7 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
           type="submit"
           disabled={submitting || loading || !weight}
           className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center touch-target"
-          style={{
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation'
-          }}
+          style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
         >
           {submitting ? (
             <>

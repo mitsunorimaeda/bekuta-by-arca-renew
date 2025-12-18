@@ -7,9 +7,24 @@ import { GenericDuplicateModal } from './GenericDuplicateModal';
 
 interface TrainingFormProps {
   userId: string;
-  onSubmit: (data: { rpe: number; duration_min: number; date: string }) => Promise<void>;
+
+  // ✅ arrow_score / signal_score を受け取る形に変更
+  onSubmit: (data: {
+    rpe: number;
+    duration_min: number;
+    date: string;
+    arrow_score: number;
+    signal_score: number;
+  }) => Promise<void>;
+
   onCheckExisting: (date: string) => Promise<TrainingRecord | null>;
-  onUpdate: (recordId: string, data: { rpe: number; duration_min: number }) => Promise<void>;
+
+  // ✅ update も arrow_score / signal_score を受け取る形に変更
+  onUpdate: (
+    recordId: string,
+    data: { rpe: number; duration_min: number; arrow_score: number; signal_score: number }
+  ) => Promise<void>;
+
   loading: boolean;
   lastRecord?: { rpe: number; duration_min: number; date: string } | null;
   weeklyAverage?: { rpe: number; duration: number; load: number } | null;
@@ -38,17 +53,28 @@ export function TrainingForm({
 }: TrainingFormProps) {
   const today = getTodayLocalDateString();
 
-  const [rpe, setRpe] = useState<number>(0);           // 0 = 休養日
+  const [rpe, setRpe] = useState<number>(0); // 0 = 休養日
   const [duration, setDuration] = useState<number>(0); // 休養日初期値 0 分
   const [selectedDate, setSelectedDate] = useState<string>(today);
+
+  // ✅ 追加：矢印（成長実感）/ 電波（意図理解）0〜100
+  const [arrowScore, setArrowScore] = useState<number>(50);
+  const [signalScore, setSignalScore] = useState<number>(50);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
   const [warning, setWarning] = useState<string>('');
   const [successFeedback, setSuccessFeedback] = useState<ProgressFeedback | null>(null);
+
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [existingRecord, setExistingRecord] = useState<TrainingRecord | null>(null);
-  const [pendingData, setPendingData] =
-    useState<{ rpe: number; duration_min: number; date: string } | null>(null);
+  const [pendingData, setPendingData] = useState<{
+    rpe: number;
+    duration_min: number;
+    date: string;
+    arrow_score: number;
+    signal_score: number;
+  } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +94,13 @@ export function TrainingForm({
     const existing = await onCheckExisting(selectedDate);
     if (existing) {
       setExistingRecord(existing);
-      setPendingData({ rpe, duration_min: duration, date: selectedDate });
+      setPendingData({
+        rpe,
+        duration_min: duration,
+        date: selectedDate,
+        arrow_score: arrowScore,
+        signal_score: signalScore,
+      });
       setShowDuplicateModal(true);
       return;
     }
@@ -76,24 +108,28 @@ export function TrainingForm({
     setSubmitting(true);
 
     try {
-      await onSubmit({ rpe, duration_min: duration, date: selectedDate });
+      await onSubmit({
+        rpe,
+        duration_min: duration,
+        date: selectedDate,
+        arrow_score: arrowScore,
+        signal_score: signalScore,
+      });
 
       // ストリーク用：休養日でも「1日入力した」とみなす
       const feedback = getDataEntryFeedback(daysWithData + 1, consecutiveDays + 1);
       if (feedback) {
         setSuccessFeedback(feedback);
         if (feedback.showConfetti) {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         }
       }
 
-      // 成功後リセット（今日・休養日状態に戻す）
+      // 成功後リセット
       setRpe(0);
       setDuration(0);
+      setArrowScore(50);
+      setSignalScore(50);
       setSelectedDate(today);
     } catch (error) {
       console.error('Error submitting training record:', error);
@@ -101,8 +137,8 @@ export function TrainingForm({
         if (error.message.includes('duplicate key value violates unique constraint')) {
           setError(
             `${new Date(selectedDate).toLocaleDateString(
-              'ja-JP',
-            )}の記録は既に存在します。既存の記録を編集してください。`,
+              'ja-JP'
+            )}の記録は既に存在します。既存の記録を編集してください。`
           );
         } else {
           setError(error.message || '記録の追加に失敗しました。');
@@ -125,23 +161,24 @@ export function TrainingForm({
       await onUpdate(existingRecord.id, {
         rpe: pendingData.rpe,
         duration_min: pendingData.duration_min,
+        arrow_score: pendingData.arrow_score,
+        signal_score: pendingData.signal_score,
       });
 
       const feedback = getDataEntryFeedback(daysWithData + 1, consecutiveDays + 1);
       if (feedback) {
         setSuccessFeedback(feedback);
         if (feedback.showConfetti) {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         }
       }
 
       setRpe(0);
       setDuration(0);
+      setArrowScore(50);
+      setSignalScore(50);
       setSelectedDate(today);
+
       setExistingRecord(null);
       setPendingData(null);
     } catch (error) {
@@ -158,6 +195,23 @@ export function TrainingForm({
     setPendingData(null);
   };
 
+  const checkForWarnings = (currentRpe: number, currentDuration: number) => {
+    if (currentRpe === 0 || currentDuration === 0) {
+      setWarning('');
+      return;
+    }
+    const currentLoad = currentRpe * currentDuration;
+    if (weeklyAverage && currentLoad > weeklyAverage.load * 2) {
+      setWarning('いつもの2倍以上の負荷です。入力内容を確認してください。');
+    } else if (weeklyAverage && currentLoad > weeklyAverage.load * 1.5) {
+      setWarning('いつもより高い負荷です。');
+    } else if (currentLoad > 1000) {
+      setWarning('非常に高い負荷です。入力内容を確認してください。');
+    } else {
+      setWarning('');
+    }
+  };
+
   const handleRpeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newRpe = Number(e.target.value);
     setRpe(newRpe);
@@ -168,26 +222,6 @@ export function TrainingForm({
     const newDuration = Number(e.target.value);
     setDuration(newDuration);
     checkForWarnings(rpe, newDuration);
-  };
-
-  const checkForWarnings = (currentRpe: number, currentDuration: number) => {
-    // 休養日 or 時間 0 のときは警告なし
-    if (currentRpe === 0 || currentDuration === 0) {
-      setWarning('');
-      return;
-    }
-
-    const currentLoad = currentRpe * currentDuration;
-
-    if (weeklyAverage && currentLoad > weeklyAverage.load * 2) {
-      setWarning('いつもの2倍以上の負荷です。入力内容を確認してください。');
-    } else if (weeklyAverage && currentLoad > weeklyAverage.load * 1.5) {
-      setWarning('いつもより高い負荷です。');
-    } else if (currentLoad > 1000) {
-      setWarning('非常に高い負荷です。入力内容を確認してください。');
-    } else {
-      setWarning('');
-    }
   };
 
   const rpeLabels = [
@@ -205,15 +239,12 @@ export function TrainingForm({
   ];
 
   useEffect(() => {
-    if (successFeedback) {
-      const timer = setTimeout(() => {
-        setSuccessFeedback(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!successFeedback) return;
+    const timer = setTimeout(() => setSuccessFeedback(null), 5000);
+    return () => clearTimeout(timer);
   }, [successFeedback]);
 
-  const loadValue = rpe * duration; // 休養日は 0 になる
+  const loadValue = rpe * duration;
 
   return (
     <>
@@ -225,12 +256,16 @@ export function TrainingForm({
         title="練習記録"
         date={selectedDate}
         existingValues={[
-          { label: 'RPE', value: existingRecord?.rpe.toString() || '-' },
+          { label: 'RPE', value: existingRecord?.rpe?.toString() || '-' },
           { label: '時間', value: `${existingRecord?.duration_min || 0}分` },
+          { label: '矢印', value: `${(existingRecord as any)?.arrow_score ?? '-'} / 100` },
+          { label: '電波', value: `${(existingRecord as any)?.signal_score ?? '-'} / 100` },
         ]}
         newValues={[
-          { label: 'RPE', value: pendingData?.rpe.toString() || '-' },
+          { label: 'RPE', value: pendingData?.rpe?.toString() || '-' },
           { label: '時間', value: `${pendingData?.duration_min || 0}分` },
+          { label: '矢印', value: `${pendingData?.arrow_score ?? '-'} / 100` },
+          { label: '電波', value: `${pendingData?.signal_score ?? '-'} / 100` },
         ]}
       />
 
@@ -342,9 +377,9 @@ export function TrainingForm({
               <span>5</span>
               <span>10</span>
             </div>
-            <div className="text-center p-3 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600 mb-1">{rpe}</div>
-              <div className="text-sm text-blue-700">{rpeLabels[rpe]}</div>
+            <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-300 mb-1">{rpe}</div>
+              <div className="text-sm text-blue-700 dark:text-blue-200">{rpeLabels[rpe]}</div>
             </div>
           </div>
         </div>
@@ -369,6 +404,52 @@ export function TrainingForm({
           </p>
         </div>
 
+        {/* ✅ 追加：矢印（成長実感） */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              矢印（成長実感）
+            </div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              {arrowScore}/100
+            </div>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={arrowScore}
+            onChange={(e) => setArrowScore(Number(e.target.value))}
+            className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            今日の練習で「成長した感じ」をどれくらい持てた？
+          </p>
+        </div>
+
+        {/* ✅ 追加：電波（意図理解） */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              電波（コーチ意図の理解）
+            </div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              {signalScore}/100
+            </div>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={signalScore}
+            onChange={(e) => setSignalScore(Number(e.target.value))}
+            className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？
+          </p>
+        </div>
+
         {warning && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
             <div className="flex items-center">
@@ -390,9 +471,7 @@ export function TrainingForm({
         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 transition-colors">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm text-gray-600 dark:text-gray-400">計算される負荷値</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
-              {loadValue}
-            </span>
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">{loadValue}</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             負荷 = RPE × 練習時間（休養日は 0 として扱われます）
@@ -403,10 +482,7 @@ export function TrainingForm({
           type="submit"
           disabled={submitting || loading}
           className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center touch-target"
-          style={{
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
-          }}
+          style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
         >
           {submitting ? (
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>

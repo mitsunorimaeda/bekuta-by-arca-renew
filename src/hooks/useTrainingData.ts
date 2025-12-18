@@ -1,7 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase, TrainingRecord, WeightRecord } from '../lib/supabase';
 import { calculateACWR, ACWRData } from '../lib/acwr';
-import { logEvent } from '../lib/logEvent'; // ★追加：あなたのlogEventのパスに合わせて調整
+import { logEvent } from '../lib/logEvent';
+
+type TrainingUpsertPayload = {
+  rpe: number;
+  duration_min: number;
+  date: string;
+  arrow_score: number;
+  signal_score: number;
+};
 
 export function useTrainingData(userId: string) {
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
@@ -9,17 +17,39 @@ export function useTrainingData(userId: string) {
   const [acwrData, setACWRData] = useState<ACWRData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  // ✅ logEvent の呼び方が揺れても落ちないように吸収
+  const safeLogEvent = useCallback(
+    async (
+      eventType: string,
+      payload: Record<string, any>,
+      opts?: { overwrite?: boolean }
+    ) => {
+      try {
+        // 1) 文字列 + payload 形式（logEvent(type, payload)）
+        // @ts-ignore
+        await logEvent(eventType, payload);
+        return;
+      } catch (e1) {
+        // 2) オブジェクト形式（logEvent({ userId, eventType, payload })）
+        try {
+          // @ts-ignore
+          await logEvent({
+            userId,
+            eventType,
+            payload,
+          });
+          return;
+        } catch (e2) {
+          console.warn('[safeLogEvent] failed:', e1, e2);
+        }
+      }
+    },
+    [userId]
+  );
+
+  const fetchAll = useCallback(async () => {
     if (!userId) return;
-    fetchAll();
-  }, [userId]);
 
-  useEffect(() => {
-    const calculatedACWR = calculateACWR(trainingRecords);
-    setACWRData(calculatedACWR);
-  }, [trainingRecords]);
-
-  const fetchAll = async () => {
     setLoading(true);
     try {
       const [trainingRes, weightRes] = await Promise.all([
@@ -38,14 +68,8 @@ export function useTrainingData(userId: string) {
       if (trainingRes.error) throw trainingRes.error;
       if (weightRes.error) throw weightRes.error;
 
-      const tData = (trainingRes.data || []) as TrainingRecord[];
-      const wData = (weightRes.data || []) as WeightRecord[];
-
-      console.log('[useTrainingData] training_records fetched:', tData.length);
-      console.log('[useTrainingData] weight_records fetched:', wData.length);
-
-      setTrainingRecords(tData);
-      setWeightRecords(wData);
+      setTrainingRecords((trainingRes.data || []) as TrainingRecord[]);
+      setWeightRecords((weightRes.data || []) as WeightRecord[]);
     } catch (error) {
       console.error('[useTrainingData] Error fetching data:', error);
       setTrainingRecords([]);
@@ -54,148 +78,142 @@ export function useTrainingData(userId: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
-  const checkExistingRecord = async (date: string): Promise<TrainingRecord | null> => {
-    try {
-      const { data, error } = await supabase
-        .from('training_records')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('date', date)
-        .maybeSingle();
+  useEffect(() => {
+    if (!userId) return;
+    fetchAll();
+  }, [userId, fetchAll]);
 
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error('Error checking existing record:', error);
-      return null;
-    }
-  };
+  useEffect(() => {
+    const calculatedACWR = calculateACWR(trainingRecords);
+    setACWRData(calculatedACWR);
+  }, [trainingRecords]);
 
-  const addTrainingRecord = async (recordData: { rpe: number; duration_min: number; date: string }) => {
-    console.log('[useTrainingData] addTrainingRecord called with:', recordData);
-
-    try {
-      const { data, error } = await supabase
-        .from('training_records')
-        .insert([
-          {
-            user_id: userId,
-            date: recordData.date,
-            rpe: recordData.rpe,
-            duration_min: recordData.duration_min,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[useTrainingData] Insert error:', error);
-        throw error;
-      }
-
-      console.log('[useTrainingData] Insert successful:', data);
-
-      // ✅ event（失敗しても保存は成功なのでthrowしない）
+  const checkExistingRecord = useCallback(
+    async (date: string): Promise<TrainingRecord | null> => {
       try {
-        await logEvent('training_completed', {
+        const { data, error } = await supabase
+          .from('training_records')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('date', date)
+          .maybeSingle();
+
+        if (error) throw error;
+        return data as TrainingRecord | null;
+      } catch (error) {
+        console.error('Error checking existing record:', error);
+        return null;
+      }
+    },
+    [userId]
+  );
+
+  // ✅ 追加：arrow_score / signal_score を保存
+  const addTrainingRecord = useCallback(
+    async (recordData: TrainingUpsertPayload) => {
+      try {
+        const { data, error } = await supabase
+          .from('training_records')
+          .insert([
+            {
+              user_id: userId,
+              date: recordData.date,
+              rpe: recordData.rpe,
+              duration_min: recordData.duration_min,
+              arrow_score: recordData.arrow_score,
+              signal_score: recordData.signal_score,
+            },
+          ])
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // ✅ event（失敗しても保存は成功なので throw しない）
+        await safeLogEvent('training_completed', {
           date: recordData.date,
           rpe: recordData.rpe,
           duration_min: recordData.duration_min,
+          arrow_score: recordData.arrow_score,
+          signal_score: recordData.signal_score,
           overwrite: false,
         });
-      } catch (e) {
-        console.warn('[logEvent] failed after insert:', e);
+
+        await fetchAll();
+        return data;
+      } catch (error) {
+        console.error('[useTrainingData] Error adding training record:', error);
+        throw error;
       }
+    },
+    [userId, fetchAll, safeLogEvent]
+  );
 
-      // addTrainingRecord の insert成功後（data が取れた後）に追加
-      await logEvent({
-        userId,
-        eventType: 'training_completed',
-        payload: {
-          date: recordData.date,
-          rpe: recordData.rpe,
-          duration_min: recordData.duration_min,
-          overwrite: false,
-        },
-      });
-
-      await fetchAll();
-      return data;
-    } catch (error) {
-      console.error('[useTrainingData] Error adding training record:', error);
-      if (error && typeof error === 'object') {
-        console.error('[useTrainingData] Error details:', JSON.stringify(error, null, 2));
-      }
-      throw error;
-    }
-  };
-
-  const updateTrainingRecord = async (
-    recordId: string,
-    recordData: { rpe: number; duration_min: number; date?: string }
-  ) => {
-    try {
-      const { data, error } = await supabase
-        .from('training_records')
-        .update({
-          rpe: recordData.rpe,
-          duration_min: recordData.duration_min,
-          ...(recordData.date && { date: recordData.date }),
-        })
-        .eq('id', recordId)
-        .eq('user_id', userId)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // ✅ event（updateでも必ず出す）
-      // dateが渡ってこないケースに備えて、更新後data.dateを優先
-      const eventDate = (recordData.date ?? (data as any)?.date) as string | undefined;
-
+  // ✅ updateにも arrow_score / signal_score
+  const updateTrainingRecord = useCallback(
+    async (
+      recordId: string,
+      recordData: Omit<TrainingUpsertPayload, 'date'> & { date?: string }
+    ) => {
       try {
-        await logEvent('training_completed', {
+        const { data, error } = await supabase
+          .from('training_records')
+          .update({
+            rpe: recordData.rpe,
+            duration_min: recordData.duration_min,
+            arrow_score: recordData.arrow_score,
+            signal_score: recordData.signal_score,
+            ...(recordData.date && { date: recordData.date }),
+          })
+          .eq('id', recordId)
+          .eq('user_id', userId)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const eventDate = (recordData.date ?? (data as any)?.date) as string | undefined;
+
+        await safeLogEvent('training_completed', {
           date: eventDate,
           rpe: recordData.rpe,
           duration_min: recordData.duration_min,
+          arrow_score: recordData.arrow_score,
+          signal_score: recordData.signal_score,
           overwrite: true,
         });
-      } catch (e) {
-        console.warn('[logEvent] failed after update:', e);
+
+        await fetchAll();
+        return data;
+      } catch (error) {
+        console.error('Error updating training record:', error);
+        throw error;
       }
+    },
+    [userId, fetchAll, safeLogEvent]
+  );
 
-      await logEvent({
-        userId,
-        eventType: 'training_updated',
-        payload: { record_id: recordId, ...recordData },
-      });
+  const deleteTrainingRecord = useCallback(
+    async (recordId: string) => {
+      try {
+        const { error } = await supabase
+          .from('training_records')
+          .delete()
+          .eq('id', recordId)
+          .eq('user_id', userId);
 
-      await fetchAll();
-      return data;
-    } catch (error) {
-      console.error('Error updating training record:', error);
-      throw error;
-    }
-  };
+        if (error) throw error;
 
-  const deleteTrainingRecord = async (recordId: string) => {
-    try {
-      const { error } = await supabase
-        .from('training_records')
-        .delete()
-        .eq('id', recordId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      await fetchAll();
-    } catch (error) {
-      console.error('Error deleting training record:', error);
-      throw error;
-    }
-  };
+        await fetchAll();
+      } catch (error) {
+        console.error('Error deleting training record:', error);
+        throw error;
+      }
+    },
+    [userId, fetchAll]
+  );
 
   return {
     records: trainingRecords,
