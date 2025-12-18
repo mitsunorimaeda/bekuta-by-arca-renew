@@ -318,16 +318,53 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   };
 
   // Training 更新用のラッパー（Promise<void> に揃える）
-  const handleTrainingUpdate = async (recordId: string, recordData: { rpe: number; duration_min: number; date?: string }) => {
+  const handleTrainingUpdate = async (
+    recordId: string,
+    recordData: { rpe: number; duration_min: number; date?: string }
+  ) => {
     await updateTrainingRecord(recordId, recordData);
   };
 
-  const handleTrainingUpdateForList = async (recordId: string, recordData: { rpe: number; duration_min: number }) => {
+  const handleTrainingUpdateForList = async (
+    recordId: string,
+    recordData: { rpe: number; duration_min: number }
+  ) => {
     await updateTrainingRecord(recordId, recordData);
   };
 
-  const handleTrainingUpdateForCheckIn = async (recordId: string, recordData: { rpe: number; duration_min: number; date?: string }) => {
-    await updateTrainingRecord(recordId, recordData);
+  // ✅ UnifiedDailyCheckIn 用：training submit（矢印/電波も保存）
+  const handleTrainingSubmitForCheckIn = async (data: {
+    rpe: number;
+    duration_min: number;
+    date: string;
+    arrow_score?: number;
+    signal_score?: number;
+  }) => {
+    await addTrainingRecord({
+      rpe: data.rpe,
+      duration_min: data.duration_min,
+      date: data.date,
+      arrow_score: data.arrow_score ?? null,
+      signal_score: data.signal_score ?? null,
+    } as any);
+  };
+
+  // ✅ UnifiedDailyCheckIn 用：training update（矢印/電波も更新）
+  const handleTrainingUpdateForCheckIn = async (
+    recordId: string,
+    recordData: {
+      rpe: number;
+      duration_min: number;
+      arrow_score?: number;
+      signal_score?: number;
+    }
+  ) => {
+    await updateTrainingRecord(recordId, {
+      rpe: recordData.rpe,
+      duration_min: recordData.duration_min,
+      arrow_score: recordData.arrow_score ?? null,
+      signal_score: recordData.signal_score ?? null,
+    } as any);
   };
 
   // Performance 更新用ラッパー
@@ -1401,9 +1438,9 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <UnifiedDailyCheckIn
           userId={user.id}
           userGender={normalizedGenderBinary}
-          onTrainingSubmit={addTrainingRecord}
+          onTrainingSubmit={handleTrainingSubmitForCheckIn}   // ← ここ
           onTrainingCheckExisting={checkExistingTrainingRecord}
-          onTrainingUpdate={handleTrainingUpdateForCheckIn}
+          onTrainingUpdate={handleTrainingUpdateForCheckIn}   // ← ここ
           onWeightSubmit={addWeightRecord}
           onWeightCheckExisting={checkExistingWeightRecord}
           onWeightUpdate={updateWeightRecord}

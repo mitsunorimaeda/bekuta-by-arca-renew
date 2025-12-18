@@ -1,24 +1,55 @@
+// UnifiedDailyCheckIn.tsx
 import React, { useState } from 'react';
 import { X, CheckCircle, Activity, Scale, Moon, Heart, Zap, Calendar } from 'lucide-react';
 import { TrainingRecord, WeightRecord, SleepRecord, MotivationRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 
+// ✅ 追加：矢印/電波 UI
+import { VectorArrowPicker } from './vectorarrowPicker';
+import { SignalPicker } from './SignalPicker';
+
 interface UnifiedDailyCheckInProps {
   userId: string;
   userGender?: 'male' | 'female' | null;
-  onTrainingSubmit: (data: { rpe: number; duration_min: number; date: string }) => Promise<void>;
+
+  // ✅ training は arrow/signal を含める
+  onTrainingSubmit: (data: {
+    rpe: number;
+    duration_min: number;
+    date: string;
+    arrow_score: number;
+    signal_score: number;
+  }) => Promise<void>;
   onTrainingCheckExisting: (date: string) => Promise<TrainingRecord | null>;
-  onTrainingUpdate: (id: string, data: { rpe: number; duration_min: number }) => Promise<void>;
+  onTrainingUpdate: (
+    id: string,
+    data: { rpe: number; duration_min: number; arrow_score: number; signal_score: number },
+  ) => Promise<void>;
+
   onWeightSubmit: (data: { weight_kg: number; date: string; notes?: string }) => Promise<void>;
   onWeightCheckExisting: (date: string) => Promise<WeightRecord | null>;
   onWeightUpdate: (id: string, data: { weight_kg: number; notes?: string }) => Promise<void>;
-  onSleepSubmit: (data: { sleep_hours: number; sleep_quality: number; date: string; notes?: string }) => Promise<void>;
+
+  onSleepSubmit: (data: {
+    sleep_hours: number;
+    sleep_quality: number;
+    date: string;
+    notes?: string;
+  }) => Promise<void>;
   onSleepCheckExisting: (date: string) => Promise<SleepRecord | null>;
   onSleepUpdate: (id: string, data: any) => Promise<void>;
-  onMotivationSubmit: (data: { motivation_level: number; energy_level: number; stress_level: number; date: string; notes?: string }) => Promise<void>;
+
+  onMotivationSubmit: (data: {
+    motivation_level: number;
+    energy_level: number;
+    stress_level: number;
+    date: string;
+    notes?: string;
+  }) => Promise<void>;
   onMotivationCheckExisting: (date: string) => Promise<MotivationRecord | null>;
   onMotivationUpdate: (id: string, data: any) => Promise<void>;
+
   onCycleSubmit: (data: {
     cycle_start_date: string;
     period_duration_days?: number;
@@ -27,8 +58,19 @@ interface UnifiedDailyCheckInProps {
     flow_intensity?: string;
     notes?: string;
   }) => Promise<any>;
-  onCycleUpdate: (id: string, data: { period_duration_days?: number; cycle_length_days?: number; symptoms?: string[]; flow_intensity?: string; notes?: string }) => Promise<any>;
+  onCycleUpdate: (
+    id: string,
+    data: {
+      period_duration_days?: number;
+      cycle_length_days?: number;
+      symptoms?: string[];
+      flow_intensity?: string;
+      notes?: string;
+    },
+  ) => Promise<any>;
+
   onClose: () => void;
+
   lastTrainingRecord?: { rpe: number; duration_min: number; date: string } | null;
   lastWeightRecord?: { weight_kg: number; date: string } | null;
   lastSleepRecord?: {
@@ -63,37 +105,35 @@ export function UnifiedDailyCheckIn({
   onClose,
   lastTrainingRecord,
   lastWeightRecord,
-  lastSleepRecord,       // ★ 追加
-  lastMotivationRecord   // ★ 追加
+  lastSleepRecord,
+  lastMotivationRecord,
 }: UnifiedDailyCheckInProps) {
-  const today = getTodayJSTString();;
+  const today = getTodayJSTString();
 
   const [selectedDate, setSelectedDate] = useState<string>(today);
-  const [activeSection, setActiveSection] = useState<'training' | 'weight' | 'conditioning' | 'cycle'>('training');
+  const [activeSection, setActiveSection] = useState<'training' | 'weight' | 'conditioning' | 'cycle'>(
+    'training',
+  );
 
   const [rpe, setRpe] = useState<number>(lastTrainingRecord?.rpe || 5);
   const [duration, setDuration] = useState<number>(lastTrainingRecord?.duration_min || 60);
 
-  const [weight, setWeight] = useState<string>(lastWeightRecord?.weight_kg ? String(lastWeightRecord.weight_kg) : '');
+  // ✅ 追加：矢印/電波（保存用0..100）
+  const [arrowScore, setArrowScore] = useState<number>(50);
+  const [signalScore, setSignalScore] = useState<number>(50);
+
+  const [weight, setWeight] = useState<string>(
+    lastWeightRecord?.weight_kg ? String(lastWeightRecord.weight_kg) : '',
+  );
   const [weightNotes, setWeightNotes] = useState<string>('');
 
-  // ★ 前回睡眠から初期値
-  const [sleepHours, setSleepHours] = useState<number>(
-    lastSleepRecord?.sleep_hours ?? 7);
-  const [sleepQuality, setSleepQuality] = useState<number>(
-    (lastSleepRecord?.sleep_quality ?? 3));
+  const [sleepHours, setSleepHours] = useState<number>(lastSleepRecord?.sleep_hours ?? 7);
+  const [sleepQuality, setSleepQuality] = useState<number>(lastSleepRecord?.sleep_quality ?? 3);
   const [sleepNotes, setSleepNotes] = useState<string>('');
 
-   // ★ 前回モチベーションから初期値
-   const [motivationLevel, setMotivationLevel] = useState<number>(
-    lastMotivationRecord?.motivation_level ?? 7
-  );
-  const [energyLevel, setEnergyLevel] = useState<number>(
-    lastMotivationRecord?.energy_level ?? 7
-  );
-  const [stressLevel, setStressLevel] = useState<number>(
-    lastMotivationRecord?.stress_level ?? 5
-  );
+  const [motivationLevel, setMotivationLevel] = useState<number>(lastMotivationRecord?.motivation_level ?? 7);
+  const [energyLevel, setEnergyLevel] = useState<number>(lastMotivationRecord?.energy_level ?? 7);
+  const [stressLevel, setStressLevel] = useState<number>(lastMotivationRecord?.stress_level ?? 5);
   const [conditioningNotes, setConditioningNotes] = useState<string>('');
 
   // Menstrual cycle tracking (for female users)
@@ -110,42 +150,43 @@ export function UnifiedDailyCheckIn({
 
   // Duplicate detection states
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
-  const [duplicateType, setDuplicateType] = useState<'training' | 'weight' | 'sleep' | 'motivation' | 'cycle' | null>(null);
+  const [duplicateType, setDuplicateType] = useState<
+    'training' | 'weight' | 'sleep' | 'motivation' | 'cycle' | null
+  >(null);
   const [existingRecord, setExistingRecord] = useState<any>(null);
   const [pendingData, setPendingData] = useState<any>(null);
 
   const handleSectionComplete = async (section: 'training' | 'weight' | 'conditioning' | 'cycle') => {
-    console.log('[UnifiedDailyCheckIn] handleSectionComplete called:', section);
-    console.log('[UnifiedDailyCheckIn] Current values:', {
-      rpe,
-      duration,
-      weight,
-      sleepHours,
-      sleepQuality,
-      motivationLevel,
-      energyLevel,
-      stressLevel
-    });
     setSubmitting(true);
     setError('');
+
     try {
       if (section === 'training') {
-        console.log('[UnifiedDailyCheckIn] Submitting training data:', { rpe, duration_min: duration, date: selectedDate });
-        console.log('[UnifiedDailyCheckIn] Checking for existing record...');
         const existing = await onTrainingCheckExisting(selectedDate);
-        console.log('[UnifiedDailyCheckIn] Existing record check result:', existing);
+
         if (existing) {
-          console.log('[UnifiedDailyCheckIn] Found existing record, showing duplicate modal');
           setDuplicateType('training');
           setExistingRecord(existing);
-          setPendingData({ rpe, duration_min: duration, date: selectedDate });
+          setPendingData({
+            rpe,
+            duration_min: duration,
+            date: selectedDate,
+            arrow_score: arrowScore,
+            signal_score: signalScore,
+          });
           setShowDuplicateModal(true);
           setSubmitting(false);
           return;
         }
-        console.log('[UnifiedDailyCheckIn] No existing record, calling onTrainingSubmit...');
-        await onTrainingSubmit({ rpe, duration_min: duration, date: selectedDate });
-        console.log('[UnifiedDailyCheckIn] Training data submitted successfully');
+
+        await onTrainingSubmit({
+          rpe,
+          duration_min: duration,
+          date: selectedDate,
+          arrow_score: arrowScore,
+          signal_score: signalScore,
+        });
+
         setCompletedSections((prev) => new Set(prev).add('training'));
         setActiveSection('weight');
       } else if (section === 'weight') {
@@ -157,16 +198,17 @@ export function UnifiedDailyCheckIn({
             setPendingData({
               weight_kg: Number(weight),
               date: selectedDate,
-              notes: weightNotes || undefined
+              notes: weightNotes || undefined,
             });
             setShowDuplicateModal(true);
             setSubmitting(false);
             return;
           }
+
           await onWeightSubmit({
             weight_kg: Number(weight),
             date: selectedDate,
-            notes: weightNotes || undefined
+            notes: weightNotes || undefined,
           });
           setCompletedSections((prev) => new Set(prev).add('weight'));
         }
@@ -180,7 +222,7 @@ export function UnifiedDailyCheckIn({
             sleep_hours: sleepHours,
             sleep_quality: sleepQuality,
             date: selectedDate,
-            notes: sleepNotes || undefined
+            notes: sleepNotes || undefined,
           });
           setShowDuplicateModal(true);
           setSubmitting(false);
@@ -196,7 +238,7 @@ export function UnifiedDailyCheckIn({
             energy_level: energyLevel,
             stress_level: stressLevel,
             date: selectedDate,
-            notes: conditioningNotes || undefined
+            notes: conditioningNotes || undefined,
           });
           setShowDuplicateModal(true);
           setSubmitting(false);
@@ -207,23 +249,23 @@ export function UnifiedDailyCheckIn({
           sleep_hours: sleepHours,
           sleep_quality: sleepQuality,
           date: selectedDate,
-          notes: sleepNotes || undefined
+          notes: sleepNotes || undefined,
         });
+
         await onMotivationSubmit({
           motivation_level: motivationLevel,
           energy_level: energyLevel,
           stress_level: stressLevel,
           date: selectedDate,
-          notes: conditioningNotes || undefined
+          notes: conditioningNotes || undefined,
         });
+
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
 
         if (userGender === 'female') {
           setActiveSection('cycle');
         } else {
-          setTimeout(() => {
-            onClose();
-          }, 500);
+          setTimeout(() => onClose(), 500);
         }
       } else if (section === 'cycle') {
         if (periodStart) {
@@ -233,23 +275,14 @@ export function UnifiedDailyCheckIn({
             cycle_length_days: cycleLength,
             flow_intensity: flowIntensity,
             symptoms: symptoms.length > 0 ? symptoms : undefined,
-            notes: cycleNotes || undefined
+            notes: cycleNotes || undefined,
           });
         }
         setCompletedSections((prev) => new Set(prev).add('cycle'));
-        setTimeout(() => {
-          onClose();
-        }, 500);
+        setTimeout(() => onClose(), 500);
       }
     } catch (err) {
-      console.error(`[UnifiedDailyCheckIn] Error submitting ${section}:`, err);
       const errorMessage = err instanceof Error ? err.message : '不明なエラー';
-      if (err && typeof err === 'object' && 'code' in err) {
-        console.error('[UnifiedDailyCheckIn] Error code:', (err as any).code);
-      }
-      if (err && typeof err === 'object' && 'details' in err) {
-        console.error('[UnifiedDailyCheckIn] Error details:', (err as any).details);
-      }
       setError(
         `${
           section === 'training'
@@ -259,7 +292,7 @@ export function UnifiedDailyCheckIn({
             : section === 'cycle'
             ? '周期'
             : 'コンディション'
-        }記録の保存に失敗しました: ${errorMessage}`
+        }記録の保存に失敗しました: ${errorMessage}`,
       );
     } finally {
       setSubmitting(false);
@@ -276,14 +309,16 @@ export function UnifiedDailyCheckIn({
       if (duplicateType === 'training') {
         await onTrainingUpdate(existingRecord.id, {
           rpe: pendingData.rpe,
-          duration_min: pendingData.duration_min
+          duration_min: pendingData.duration_min,
+          arrow_score: pendingData.arrow_score,
+          signal_score: pendingData.signal_score,
         });
         setCompletedSections((prev) => new Set(prev).add('training'));
         setActiveSection('weight');
       } else if (duplicateType === 'weight') {
         await onWeightUpdate(existingRecord.id, {
           weight_kg: pendingData.weight_kg,
-          notes: pendingData.notes
+          notes: pendingData.notes,
         });
         setCompletedSections((prev) => new Set(prev).add('weight'));
         setActiveSection('conditioning');
@@ -299,7 +334,7 @@ export function UnifiedDailyCheckIn({
             energy_level: energyLevel,
             stress_level: stressLevel,
             date: selectedDate,
-            notes: conditioningNotes || undefined
+            notes: conditioningNotes || undefined,
           });
           setShowDuplicateModal(true);
           setSubmitting(false);
@@ -311,25 +346,21 @@ export function UnifiedDailyCheckIn({
           energy_level: energyLevel,
           stress_level: stressLevel,
           date: selectedDate,
-          notes: conditioningNotes || undefined
+          notes: conditioningNotes || undefined,
         });
+
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
-        setTimeout(() => {
-          onClose();
-        }, 500);
+        setTimeout(() => onClose(), 500);
       } else if (duplicateType === 'motivation') {
         await onMotivationUpdate(existingRecord.id, pendingData);
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
-        setTimeout(() => {
-          onClose();
-        }, 500);
+        setTimeout(() => onClose(), 500);
       }
 
       setExistingRecord(null);
       setPendingData(null);
       setDuplicateType(null);
     } catch (err) {
-      console.error('Error updating record:', err);
       setError('記録の更新に失敗しました');
     } finally {
       setSubmitting(false);
@@ -369,7 +400,7 @@ export function UnifiedDailyCheckIn({
     '7 - 非常にきつい',
     '8 - 極度にきつい',
     '9 - 限界に近い',
-    '10 - 限界'
+    '10 - 限界',
   ];
 
   const getModalTitle = () => {
@@ -387,6 +418,7 @@ export function UnifiedDailyCheckIn({
     }
   };
 
+  // ✅ DuplicateModal：矢印/電波は数字出さず「入力あり」に寄せる
   const getModalValues = () => {
     if (!existingRecord || !pendingData) return { existing: [], pending: [] };
 
@@ -395,41 +427,45 @@ export function UnifiedDailyCheckIn({
         return {
           existing: [
             { label: 'RPE', value: existingRecord.rpe?.toString() || '-' },
-            { label: '時間', value: `${existingRecord.duration_min || 0}分` }
+            { label: '時間', value: `${existingRecord.duration_min || 0}分` },
+            { label: '成長実感', value: existingRecord.arrow_score != null ? '入力あり' : '—' },
+            { label: '意図理解', value: existingRecord.signal_score != null ? '入力あり' : '—' },
           ],
           pending: [
             { label: 'RPE', value: pendingData.rpe?.toString() || '-' },
-            { label: '時間', value: `${pendingData.duration_min || 0}分` }
-          ]
+            { label: '時間', value: `${pendingData.duration_min || 0}分` },
+            { label: '成長実感', value: '入力あり' },
+            { label: '意図理解', value: '入力あり' },
+          ],
         };
       case 'weight':
         return {
           existing: [{ label: '体重', value: `${existingRecord.weight_kg || 0} kg` }],
-          pending: [{ label: '体重', value: `${pendingData.weight_kg || 0} kg` }]
+          pending: [{ label: '体重', value: `${pendingData.weight_kg || 0} kg` }],
         };
       case 'sleep':
         return {
           existing: [
             { label: '睡眠時間', value: `${existingRecord.sleep_hours || 0}時間` },
-            { label: '睡眠の質', value: `${existingRecord.sleep_quality || 0}/5` }
+            { label: '睡眠の質', value: `${existingRecord.sleep_quality || 0}/5` },
           ],
           pending: [
             { label: '睡眠時間', value: `${pendingData.sleep_hours || 0}時間` },
-            { label: '睡眠の質', value: `${pendingData.sleep_quality || 0}/5` }
-          ]
+            { label: '睡眠の質', value: `${pendingData.sleep_quality || 0}/5` },
+          ],
         };
       case 'motivation':
         return {
           existing: [
             { label: 'モチベーション', value: `${existingRecord.motivation_level || 0}/10` },
             { label: 'エネルギー', value: `${existingRecord.energy_level || 0}/10` },
-            { label: 'ストレス', value: `${existingRecord.stress_level || 0}/10` }
+            { label: 'ストレス', value: `${existingRecord.stress_level || 0}/10` },
           ],
           pending: [
             { label: 'モチベーション', value: `${pendingData.motivation_level || 0}/10` },
             { label: 'エネルギー', value: `${pendingData.energy_level || 0}/10` },
-            { label: 'ストレス', value: `${pendingData.stress_level || 0}/10` }
-          ]
+            { label: 'ストレス', value: `${pendingData.stress_level || 0}/10` },
+          ],
         };
       default:
         return { existing: [], pending: [] };
@@ -437,12 +473,6 @@ export function UnifiedDailyCheckIn({
   };
 
   const modalValues = getModalValues();
-
-  console.log('[UnifiedDailyCheckIn] Component is rendering');
-  console.log('[UnifiedDailyCheckIn] Active section:', activeSection);
-  console.log('[UnifiedDailyCheckIn] Submitting:', submitting);
-  console.log('[UnifiedDailyCheckIn] showDuplicateModal:', showDuplicateModal);
-  console.log('[UnifiedDailyCheckIn] duplicateType:', duplicateType);
 
   return (
     <>
@@ -465,6 +495,7 @@ export function UnifiedDailyCheckIn({
               <button
                 onClick={onClose}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                type="button"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -500,6 +531,7 @@ export function UnifiedDailyCheckIn({
                         ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                     }`}
+                    type="button"
                   >
                     {isCompleted ? <CheckCircle className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
                     <span className="hidden sm:inline">
@@ -532,7 +564,7 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    RPE (主観的運動強度): {rpe}
+                    RPE (主観的運動強度)
                   </label>
                   <input
                     type="range"
@@ -547,7 +579,7 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    練習時間: {duration}分
+                    練習時間
                   </label>
                   <input
                     type="range"
@@ -564,6 +596,10 @@ export function UnifiedDailyCheckIn({
                     <span>8時間</span>
                   </div>
                 </div>
+
+                {/* ✅ 追加：矢印/電波（直感UI） */}
+                <VectorArrowPicker value={arrowScore} onChange={setArrowScore} />
+                <SignalPicker value={signalScore} onChange={setSignalScore} />
 
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                   <p className="text-sm text-blue-900 dark:text-blue-200">
@@ -637,7 +673,7 @@ export function UnifiedDailyCheckIn({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <Moon className="w-4 h-4 inline mr-1" />
-                    睡眠時間: {sleepHours}時間
+                    睡眠時間
                   </label>
                   <input
                     type="range"
@@ -652,7 +688,7 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    睡眠の質: {sleepQuality}/5
+                    睡眠の質
                   </label>
                   <input
                     type="range"
@@ -674,7 +710,7 @@ export function UnifiedDailyCheckIn({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <Zap className="w-4 h-4 inline mr-1" />
-                    モチベーション: {motivationLevel}/10
+                    モチベーション
                   </label>
                   <input
                     type="range"
@@ -688,7 +724,7 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    エネルギー: {energyLevel}/10
+                    エネルギー
                   </label>
                   <input
                     type="range"
@@ -702,7 +738,7 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    ストレス: {stressLevel}/10
+                    ストレス
                   </label>
                   <input
                     type="range"
@@ -730,11 +766,8 @@ export function UnifiedDailyCheckIn({
             )}
 
             {activeSection === 'cycle' && userGender === 'female' && (
-              // （cycle セクションは元のまま・省略せずコピペでOK）
-              // ここは既存コードそのままで大丈夫なので、今のファイルをそのまま使ってください
-              // 必要ならまた丸っと貼ります 👍
               <>
-                {/* ここに cycle 部分の既存コード */}
+                {/* ✅ ここに cycle 部分の既存コードを “丸ごと” コピペで差し込んでください */}
               </>
             )}
 
@@ -753,15 +786,14 @@ export function UnifiedDailyCheckIn({
                       else if (activeSection === 'conditioning') setActiveSection('weight');
                     }}
                     className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition-colors"
+                    type="button"
                   >
                     戻る
                   </button>
                 )}
+
                 <button
-                  onClick={() => {
-                    console.log('[UnifiedDailyCheckIn] Button clicked!', activeSection);
-                    handleSectionComplete(activeSection);
-                  }}
+                  onClick={() => handleSectionComplete(activeSection)}
                   disabled={submitting || (activeSection === 'weight' && !weight)}
                   className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${
                     activeSection === 'training'
@@ -770,6 +802,7 @@ export function UnifiedDailyCheckIn({
                       ? 'bg-green-600 hover:bg-green-700'
                       : 'bg-purple-600 hover:bg-purple-700'
                   } text-white disabled:opacity-50 disabled:cursor-not-allowed`}
+                  type="button"
                 >
                   {submitting ? (
                     <div className="flex items-center justify-center">
@@ -788,6 +821,7 @@ export function UnifiedDailyCheckIn({
               <button
                 onClick={onClose}
                 className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                type="button"
               >
                 後で記録する
               </button>
