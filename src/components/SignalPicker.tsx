@@ -13,7 +13,7 @@ export function SignalPicker({
   value,
   onChange,
   label = '理解度',
-  hint = 'バーをドラッグして直感で選ぶ',
+  hint = '今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？',
 }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
