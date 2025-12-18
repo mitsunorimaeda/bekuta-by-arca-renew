@@ -12,7 +12,7 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 export function SignalPicker({
   value,
   onChange,
-  label = 'コーチ意図の理解',
+  label = '理解度',
   hint = 'バーをドラッグして直感で選ぶ',
 }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -100,12 +100,21 @@ export function SignalPicker({
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      {/* ✅ ラベル + ヒント + 右側に段階 */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">{hint}</div>
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            {label}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">
+            {hint}
+          </div>
         </div>
+
         <div className="text-right">
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">{levelLabel}</div>
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            {levelLabel}
+          </div>
         </div>
       </div>
 

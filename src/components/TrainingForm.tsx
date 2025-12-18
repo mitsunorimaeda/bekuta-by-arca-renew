@@ -406,11 +406,25 @@ export function TrainingForm({
           </p>
         </div>
 
+        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 transition-colors">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-gray-600 dark:text-gray-400">計算される負荷値</span>
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">{loadValue}</span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            負荷 = RPE × 練習時間（休養日は 0 として扱われます）
+          </p>
+        </div>
+
+
+
+
+
         {/* ✅ 追加：矢印（成長実感） */}
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              矢印（成長実感）
+              成長実感
             </div>
           </div>
           {/* ✅ リッチ：矢印（成長実感） */}
@@ -418,7 +432,7 @@ export function TrainingForm({
             value={arrowScore}
             onChange={setArrowScore}
             label="成長実感（ベクトル）"
-            hint="矢尻をドラッグして強さを決める（0〜100）"
+            hint="矢尻をドラッグして強さを決める"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             今日の練習で「成長した感じ」をどれくらい持てた？
@@ -429,7 +443,7 @@ export function TrainingForm({
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              電波（コーチ意図の理解）
+              理解度
             </div>
             
           </div>
@@ -437,8 +451,8 @@ export function TrainingForm({
           <SignalPicker
             value={signalScore}
             onChange={setSignalScore}
-            label="コーチ意図の理解（電波）"
-            hint="バーをドラッグして強さを決める（0〜100）"
+            label="理解度"
+            hint="バーをドラッグして強さを決める"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？
@@ -463,15 +477,7 @@ export function TrainingForm({
           </div>
         )}
 
-        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 transition-colors">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-600 dark:text-gray-400">計算される負荷値</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">{loadValue}</span>
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            負荷 = RPE × 練習時間（休養日は 0 として扱われます）
-          </p>
-        </div>
+        
 
         <button
           type="submit"
