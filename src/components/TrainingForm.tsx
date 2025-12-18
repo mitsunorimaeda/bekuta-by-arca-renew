@@ -426,7 +426,7 @@ export function TrainingForm({
             value={arrowScore}
             onChange={setArrowScore}
             label="成長実感"
-            hint="矢尻をドラッグして強さを決める"
+            hint="今日の練習での成長実感は？"
           
           />
           
@@ -437,11 +437,9 @@ export function TrainingForm({
             value={signalScore}
             onChange={setSignalScore}
             label="理解度"
-            hint="バーをドラッグして強さを決める"
+            hint="今日の練習の理解度(目的/コツ)は？"
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？
-          </p>
+          
         
 
         {warning && (

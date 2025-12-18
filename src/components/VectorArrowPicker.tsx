@@ -14,7 +14,7 @@ export function VectorArrowPicker({
   value,
   onChange,
   label = '成長実感',
-  hint = '矢尻をドラッグして直感で選ぶ',
+  hint = '今日の練習での成長実感は？',
 }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
