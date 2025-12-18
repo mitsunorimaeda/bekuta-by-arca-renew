@@ -145,7 +145,7 @@ export function StaffView({
 
   // 週次サマリー（RPC）
   const [weekRange, setWeekRange] = useState(() => getThisWeekRange());
-  const [weekCards, setWeekCards] = useState<any[]>([]);
+  const [weekCards, setWeekCards] = useState<CoachWeekAthleteCard[]>([]);
   const [weekCardsLoading, setWeekCardsLoading] = useState(false);
   const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
   const [weekLoading, setWeekLoading] = useState(false);
@@ -193,8 +193,7 @@ export function StaffView({
 
   const { organizations } = useOrganizations(user.id);
   const currentOrganizationId =
-    selectedTeam?.organization_id ||
-    (organizations.length > 0 ? organizations[0].id : '');
+    selectedTeam?.organization_id || (organizations.length > 0 ? organizations[0].id : '');
 
   useEffect(() => {
     if (shouldShowTutorial() && !loading) {
@@ -225,13 +224,13 @@ export function StaffView({
 
   useEffect(() => {
     if (!selectedTeam?.id) return;
-  
+
     // ① 選手一覧（途切れ検出維持）
     fetchTeamAthletesWithActivity(selectedTeam.id);
-  
+
     // ② 週次サマリー
     fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
-  
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTeam?.id, weekRange.start, weekRange.end]);
 
@@ -293,34 +292,28 @@ export function StaffView({
     }
   };
 
-  const fetchWeekSummary = async (
-    teamId: string,
-    startDate: string,
-    endDate: string
-  ) => {
+  const fetchWeekSummary = async (teamId: string, startDate: string, endDate: string) => {
     try {
+      setWeekLoading(true);
       setWeekCardsLoading(true);
-  
-      const { data, error } = await supabase.rpc(
-        'get_coach_week_athlete_cards',
-        {
-          p_team_id: teamId,
-          p_start_date: startDate,
-          p_end_date: endDate,
-        }
-      );
-  
+
+      const { data, error } = await supabase.rpc('get_coach_week_athlete_cards', {
+        p_team_id: teamId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      });
+
       if (error) throw error;
-  
-      setWeekCards(data || []);
+
+      setWeekCards((data || []) as CoachWeekAthleteCard[]);
     } catch (e) {
       console.error('Failed to fetch week summary', e);
       setWeekCards([]);
     } finally {
       setWeekCardsLoading(false);
+      setWeekLoading(false);
     }
   };
-  
 
   // アラート関連（今は中身ダミーでもOK）
   const markAsRead = async (alertId: string) => {
@@ -392,11 +385,10 @@ export function StaffView({
   };
   const goThisWeek = () => setWeekRange(getThisWeekRange());
 
-  // 選手クリック：共有🔓以外はモーダルを開かない
+  // ✅ 選手クリック：共有🔓以外はモーダルを開かない
   const handleAthleteSelect = (athlete: User) => {
     const card = weekCards.find((c) => c.athlete_user_id === athlete.id);
     if (!card?.is_sharing_active) {
-      // UX：将来はトーストにしたい（今は簡易）
       window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
       return;
     }
@@ -417,9 +409,7 @@ export function StaffView({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Top Bar */}
           <div className="flex items-center justify-between py-3">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900">
-              コーチダッシュボード
-            </h1>
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900">コーチダッシュボード</h1>
             <div className="flex items-center space-x-1">
               {/* 🔔 高リスクアラートがある時だけベル表示 */}
               {highPriorityTeamAlerts.length > 0 && (
@@ -587,9 +577,7 @@ export function StaffView({
         {teams.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              担当チームがありません
-            </h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">担当チームがありません</h3>
             <p className="text-gray-600">管理者にチームの割り当てを依頼してください。</p>
           </div>
         ) : (
@@ -606,7 +594,10 @@ export function StaffView({
                     </p>
                   </div>
                   <button
-                    onClick={handleDismissAlert}
+                    onClick={() => {
+                      setAlertDismissed(true);
+                      setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000);
+                    }}
                     className="ml-3 p-1 text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
                     title="30分間非表示"
                   >
@@ -661,12 +652,14 @@ export function StaffView({
                 <div className="bg-white rounded-xl shadow-sm border p-4">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-gray-900">共有状況（今週）</div>
-                    {weekLoading ? (
+                    {weekCardsLoading ? (
                       <div className="text-xs text-gray-500">取得中…</div>
                     ) : (
                       <div className="flex items-center gap-1 text-xs text-gray-600">
                         <Unlock className="w-4 h-4" />
-                        <span>{sharingCount} / {athletes.length}</span>
+                        <span>
+                          {sharingCount} / {athletes.length}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -697,14 +690,12 @@ export function StaffView({
                 <div className="bg-white rounded-xl shadow-sm border p-4">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-gray-900">原因タグTOP（今週）</div>
-                    {weekLoading && <div className="text-xs text-gray-500">取得中…</div>}
+                    {weekCardsLoading && <div className="text-xs text-gray-500">取得中…</div>}
                   </div>
 
                   <div className="mt-3">
                     {topCauseTags.length === 0 ? (
-                      <div className="text-xs text-gray-500">
-                        まだ振り返りデータがありません
-                      </div>
+                      <div className="text-xs text-gray-500">まだ振り返りデータがありません</div>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {topCauseTags.map((t) => (
@@ -797,6 +788,7 @@ export function StaffView({
                         選手一覧
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('team-average')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -811,6 +803,7 @@ export function StaffView({
                         チーム平均ACWR
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('trends')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -825,6 +818,7 @@ export function StaffView({
                         傾向分析
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('team-analytics')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -838,6 +832,7 @@ export function StaffView({
                         チーム分析
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('reports')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -851,6 +846,7 @@ export function StaffView({
                         レポート
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('team-access')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -864,6 +860,7 @@ export function StaffView({
                         チームアクセス
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('transfers')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -877,6 +874,7 @@ export function StaffView({
                         選手移籍
                       </div>
                     </button>
+
                     <button
                       onClick={() => setActiveTab('messages')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -933,7 +931,6 @@ export function StaffView({
                         </div>
                       </div>
 
-                      {/* 共有OFFの選手は詳細が開けないことを示す小さな説明 */}
                       <div className="text-xs text-gray-600 mb-3 flex items-center gap-2">
                         <Lock className="w-4 h-4" />
                         共有OFF（🔒）の選手は、詳細モーダルを開けません
@@ -941,7 +938,7 @@ export function StaffView({
 
                       <AthleteList
                         athletes={athletes}
-                        onAthleteSelect={setSelectedAthlete}
+                        onAthleteSelect={handleAthleteSelect}
                         athleteACWRMap={athleteACWRMap}
                       />
                     </div>
