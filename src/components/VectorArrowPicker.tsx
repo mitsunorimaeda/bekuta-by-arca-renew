@@ -7,7 +7,8 @@ type Props = {
   hint?: string;
 };
 
-const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const clamp = (n: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, n));
 
 export function VectorArrowPicker({
   value,
@@ -21,7 +22,7 @@ export function VectorArrowPicker({
 
   const v = clamp(Math.round(value), 0, 100);
 
-  // 画面表示は“段階”に寄せる（数字を主役にしない）
+  // 数値は内部だけ、表示は段階
   const level = useMemo(() => {
     if (v === 0) return 0;
     if (v <= 20) return 1;
@@ -103,15 +104,13 @@ export function VectorArrowPicker({
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-      {/* ヘッダー：数字ではなく言葉 */}
+      {/* ヘッダー */}
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">{hint}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">
+          {hint}
         </div>
-        <div className="text-right">
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">
-            {levelLabel}
-          </div>
+        <div className="text-sm font-semibold text-gray-900 dark:text-white">
+          {levelLabel}
         </div>
       </div>
 
@@ -125,7 +124,18 @@ export function VectorArrowPicker({
         style={{ touchAction: 'none', WebkitTapHighlightColor: 'transparent' }}
       >
         <svg viewBox="0 0 300 140" className="w-full h-20">
-          <line x1="24" y1="70" x2="276" y2="70" stroke="currentColor" opacity="0.10" strokeWidth="2" />
+          {/* ガイド */}
+          <line
+            x1="24"
+            y1="70"
+            x2="276"
+            y2="70"
+            stroke="currentColor"
+            opacity="0.1"
+            strokeWidth="2"
+          />
+
+          {/* 矢印本体 */}
           <line
             x1={geom.x0}
             y1={geom.y}
@@ -134,8 +144,10 @@ export function VectorArrowPicker({
             stroke="currentColor"
             className="text-blue-600 dark:text-blue-400"
             strokeWidth={geom.stroke}
-            strokeLinecap="round"
+            strokeLinecap="butt"
           />
+
+          {/* 矢尻 */}
           <polygon
             points={`
               ${geom.x1},${geom.y}
@@ -145,27 +157,16 @@ export function VectorArrowPicker({
             fill="currentColor"
             className="text-blue-600 dark:text-blue-400"
           />
+
+          {/* ✅ 透明ヒットエリア（見えないが掴める） */}
           <circle
             cx={geom.x1}
             cy={geom.y}
-            r={10}
-            fill="white"
-            className="dark:fill-gray-800"
-            stroke="currentColor"
-            strokeWidth="2"
-            opacity="0.95"
-          />
-          <circle
-            cx={geom.x1}
-            cy={geom.y}
-            r={4}
-            fill="currentColor"
-            className="text-blue-600 dark:text-blue-400"
-            opacity="0.9"
+            r={18}                 // ← 操作感はここで調整
+            fill="transparent"
+            pointerEvents="all"
           />
         </svg>
-
-       
       </div>
     </div>
   );
