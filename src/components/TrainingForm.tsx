@@ -4,6 +4,8 @@ import confetti from 'canvas-confetti';
 import { getDataEntryFeedback, ProgressFeedback } from '../lib/acwrProgressFeedback';
 import { TrainingRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
+import { VectorArrowPicker } from './VectorArrowPicker';
+import { SignalPicker } from './SignalPicker';
 
 interface TrainingFormProps {
   userId: string;
@@ -414,13 +416,12 @@ export function TrainingForm({
               {arrowScore}/100
             </div>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
+          {/* ✅ リッチ：矢印（成長実感） */}
+          <VectorArrowPicker
             value={arrowScore}
-            onChange={(e) => setArrowScore(Number(e.target.value))}
-            className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+            onChange={setArrowScore}
+            label="成長実感（ベクトル）"
+            hint="矢尻をドラッグして強さを決める（0〜100）"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             今日の練習で「成長した感じ」をどれくらい持てた？
@@ -437,13 +438,12 @@ export function TrainingForm({
               {signalScore}/100
             </div>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
+          {/* ✅ リッチ：電波（意図理解） */}
+          <SignalPicker
             value={signalScore}
-            onChange={(e) => setSignalScore(Number(e.target.value))}
-            className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+            onChange={setSignalScore}
+            label="コーチ意図の理解（電波）"
+            hint="バーをドラッグして強さを決める（0〜100）"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？
