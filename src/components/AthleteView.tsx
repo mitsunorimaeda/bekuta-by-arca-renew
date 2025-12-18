@@ -450,6 +450,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 </button>
               </div>
             </div>
+         </div>
         </div>
         </div>
       </header>
