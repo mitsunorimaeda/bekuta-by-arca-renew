@@ -123,50 +123,58 @@ export function VectorArrowPicker({
         onPointerMove={onPointerMove}
         style={{ touchAction: 'none', WebkitTapHighlightColor: 'transparent' }}
       >
-        <svg viewBox="0 0 300 140" className="w-full h-20">
-          {/* ガイド */}
-          <line
-            x1="24"
-            y1="70"
-            x2="276"
-            y2="70"
-            stroke="currentColor"
-            opacity="0.1"
-            strokeWidth="2"
-          />
+      <svg viewBox="0 0 300 140" className="w-full h-20">
+        <line x1="24" y1="70" x2="276" y2="70" stroke="currentColor" opacity="0.10" strokeWidth="2" />
 
-          {/* 矢印本体 */}
-          <line
-            x1={geom.x0}
-            y1={geom.y}
-            x2={geom.x1}
-            y2={geom.y}
-            stroke="currentColor"
-            className="text-blue-600 dark:text-blue-400"
-            strokeWidth={geom.stroke}
-            strokeLinecap="butt"
-          />
+        {/* 先端位置（矢先） */}
+        {(() => {
+          const xTip = geom.x1;
+          const y = geom.y;
 
-          {/* 矢尻（鋭角・主役） */}
-          <polygon
-            points={`
-              ${geom.x1},${geom.y}
-              ${geom.x1 - geom.head * 1.2},${geom.y - geom.head * 0.7}
-              ${geom.x1 - geom.head * 1.2},${geom.y + geom.head * 0.7}
-            `}
-            fill="currentColor"
-            className="text-blue-600 dark:text-blue-400"
-          />
+          // 矢尻サイズ（太さに応じて拡大）
+          const headLen = Math.max(14, geom.stroke * 2.2);
+          const headHalfH = Math.max(10, geom.stroke * 1.2);
 
-          {/* ✅ 透明ヒットエリア（見えないが掴める） */}
-          <circle
-            cx={geom.x1}
-            cy={geom.y}
-            r={18}                 // ← 操作感はここで調整
-            fill="transparent"
-            pointerEvents="all"
-          />
-        </svg>
+          // 棒の終点は矢尻の付け根へ
+          const xShaftEnd = xTip - headLen;
+
+          return (
+            <>
+              {/* シャフト（棒） */}
+              <line
+                x1={geom.x0}
+                y1={y}
+                x2={xShaftEnd}
+                y2={y}
+                stroke="currentColor"
+                className="text-blue-600 dark:text-blue-400"
+                strokeWidth={geom.stroke}
+                strokeLinecap="butt"          // ✅ 丸みを消す
+              />
+
+              {/* 矢尻（先端） */}
+              <polygon
+                points={`
+                  ${xTip},${y}
+                  ${xShaftEnd},${y - headHalfH}
+                  ${xShaftEnd},${y + headHalfH}
+                `}
+                fill="currentColor"
+                className="text-blue-600 dark:text-blue-400"
+              />
+
+              {/* ✅ 透明ヒットエリア（見えないが掴める） */}
+              <circle
+                cx={xTip}
+                cy={y}
+                r={18}
+                fill="transparent"
+                pointerEvents="all"
+              />
+            </>
+          );
+        })()}
+      </svg>
       </div>
     </div>
   );
