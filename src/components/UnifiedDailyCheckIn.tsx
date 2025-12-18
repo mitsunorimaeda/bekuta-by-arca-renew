@@ -579,8 +579,12 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    練習時間
+                    練習時間：{duration}分
+                    <span className="ml-2 text-xs text-gray-500">
+                      （{Math.floor(duration / 60)}時間{duration % 60}分）
+                    </span>
                   </label>
+
                   <input
                     type="range"
                     min="0"
@@ -590,6 +594,7 @@ export function UnifiedDailyCheckIn({
                     onChange={(e) => setDuration(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
+
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                     <span>0分</span>
                     <span>4時間</span>
