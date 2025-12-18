@@ -58,7 +58,32 @@ function normalizeActionItems(row?: ReflectionRow | null): ActionItem[] {
   return [];
 }
 
-const CAUSE_TAG_OPTIONS = ['栄養', '睡眠', '時間管理', '習慣', 'メンタル', '疲労', '環境'];
+const CAUSE_TAG_OPTIONS = [
+  // 身体・生理
+  '栄養',
+  '睡眠',
+  '体調',
+  '疲労',
+  '痛み',
+
+  // トレーニング・競技
+  'トレーニング負荷',
+  '試合・連戦',
+  '移動',
+  '用具',
+
+  // メンタル・認知
+  'メンタル',
+  '集中',
+  'モチベーション',
+
+  // 生活・環境
+  '時間管理',
+  '学業',
+  '人間関係',
+  '環境',
+  'ルーティン',
+];
 
 export function DailyReflectionCard() {
   const today = useMemo(() => getTodayJSTString(), []);
@@ -391,27 +416,24 @@ export function DailyReflectionCard() {
           行動目標：{weeklySummary.goals}件 ／ 完了：{weeklySummary.done}件（{weeklySummary.completionRate}%）
         </div>
 
-        {/* 原因タグ TOP3 */}
-        <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold text-amber-800">原因タグ TOP3</div>
-          {weeklySummary.topTags.length === 0 ? (
-            <div className="text-sm text-amber-800">まだ原因タグがありません</div>
-          ) : (
-            weeklySummary.topTags.map(([tag, count]) => {
-              // 見た目用：今週最大3位までなので、適度に伸びる簡易バー（上限固定）
-              const widthPct = Math.min(100, count * 25);
-              return (
-                <div key={tag} className="flex items-center gap-3">
-                  <div className="text-sm text-amber-900 w-24">{tag}</div>
-                  <div className="flex-1 h-2 rounded bg-amber-100 overflow-hidden">
-                    <div className="h-2 bg-amber-400" style={{ width: `${widthPct}%` }} />
-                  </div>
-                  <div className="text-xs text-amber-800 w-10 text-right">{count}</div>
-                </div>
-              );
-            })
-          )}
-        </div>
+       {/* 原因タグ TOP3（バーなし） */}
+          <div className="mt-3 space-y-2">
+            <div className="text-xs font-semibold text-amber-800">原因タグ TOP3</div>
+            {weeklySummary.topTags.length === 0 ? (
+              <div className="text-sm text-amber-800">まだ原因タグがありません</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {weeklySummary.topTags.map(([tag, count]) => (
+                  <span
+                    key={tag}
+                    className="px-3 py-1 rounded-full text-xs border border-amber-200 bg-white text-amber-900"
+                  >
+                    {tag}：{count}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
         {/* 行動目標 TOP3 */}
         {weeklySummary.topGoals.length > 0 && (
