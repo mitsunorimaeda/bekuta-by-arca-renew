@@ -113,9 +113,6 @@ export function VectorArrowPicker({
           <div className="text-sm font-semibold text-gray-900 dark:text-white">
             {levelLabel}
           </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-300">
-            {level}/5
-          </div>
         </div>
       </div>
 
