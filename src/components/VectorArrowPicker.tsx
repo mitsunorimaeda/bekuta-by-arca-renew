@@ -169,30 +169,7 @@ export function VectorArrowPicker({
           />
         </svg>
 
-        {/* 目盛り消す（数字圧を減らす） */}
-        <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={() => onChange(clamp(v - 5, 0, 100))}
-            className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-white"
-          >
-            -5
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(clamp(v + 5, 0, 100))}
-            className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-white"
-          >
-            +5
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(0)}
-            className="ml-auto px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-white"
-          >
-            なし
-          </button>
-        </div>
+       
       </div>
     </div>
   );

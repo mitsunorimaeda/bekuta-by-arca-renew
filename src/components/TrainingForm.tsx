@@ -412,9 +412,6 @@ export function TrainingForm({
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
               矢印（成長実感）
             </div>
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-              {arrowScore}/100
-            </div>
           </div>
           {/* ✅ リッチ：矢印（成長実感） */}
           <VectorArrowPicker
@@ -434,9 +431,7 @@ export function TrainingForm({
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
               電波（コーチ意図の理解）
             </div>
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-              {signalScore}/100
-            </div>
+            
           </div>
           {/* ✅ リッチ：電波（意図理解） */}
           <SignalPicker
