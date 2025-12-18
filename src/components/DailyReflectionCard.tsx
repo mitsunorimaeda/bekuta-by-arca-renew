@@ -314,7 +314,9 @@ export function DailyReflectionCard() {
       );
 
       // ✅ もし「昨日」が選択中の週に含まれていれば週次も即反映
-      setWeekRows((prev) => prev.map((r) => (r.id === yesterdayRow.id ? { ...r, next_action_items: next } as any : r)));
+      setWeekRows((prev) =>
+        prev.map((r) => (r.id === yesterdayRow.id ? ({ ...r, next_action_items: next } as any) : r))
+      );
     } catch (e) {
       console.error('Failed to save todo:', e);
       setTodayTodo(normalizeActionItems(yesterdayRow));
@@ -410,29 +412,39 @@ export function DailyReflectionCard() {
   };
 
   if (loading) {
-    return <div className="bg-white rounded-xl p-6 shadow-sm">読み込み中...</div>;
+    return (
+      <div className="rounded-xl p-6 shadow-sm bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+        読み込み中...
+      </div>
+    );
   }
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm space-y-6">
+    <div className="rounded-xl p-6 shadow-sm space-y-6 bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
 
       {/* ✅ 週切り替え付き：週の傾向 */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <div className="rounded-lg border p-4
+        border-amber-200 bg-amber-50 text-amber-950
+        dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100
+      ">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-amber-900">週の傾向</h3>
-            <div className="text-xs text-amber-700 mt-1">
+            <h3 className="font-semibold">週の傾向</h3>
+            <div className="text-xs mt-1 text-amber-800 dark:text-amber-200/80">
               {selectedWeekStart} 〜 {selectedWeekEnd}（{weeklySummary.days}日分）
               {weekLoading && <span className="ml-2">読み込み中…</span>}
             </div>
           </div>
 
-          {/* ✅ 週切り替えUI（配置お任せver：カード右上） */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setWeekOffset((v) => v - 1)}
-              className="text-xs px-3 py-1 rounded-lg border border-amber-300 bg-white hover:bg-amber-100"
+              className="
+                text-xs px-3 py-1 rounded-lg border
+                border-amber-300 bg-white hover:bg-amber-100
+                dark:border-amber-900/60 dark:bg-gray-950 dark:hover:bg-gray-800
+              "
             >
               ＜ 先週
             </button>
@@ -440,32 +452,39 @@ export function DailyReflectionCard() {
               type="button"
               onClick={() => setWeekOffset(0)}
               disabled={weekOffset === 0}
-              className="text-xs px-3 py-1 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 disabled:opacity-50"
+              className="
+                text-xs px-3 py-1 rounded-lg border
+                border-amber-300 bg-white hover:bg-amber-100 disabled:opacity-50
+                dark:border-amber-900/60 dark:bg-gray-950 dark:hover:bg-gray-800
+              "
             >
               今週へ戻る
             </button>
           </div>
         </div>
 
-        <div className="mt-3 text-sm text-amber-900">
+        <div className="mt-3 text-sm">
           できた：{weeklySummary.didCount}件 ／ できなかった：{weeklySummary.didntCount}件
         </div>
 
-        <div className="mt-1 text-sm text-amber-900">
+        <div className="mt-1 text-sm">
           行動目標：{weeklySummary.goals}件 ／ 完了：{weeklySummary.done}件（{weeklySummary.completionRate}%）
         </div>
 
-        {/* 原因タグ TOP3（バーなし：回数のみ） */}
         <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold text-amber-800">原因タグ TOP3</div>
+          <div className="text-xs font-semibold text-amber-800 dark:text-amber-200/80">原因タグ TOP3</div>
           {weeklySummary.topTags.length === 0 ? (
-            <div className="text-sm text-amber-800">まだ原因タグがありません</div>
+            <div className="text-sm text-amber-800 dark:text-amber-200/80">まだ原因タグがありません</div>
           ) : (
             <div className="flex flex-wrap gap-2">
               {weeklySummary.topTags.map(([tag, count]) => (
                 <span
                   key={tag}
-                  className="px-3 py-1 rounded-full text-xs border border-amber-200 bg-white text-amber-900"
+                  className="
+                    px-3 py-1 rounded-full text-xs border
+                    border-amber-200 bg-white text-amber-950
+                    dark:border-amber-900/60 dark:bg-gray-950 dark:text-amber-100
+                  "
                 >
                   {tag}：{count}
                 </span>
@@ -474,14 +493,15 @@ export function DailyReflectionCard() {
           )}
         </div>
 
-        {/* 行動目標 TOP3 */}
         {weeklySummary.topGoals.length > 0 && (
           <div className="mt-4 space-y-2">
-            <div className="text-xs font-semibold text-amber-800">よく立てる行動目標 TOP3</div>
+            <div className="text-xs font-semibold text-amber-800 dark:text-amber-200/80">
+              よく立てる行動目標 TOP3
+            </div>
             {weeklySummary.topGoals.map((g) => (
               <div key={g.text} className="flex items-center justify-between gap-3">
-                <div className="text-sm text-amber-900 flex-1">{g.text}</div>
-                <div className="text-xs text-amber-800 w-28 text-right">
+                <div className="text-sm flex-1">{g.text}</div>
+                <div className="text-xs text-amber-800 dark:text-amber-200/80 w-28 text-right">
                   {g.done}/{g.total}（{g.rate}%）
                 </div>
               </div>
@@ -490,41 +510,53 @@ export function DailyReflectionCard() {
         )}
       </div>
 
-      {/* ✅ 今日の行動しやすさ：昨日の目標を今日のトップに出す */}
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+      {/* ✅ 今日のやること（昨日の目標） */}
+      <div className="rounded-lg border p-4
+        border-blue-200 bg-blue-50 text-blue-950
+        dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100
+      ">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-blue-900">今日のやること（昨日の目標）</h3>
-          <div className="text-xs text-blue-700">{yesterday} に設定</div>
+          <h3 className="font-semibold">今日のやること（昨日の目標）</h3>
+          <div className="text-xs text-blue-700 dark:text-blue-200/80">{yesterday} に設定</div>
         </div>
 
         {todayTodo.length === 0 ? (
-          <p className="text-sm text-blue-800 mt-2">
+          <p className="text-sm text-blue-800 dark:text-blue-200/80 mt-2">
             昨日の「行動目標」がまだありません。昨日の振り返りで行動目標を追加すると、ここに出ます。
           </p>
         ) : (
           <div className="mt-3 space-y-2">
             {todayTodo.map((item, idx) => (
-              <label key={idx} className="flex items-center gap-3 bg-white border border-blue-200 rounded-lg px-3 py-2">
+              <label
+                key={idx}
+                className="
+                  flex items-center gap-3 rounded-lg px-3 py-2 border
+                  bg-white border-blue-200
+                  dark:bg-gray-950 dark:border-blue-900/50
+                "
+              >
                 <input
                   type="checkbox"
                   checked={!!item.done}
                   onChange={() => toggleTodoDone(idx)}
                   disabled={savingTodo}
-                  className="h-4 w-4"
+                  className="h-4 w-4 accent-green-600"
                 />
                 <div className="flex-1">
-                  <div className={`text-sm ${item.done ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                  <div className={`text-sm ${item.done ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
                     {item.text}
                   </div>
                   {item.done_at && (
-                    <div className="text-xs text-gray-500">完了: {new Date(item.done_at).toLocaleString('ja-JP')}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      完了: {new Date(item.done_at).toLocaleString('ja-JP')}
+                    </div>
                   )}
                 </div>
                 {item.done && <CheckCircle className="h-4 w-4 text-green-600" />}
               </label>
             ))}
 
-            <div className="text-xs text-blue-700 mt-2">
+            <div className="text-xs text-blue-700 dark:text-blue-200/80 mt-2">
               {savingTodo ? '保存中…' : 'チェックすると即保存されます（完了保存）'}
             </div>
           </div>
@@ -533,31 +565,43 @@ export function DailyReflectionCard() {
 
       {/* --- 今日の振り返りフォーム --- */}
       <div className="space-y-3">
-        <h3 className="font-semibold text-gray-900">今日の振り返り</h3>
+        <h3 className="font-semibold">今日の振り返り</h3>
 
         <div>
-          <label className="text-sm text-gray-700">できたこと</label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">できたこと</label>
           <input
             value={did}
             onChange={(e) => setDid(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2"
+            className="
+              w-full border rounded-lg px-3 py-2
+              bg-white text-gray-900 border-gray-300 placeholder:text-gray-400
+              focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500
+              dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
+              dark:focus:ring-green-500 dark:focus:border-green-500
+            "
             placeholder="例：早起きできた"
           />
         </div>
 
         <div>
-          <label className="text-sm text-gray-700">できなかったこと</label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">できなかったこと</label>
           <input
             value={didnt}
             onChange={(e) => setDidnt(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2"
+            className="
+              w-full border rounded-lg px-3 py-2
+              bg-white text-gray-900 border-gray-300 placeholder:text-gray-400
+              focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500
+              dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
+              dark:focus:ring-green-500 dark:focus:border-green-500
+            "
             placeholder="例：食べすぎた"
           />
         </div>
 
         {/* ✅ 原因タグ */}
         <div>
-          <label className="text-sm text-gray-700">原因タグ</label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">原因タグ</label>
           <div className="mt-2 flex flex-wrap gap-2">
             {CAUSE_TAG_OPTIONS.map((tag) => {
               const active = causeTags.includes(tag);
@@ -566,37 +610,55 @@ export function DailyReflectionCard() {
                   key={tag}
                   type="button"
                   onClick={() => toggleCauseTag(tag)}
-                  className={`px-3 py-1 rounded-full text-xs border ${
-                    active ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-300'
-                  }`}
+                  className={`
+                    px-3 py-1 rounded-full text-xs border transition
+                    ${active
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
+                    dark:${active
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-gray-950 text-gray-200 border-gray-700 hover:bg-gray-800'}
+                  `}
                 >
                   {tag}
                 </button>
               );
             })}
           </div>
-          <p className="text-xs text-gray-500 mt-2">「できなかった」の主因を仮説でOK。週の傾向に集計されます。</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            「できなかった」の主因を仮説でOK。週の傾向に集計されます。
+          </p>
         </div>
 
         <div>
-          <label className="text-sm text-gray-700">メモ</label>
+          <label className="text-sm text-gray-700 dark:text-gray-300">メモ</label>
           <textarea
             value={freeNote}
             onChange={(e) => setFreeNote(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2"
+            className="
+              w-full border rounded-lg px-3 py-2
+              bg-white text-gray-900 border-gray-300 placeholder:text-gray-400
+              focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500
+              dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
+              dark:focus:ring-green-500 dark:focus:border-green-500
+            "
             rows={3}
             placeholder="自由メモ"
           />
         </div>
 
         {/* ✅ 複数化：明日の行動目標 */}
-        <div className="rounded-lg border border-gray-200 p-4">
+        <div className="rounded-lg border p-4 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between">
-            <h4 className="font-semibold text-gray-900">明日の行動目標（複数）</h4>
+            <h4 className="font-semibold">明日の行動目標（複数）</h4>
             <button
               type="button"
               onClick={addTomorrowAction}
-              className="text-sm px-3 py-1 rounded-lg bg-gray-900 text-white flex items-center gap-2"
+              className="
+                text-sm px-3 py-1 rounded-lg flex items-center gap-2
+                bg-gray-900 text-white hover:bg-gray-800
+                dark:bg-green-600 dark:hover:bg-green-700
+              "
             >
               <Plus className="h-4 w-4" />
               追加
@@ -609,22 +671,28 @@ export function DailyReflectionCard() {
                 <input
                   value={a.text}
                   onChange={(e) => updateTomorrowActionText(i, e.target.value)}
-                  className="flex-1 border rounded-lg px-3 py-2"
+                  className="
+                    flex-1 border rounded-lg px-3 py-2
+                    bg-white text-gray-900 border-gray-300 placeholder:text-gray-400
+                    focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500
+                    dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
+                    dark:focus:ring-green-500 dark:focus:border-green-500
+                  "
                   placeholder="例：時間通りに食べる"
                 />
                 <button
                   type="button"
                   onClick={() => removeTomorrowAction(i)}
-                  className="p-2 rounded-lg hover:bg-gray-100"
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                   title="削除"
                 >
-                  <Trash2 className="h-4 w-4 text-gray-600" />
+                  <Trash2 className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                 </button>
               </div>
             ))}
           </div>
 
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             ここで設定した「明日の行動目標」は、翌日のカード上部に“今日のやること”として表示されます。
           </p>
         </div>
@@ -632,7 +700,12 @@ export function DailyReflectionCard() {
         <button
           onClick={saveTodayReflection}
           disabled={savingReflection}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-3 disabled:opacity-50"
+          className="
+            w-full rounded-lg px-4 py-3 font-medium
+            bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+            dark:focus:ring-offset-gray-900
+          "
         >
           {savingReflection ? '保存中…' : '今日の振り返りを保存'}
         </button>
