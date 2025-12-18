@@ -507,7 +507,7 @@ export function DailyReflectionCard() {
             value={did}
             onChange={(e) => setDid(e.target.value)}
             className="w-full border rounded-lg px-3 py-2"
-            placeholder="例：早起きできた"
+            placeholder="例：集中して練習に取り組めた"
           />
         </div>
 
@@ -517,7 +517,7 @@ export function DailyReflectionCard() {
             value={didnt}
             onChange={(e) => setDidnt(e.target.value)}
             className="w-full border rounded-lg px-3 py-2"
-            placeholder="例：食べすぎた"
+            placeholder="例：睡眠時間が短かった"
           />
         </div>
 
@@ -555,7 +555,7 @@ export function DailyReflectionCard() {
             onChange={(e) => setFreeNote(e.target.value)}
             className="w-full border rounded-lg px-3 py-2"
             rows={3}
-            placeholder="自由メモ"
+            placeholder="自由記述欄（例：今日は体調が良くなかった）"
           />
         </div>
 
@@ -580,7 +580,7 @@ export function DailyReflectionCard() {
                   value={a.text}
                   onChange={(e) => updateTomorrowActionText(i, e.target.value)}
                   className="flex-1 border rounded-lg px-3 py-2"
-                  placeholder="例：時間通りに食べる"
+                  placeholder="例：23:00までに就寝する"
                 />
                 <button
                   type="button"
