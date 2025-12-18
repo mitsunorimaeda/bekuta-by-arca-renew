@@ -447,7 +447,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              ...
+              Bekuta
             </button>
             </div>
           {/* 右側はそのまま */}
