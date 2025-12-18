@@ -579,7 +579,7 @@ export function DailyReflectionCard() {
               dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
               dark:focus:ring-green-500 dark:focus:border-green-500
             "
-            placeholder="例：早起きできた"
+            placeholder="例：強度高めの練習を最後までやり切れた"
           />
         </div>
 
@@ -595,7 +595,7 @@ export function DailyReflectionCard() {
               dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
               dark:focus:ring-green-500 dark:focus:border-green-500
             "
-            placeholder="例：食べすぎた"
+            placeholder="例：睡眠時間を確保できなかった"
           />
         </div>
 
@@ -617,7 +617,7 @@ export function DailyReflectionCard() {
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
                     dark:${active
                       ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-gray-950 text-gray-200 border-gray-700 hover:bg-gray-800'}
+                      : 'bg-gray-900 text-gray-100 border-gray-700 hover:bg-gray-800'}
                   `}
                 >
                   {tag}
@@ -678,7 +678,7 @@ export function DailyReflectionCard() {
                     dark:bg-gray-950 dark:text-gray-100 dark:border-gray-700 dark:placeholder:text-gray-500
                     dark:focus:ring-green-500 dark:focus:border-green-500
                   "
-                  placeholder="例：時間通りに食べる"
+                  placeholder="例：ストレッチを10分間行う"
                 />
                 <button
                   type="button"
