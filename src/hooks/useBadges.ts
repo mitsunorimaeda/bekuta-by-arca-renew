@@ -31,13 +31,19 @@ export function useBadges(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ hookインスタンス固有ID（同名channel衝突防止）
+  // ✅ hookインスタンス固有ID（タブ内衝突回避）
   const instanceIdRef = useRef(
     (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
   );
 
+  // ✅ effect再実行ごとにユニークなrunIdを採番（subscribe二重呼びを構造的に防ぐ）
+  const runSeqRef = useRef(0);
+
   // ✅ Realtime channel の参照
   const channelRef = useRef<any>(null);
+
+  // ✅ badges は全員共通なので、初回だけ取れればOK（必要なら手動refreshで更新）
+  const badgesLoadedRef = useRef(false);
 
   const fetchBadges = useCallback(async () => {
     try {
@@ -55,8 +61,8 @@ export function useBadges(userId: string) {
 
   const fetchUserBadges = useCallback(async () => {
     if (!userId) return;
+
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('user_badges')
         .select(
@@ -75,49 +81,95 @@ export function useBadges(userId: string) {
     } catch (err) {
       console.error('Error fetching user badges:', err);
       setError(err instanceof Error ? err.message : 'バッジの取得に失敗しました');
-    } finally {
-      setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) {
+    let cancelled = false;
+
+    const setup = async () => {
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+
+      // ✅ badgesは初回だけ取得（毎回取りたいならこのifを消してOK）
+      if (!badgesLoadedRef.current) {
+        await fetchBadges();
+        badgesLoadedRef.current = true;
+      }
+
+      await fetchUserBadges();
+      if (cancelled) return;
+
       setLoading(false);
-      return;
-    }
 
-    fetchBadges();
-    fetchUserBadges();
-
-    // ✅ 既存channelが残ってたら必ず破棄
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-
-    // ✅ userId + instanceId で完全ユニーク化
-    const channel = supabase
-      .channel(`user-badges:${userId}:${instanceIdRef.current}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'user_badges',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchUserBadges();
+      // ✅ 既存チャンネルを確実に閉じる（unsubscribe → remove）
+      if (channelRef.current) {
+        try {
+          await channelRef.current.unsubscribe?.();
+        } catch (e) {
+          // noop
         }
-      );
+        try {
+          supabase.removeChannel(channelRef.current);
+        } catch (e) {
+          // noop
+        }
+        channelRef.current = null;
+      }
 
-    channel.subscribe();
+      // ✅ 今回のrunId（毎回変わる）
+      runSeqRef.current += 1;
+      const runId = runSeqRef.current;
 
-    channelRef.current = channel;
+      const chName = `user-badges:${userId}:${instanceIdRef.current}:${runId}`;
+
+      const ch = supabase
+        .channel(chName)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'user_badges',
+            filter: `user_id=eq.${userId}`,
+          },
+          () => {
+            fetchUserBadges();
+          }
+        );
+
+      channelRef.current = ch;
+
+      ch.subscribe((status: string) => {
+        // SUBSCRIBED / TIMED_OUT / CLOSED / CHANNEL_ERROR
+        // console.log('[useBadges] channel status:', chName, status);
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[useBadges] Realtime channel error:', chName);
+        }
+      });
+    };
+
+    setup();
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+      cancelled = true;
+
+      const ch = channelRef.current;
+      if (ch) {
+        try {
+          ch.unsubscribe?.();
+        } catch (e) {
+          // noop
+        }
+        try {
+          supabase.removeChannel(ch);
+        } catch (e) {
+          // noop
+        }
         channelRef.current = null;
       }
     };
@@ -201,6 +253,9 @@ export function useBadges(userId: string) {
     getBadgesByRarity,
     getUnearnedBadges,
     getBadgeProgress,
-    refresh: fetchUserBadges,
+    refresh: async () => {
+      // ✅ 手動更新（allBadgesも更新したいなら両方）
+      await Promise.all([fetchBadges(), fetchUserBadges()]);
+    },
   };
 }

@@ -362,10 +362,6 @@ function App() {
                 setCurrentPage('app');
                 setShowAlertPanel(false);
                 setShowMobileMenu(false);
-
-                setTimeout(() => {
-                  window.location.reload();
-                }, 50);
               }}
               onNavigateToPrivacy={() => setCurrentPage('privacy')}
               onNavigateToTerms={() => setCurrentPage('terms')}
