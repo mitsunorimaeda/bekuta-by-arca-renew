@@ -415,65 +415,51 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
+            <div className="flex items-baseline space-x-2">
+              {/* モバイル表示 */}
+              <span
+                className="text-2xl font-bold text-white sm:hidden"
+                style={{
+                  fontFamily:
+                    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                Bekuta
+              </span>
 
-                console.log('[AthleteView] Bekuta logo tapped → go home');
-
-                // UI状態を閉じる（任意だけど事故りにくい）
-                setMenuOpen(false);
-                setShowUnifiedCheckIn(false);
-                setShowExportPanel(false);
-                setActiveTab('unified');
-
-                // 親側も呼ぶ（親が何かしてるなら活かす）
-                try {
-                  onHome?.();
-                } catch (err) {
-                  console.error('[AthleteView] onHome error:', err);
-                }
-
-                // ✅ Netlifyのホームへ確実に戻す
-                if (window.location.pathname !== '/') {
-                  window.location.assign('/');
-                } else {
-                  // すでに / なのに表示が変なら、リロードで復帰
-                  window.location.reload();
-                }
-              }}
-              className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
-              style={{ WebkitTapHighlightColor: 'transparent' }}
-            >
-              Bekuta
-            </button>
+              {/* PC表示 */}
+              <span
+                className="hidden sm:inline text-2xl font-bold text-white"
+                style={{
+                  fontFamily:
+                    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                Bekuta
+                <span className="ml-2 text-xs font-medium text-blue-100 tracking-widest">
+                  by ARCA
+                </span>
+              </span>
             </div>
-          {/* 右側はそのまま */}
+          {/* 右側 */}
             <div className="flex items-center space-x-3" data-tutorial="alert-badge">
+              {/* チュートリアル */}
               <button
                 onClick={startTutorial}
-                className="text-white/80 hover:text-white transition-colors"
+                className="text-white/90 hover:text-white transition-colors"
                 title="チュートリアルを再表示"
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
 
-              {/* メッセージアイコン */}
-              <button
-                onClick={() => setActiveTab('messages')}
-                className="relative text-white/80 hover:text-white transition-colors"
-                title="メッセージ"
-              >
-                <MessageSquare className="w-4 h-4" />
-              </button>
-
-              {/* ハンバーガーメニュー */}
+              {/* ハンバーガーメニュー（白・スッキリ） */}
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="bg-white/20 hover:bg-white/30 text白 p-2 rounded-lg transition-colors"
+                className="p-2 rounded-lg text-white hover:bg-white/15 active:bg-white/20 transition-colors"
                 aria-label="メニュー"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
