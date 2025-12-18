@@ -359,9 +359,7 @@ function App() {
               onLogout={signOut}
               onHome={() => {
                 console.log('🏠 Athlete Bekuta home tapped');
-                setCurrentPage('app');
-                setShowAlertPanel(false);
-                setShowMobileMenu(false);
+                window.location.assign('https://bekuta.netlify.app/');
               }}
               onNavigateToPrivacy={() => setCurrentPage('privacy')}
               onNavigateToTerms={() => setCurrentPage('terms')}
