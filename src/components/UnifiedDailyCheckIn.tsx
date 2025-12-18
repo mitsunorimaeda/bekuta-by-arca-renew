@@ -6,7 +6,7 @@ import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 
 // ✅ 追加：矢印/電波 UI
-import { VectorArrowPicker } from './vectorarrowPicker';
+import VectorArrowPicker from './VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
 
 interface UnifiedDailyCheckInProps {
