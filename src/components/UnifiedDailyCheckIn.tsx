@@ -597,15 +597,19 @@ export function UnifiedDailyCheckIn({
                   </div>
                 </div>
 
-                {/* ✅ 追加：矢印/電波（直感UI） */}
-                <VectorArrowPicker value={arrowScore} onChange={setArrowScore} />
-                <SignalPicker value={signalScore} onChange={setSignalScore} />
-
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                   <p className="text-sm text-blue-900 dark:text-blue-200">
                     <strong>トレーニング負荷:</strong> {rpe * duration}
                   </p>
                 </div>
+
+
+
+                {/* ✅ 追加：矢印/電波（直感UI） */}
+                <VectorArrowPicker value={arrowScore} onChange={setArrowScore} />
+                <SignalPicker value={signalScore} onChange={setSignalScore} />
+
+                
               </div>
             )}
 

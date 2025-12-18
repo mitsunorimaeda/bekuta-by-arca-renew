@@ -104,13 +104,21 @@ export function VectorArrowPicker({
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-      {/* ヘッダー */}
+      {/* ✅ ラベル + ヒント + 右側に段階 */}
       <div className="flex items-start justify-between gap-3">
-        <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">
-          {hint}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            {label}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">
+            {hint}
+          </div>
         </div>
-        <div className="text-sm font-semibold text-gray-900 dark:text-white">
-          {levelLabel}
+
+        <div className="text-right">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            {levelLabel}
+          </div>
         </div>
       </div>
 
