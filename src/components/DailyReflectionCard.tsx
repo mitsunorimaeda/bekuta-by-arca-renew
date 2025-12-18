@@ -617,7 +617,7 @@ export function DailyReflectionCard() {
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
                     dark:${active
                       ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-gray-800 text-gray-50 border-gray-700 hover:bg-gray-800'}
+                      : 'bg-gray-800 text-white border-gray-600 hover:bg-gray-700'}
                   `}
                 >
                   {tag}
