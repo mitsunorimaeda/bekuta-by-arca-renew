@@ -420,33 +420,18 @@ export function TrainingForm({
 
 
 
-        {/* ✅ 追加：矢印（成長実感） */}
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              成長実感
-            </div>
-          </div>
+        
           {/* ✅ リッチ：矢印（成長実感） */}
           <VectorArrowPicker
             value={arrowScore}
             onChange={setArrowScore}
-            label="成長実感（ベクトル）"
+            label="成長実感"
             hint="矢尻をドラッグして強さを決める"
+          
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            今日の練習で「成長した感じ」をどれくらい持てた？
-          </p>
-        </div>
+          
 
-        {/* ✅ 追加：電波（意図理解） */}
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              理解度
-            </div>
-            
-          </div>
+        
           {/* ✅ リッチ：電波（意図理解） */}
           <SignalPicker
             value={signalScore}
@@ -457,7 +442,7 @@ export function TrainingForm({
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             今日の練習で「何を狙ってるか理解できた感じ」はどれくらい？
           </p>
-        </div>
+        
 
         {warning && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
