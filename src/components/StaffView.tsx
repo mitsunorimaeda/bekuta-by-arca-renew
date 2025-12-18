@@ -384,6 +384,115 @@ export function StaffView({
       .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
   }, [athletes]);
 
+  // 🧠 フォーカス一覧 → 選手詳細を開く
+  const handleOpenAthleteDetailFromFocus = (it: { user_id: string }) => {
+    const target = athletes.find((a) => a.id === it.user_id);
+
+    if (!target) {
+      window.alert('選手情報が見つかりませんでした');
+      return;
+    }
+
+    const card = weekCards.find((c) => c.athlete_user_id === target.id);
+    if (card && !card.is_sharing_active) {
+      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
+      return;
+    }
+
+    setSelectedAthlete(target);
+  };
+
+  type FocusItem = {
+    user_id: string;
+    name: string;
+    category: 'risk' | 'checkin' | 'praise';
+    reason: string;
+    meta?: string; // 補足（例：ACWR 1.8 / 睡眠5.2h）
+  };
+  
+  const focusItems = useMemo<FocusItem[]>(() => {
+    const items: FocusItem[] = [];
+  
+    // 🟥 注意：記録途切れ（noDataAthletes が既にあるので最優先で入れる）
+    noDataAthletes.slice(0, 3).forEach(({ athlete, daysSinceLast }) => {
+      items.push({
+        user_id: athlete.id,
+        name: athlete.name || athlete.email || 'unknown',
+        category: 'risk',
+        reason: '記録が途切れています',
+        meta: `${daysSinceLast}日未入力`,
+      });
+    });
+  
+    // weekCards が無いと以降は作れない
+    if (!weekCards || weekCards.length === 0) return items.slice(0, 5);
+  
+    // 🟥 注意：ACWR高め（共有ONのみ）
+    weekCards.forEach((c) => {
+      if (!c.is_sharing_active) return;
+  
+      const acwr = (athleteACWRMap as any)?.[c.athlete_user_id];
+      if (typeof acwr === 'number' && acwr >= 1.5) {
+        items.push({
+          user_id: c.athlete_user_id,
+          name: c.athlete_name || 'unknown',
+          category: 'risk',
+          reason: 'ACWR高値',
+          meta: `ACWR ${acwr.toFixed(2)}`,
+        });
+      }
+    });
+  
+    // 🟨 声かけ：睡眠が短い（共有ONのみ、値がある人だけ）
+    weekCards.forEach((c) => {
+      if (!c.is_sharing_active) return;
+      if (c.sleep_hours_avg != null && c.sleep_hours_avg <= 5.5) {
+        items.push({
+          user_id: c.athlete_user_id,
+          name: c.athlete_name || 'unknown',
+          category: 'checkin',
+          reason: '睡眠が短め',
+          meta: `${c.sleep_hours_avg.toFixed(1)}h`,
+        });
+      }
+    });
+  
+    // 🟩 称賛：行動目標達成率高い
+    weekCards.forEach((c) => {
+      if (c.action_total > 0 && (c.action_done_rate ?? 0) >= 90) {
+        items.push({
+          user_id: c.athlete_user_id,
+          name: c.athlete_name || 'unknown',
+          category: 'praise',
+          reason: '行動目標が良い',
+          meta: `${Math.round(c.action_done_rate ?? 0)}%`,
+        });
+      }
+    });
+  
+    // 同一選手が複数出るので「優先順位で1件にまとめる」
+    const priority: Record<FocusItem['category'], number> = {
+      risk: 3,
+      checkin: 2,
+      praise: 1,
+    };
+  
+    const map = new Map<string, FocusItem>();
+    for (const it of items) {
+      const prev = map.get(it.user_id);
+      if (!prev || priority[it.category] > priority[prev.category]) {
+        map.set(it.user_id, it);
+      }
+    }
+  
+    const merged = Array.from(map.values());
+  
+    // 並び順：risk → checkin → praise
+    merged.sort((a, b) => priority[b.category] - priority[a.category]);
+  
+    return merged.slice(0, 5);
+  }, [noDataAthletes, weekCards, athleteACWRMap]);
+
   const handleDismissNoDataForToday = () => {
     if (typeof window !== 'undefined') {
       const key = `noDataDismissed-${user.id}-${todayKey}`;
@@ -753,6 +862,106 @@ export function StaffView({
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* ✅ 週次フォーカス（クリックで選手詳細） */}
+            {selectedTeam && (
+              <div className="bg-white rounded-xl shadow-sm border p-4">
+                <div className="text-sm font-semibold text-gray-900 mb-2">
+                  今週のフォーカス
+                </div>
+
+                <div className="space-y-2">
+                  {weekCards.map((it) => (
+                    <button
+                      key={it.athlete_user_id}
+                      onClick={() =>
+                        handleOpenAthleteDetailFromFocus({ user_id: it.athlete_user_id })
+                      }
+                      className="w-full text-left p-3 rounded-lg hover:bg-gray-50 border"
+                    >
+                      <div className="font-semibold">{it.athlete_name}</div>
+                      <div className="text-xs text-gray-600">
+                        今週の負荷：{it.week_load_sum}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 📌 今週のフォーカス（自動抽出） */}
+            {selectedTeam && (
+              <div className="bg-white rounded-xl shadow-sm border p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                    今週のフォーカス
+                  </h3>
+                  <div className="text-xs text-gray-500">
+                    最大5名（自動抽出）
+                  </div>
+                </div>
+
+                {focusItems.length === 0 ? (
+                  <div className="text-sm text-gray-500">
+                    まだ十分なデータがありません（入力が増えると表示されます）
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {focusItems.map((it) => {
+                      const badge =
+                        it.category === 'risk'
+                          ? 'bg-red-100 text-red-700'
+                          : it.category === 'checkin'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-700';
+
+                      const label =
+                        it.category === 'risk'
+                          ? '注意'
+                          : it.category === 'checkin'
+                          ? '声かけ'
+                          : '称賛';
+
+                      return (
+                        <li
+                          key={`${it.user_id}-${it.category}-${it.reason}`}
+                          className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg p-3 hover:bg-gray-50"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${badge}`}>
+                                {label}
+                              </span>
+                              <div className="font-medium text-gray-900 truncate">
+                                {it.name}
+                              </div>
+                            </div>
+                            <div className="text-xs sm:text-sm text-gray-600 mt-1">
+                              {it.reason}
+                              {it.meta ? <span className="text-gray-500">（{it.meta}）</span> : null}
+                            </div>
+                          </div>
+
+                          <button
+                            className="text-xs sm:text-sm px-3 py-1.5 rounded-lg border hover:bg-white"
+                            onClick={() => {
+                              const target = athletes.find((a) => a.id === it.user_id);
+                              if (!target) {
+                                window.alert('選手データが見つかりませんでした');
+                                return;
+                              }
+                              handleAthleteSelect(target as User);
+                            }}
+                          >
+                            詳細を見る
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             )}
 
