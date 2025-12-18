@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type Props = {
-  value: number; // 0..100
+  value: number; // 0..100（保存用）
   onChange: (v: number) => void;
   label?: string;
   hint?: string;
@@ -12,8 +12,8 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 export function VectorArrowPicker({
   value,
   onChange,
-  label = '成長実感（ベクトル）',
-  hint = '矢尻をドラッグして強さを決める（0〜100）',
+  label = '成長実感',
+  hint = '矢尻をドラッグして直感で選ぶ',
 }: Props) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
@@ -21,34 +21,49 @@ export function VectorArrowPicker({
 
   const v = clamp(Math.round(value), 0, 100);
 
-  // 表現：長さ＋太さ（0..100）
+  // 画面表示は“段階”に寄せる（数字を主役にしない）
+  const level = useMemo(() => {
+    if (v === 0) return 0;
+    if (v <= 20) return 1;
+    if (v <= 40) return 2;
+    if (v <= 60) return 3;
+    if (v <= 80) return 4;
+    return 5;
+  }, [v]);
+
+  const levelLabel = useMemo(() => {
+    switch (level) {
+      case 0: return 'なし';
+      case 1: return 'ちょい';
+      case 2: return '少し';
+      case 3: return 'そこそこ';
+      case 4: return 'かなり';
+      case 5: return 'めちゃ';
+      default: return '';
+    }
+  }, [level]);
+
   const geom = useMemo(() => {
-    const minLen = 18;   // 最短
-    const maxLen = 220;  // 最長
-    const minW = 2.5;    // 最細
-    const maxW = 14;     // 最太
+    const minLen = 18;
+    const maxLen = 220;
+    const minW = 2.5;
+    const maxW = 14;
 
     const len = minLen + (maxLen - minLen) * (v / 100);
     const stroke = minW + (maxW - minW) * (v / 100);
 
-    // SVG上の座標（左→右）
     const x0 = 24;
     const y = 70;
     const x1 = x0 + len;
-
-    // 矢尻サイズ（太さに連動）
     const head = 10 + stroke * 1.2;
 
-    return { x0, y, x1, len, stroke, head };
+    return { x0, y, x1, stroke, head };
   }, [v]);
 
   const setFromPointer = (clientX: number) => {
     const el = boxRef.current;
     if (!el) return;
-
     const rect = el.getBoundingClientRect();
-
-    // スライド範囲（左右パディング分を除く）
     const leftPad = 24;
     const rightPad = 24;
 
@@ -62,7 +77,6 @@ export function VectorArrowPicker({
   const onPointerDown = (e: React.PointerEvent) => {
     draggingRef.current = true;
     setIsDragging(true);
-    // iOS/Androidのスクロール干渉を減らす
     (e.currentTarget as any).setPointerCapture?.(e.pointerId);
     setFromPointer(e.clientX);
   };
@@ -89,12 +103,20 @@ export function VectorArrowPicker({
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+      {/* ヘッダー：数字ではなく言葉 */}
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{label}</div>
           <div className="text-xs text-gray-500 dark:text-gray-300 mt-1">{hint}</div>
         </div>
-        <div className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{v}</div>
+        <div className="text-right">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            {levelLabel}
+          </div>
+          <div className="text-[11px] text-gray-500 dark:text-gray-300">
+            {level}/5
+          </div>
+        </div>
       </div>
 
       <div
@@ -104,16 +126,10 @@ export function VectorArrowPicker({
         }`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        style={{
-          touchAction: 'none', // ドラッグ優先
-          WebkitTapHighlightColor: 'transparent',
-        }}
+        style={{ touchAction: 'none', WebkitTapHighlightColor: 'transparent' }}
       >
         <svg viewBox="0 0 300 140" className="w-full h-20">
-          {/* ガイドライン */}
-          <line x1="24" y1="70" x2="276" y2="70" stroke="currentColor" opacity="0.12" strokeWidth="2" />
-
-          {/* 矢印本体（長さ＋太さ） */}
+          <line x1="24" y1="70" x2="276" y2="70" stroke="currentColor" opacity="0.10" strokeWidth="2" />
           <line
             x1={geom.x0}
             y1={geom.y}
@@ -124,8 +140,6 @@ export function VectorArrowPicker({
             strokeWidth={geom.stroke}
             strokeLinecap="round"
           />
-
-          {/* 矢尻 */}
           <polygon
             points={`
               ${geom.x1},${geom.y}
@@ -135,8 +149,6 @@ export function VectorArrowPicker({
             fill="currentColor"
             className="text-blue-600 dark:text-blue-400"
           />
-
-          {/* つまみ（矢尻を“引っ張れる”感） */}
           <circle
             cx={geom.x1}
             cy={geom.y}
@@ -157,13 +169,7 @@ export function VectorArrowPicker({
           />
         </svg>
 
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-300">
-          <span>0</span>
-          <span>50</span>
-          <span>100</span>
-        </div>
-
-        {/* 微調整ボタン（ドラッグが苦手な子向け） */}
+        {/* 目盛り消す（数字圧を減らす） */}
         <div className="mt-3 flex gap-2">
           <button
             type="button"
@@ -184,7 +190,7 @@ export function VectorArrowPicker({
             onClick={() => onChange(0)}
             className="ml-auto px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-white"
           >
-            0（無し）
+            なし
           </button>
         </div>
       </div>
