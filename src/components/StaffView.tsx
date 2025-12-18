@@ -4,16 +4,7 @@ import { Alert } from '../lib/alerts';
 import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
 import { TeamACWRChart } from './TeamACWRChart';
-const TrendAnalysisView = lazy(() =>
-  import('./TrendAnalysisView').then((m) => ({ default: m.TrendAnalysisView }))
-);
 import { AlertPanel } from './AlertPanel';
-const TeamExportPanel = lazy(() =>
-  import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
-);
-const ReportView = lazy(() =>
-  import('./ReportView').then((m) => ({ default: m.ReportView }))
-);
 import { TutorialController } from './TutorialController';
 import { useTeamACWR } from '../hooks/useTeamACWR';
 import { useTrendAnalysis } from '../hooks/useTrendAnalysis';
@@ -43,20 +34,35 @@ import {
 import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
 import { TeamPerformanceComparison } from './TeamPerformanceComparison';
 import { TeamTrendAnalysis } from './TeamTrendAnalysis';
+import { useOrganizations } from '../hooks/useOrganizations';
+
+const TrendAnalysisView = lazy(() =>
+  import('./TrendAnalysisView').then((m) => ({ default: m.TrendAnalysisView }))
+);
+
+const TeamExportPanel = lazy(() =>
+  import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
+);
+
+const ReportView = lazy(() =>
+  import('./ReportView').then((m) => ({ default: m.ReportView }))
+);
+
 const TeamAccessRequestManagement = lazy(() =>
   import('./TeamAccessRequestManagement').then((m) => ({
     default: m.TeamAccessRequestManagement,
   }))
 );
+
 const AthleteTransferManagement = lazy(() =>
   import('./AthleteTransferManagement').then((m) => ({
     default: m.AthleteTransferManagement,
   }))
 );
+
 const MessagingPanel = lazy(() =>
   import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
 );
-import { useOrganizations } from '../hooks/useOrganizations';
 
 interface StaffViewProps {
   user: User;
@@ -118,6 +124,7 @@ const getThisWeekRange = () => {
   const now = new Date();
   const day = now.getDay(); // 0 Sun ... 6 Sat
   const diffToMon = (day + 6) % 7; // Mon=0
+
   const mon = new Date(now);
   mon.setDate(now.getDate() - diffToMon);
   mon.setHours(0, 0, 0, 0);
@@ -136,6 +143,9 @@ export function StaffView({
   onNavigateToCommercial,
   onNavigateToHelp,
 }: StaffViewProps) {
+  // =========================
+  // State
+  // =========================
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
 
@@ -147,10 +157,12 @@ export function StaffView({
   const [weekRange, setWeekRange] = useState(() => getThisWeekRange());
   const [weekCards, setWeekCards] = useState<CoachWeekAthleteCard[]>([]);
   const [weekCardsLoading, setWeekCardsLoading] = useState(false);
-  const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
   const [weekLoading, setWeekLoading] = useState(false);
 
-  // 選手詳細（既存モーダルは User 前提なので User を保持）
+  // ✅ 原因タグ（週次）
+  const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
+
+  // 選手詳細（既存モーダルは User 前提）
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState<
@@ -181,6 +193,9 @@ export function StaffView({
     }
   });
 
+  // =========================
+  // Tutorial / Org
+  // =========================
   const {
     isActive,
     shouldShowTutorial,
@@ -201,6 +216,9 @@ export function StaffView({
     }
   }, [shouldShowTutorial, startTutorial, loading]);
 
+  // =========================
+  // ACWR / Trends
+  // =========================
   const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } = useTeamACWR(
     selectedTeam?.id || null
   );
@@ -212,11 +230,16 @@ export function StaffView({
     refreshAnalysis,
   } = useTrendAnalysis(selectedTeam?.id || null, 'team');
 
-  // チーム関連のアラート
+  // =========================
+  // Alerts derived
+  // =========================
   const teamAthleteIds = athletes.map((athlete) => athlete.id);
   const teamAlerts = alerts.filter((alert) => teamAthleteIds.includes(alert.user_id));
   const highPriorityTeamAlerts = teamAlerts.filter((alert) => alert.priority === 'high');
 
+  // =========================
+  // Effects
+  // =========================
   useEffect(() => {
     fetchStaffTeams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,7 +251,7 @@ export function StaffView({
     // ① 選手一覧（途切れ検出維持）
     fetchTeamAthletesWithActivity(selectedTeam.id);
 
-    // ② 週次サマリー
+    // ② 週次サマリー（cards + cause_tags）
     fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,6 +264,9 @@ export function StaffView({
     setNoDataDismissedToday(localStorage.getItem(key) === '1');
   }, [user.id, todayKey]);
 
+  // =========================
+  // Fetchers
+  // =========================
   const fetchStaffTeams = async () => {
     try {
       const { data: staffTeamLinks, error } = await supabase
@@ -276,7 +302,7 @@ export function StaffView({
     }
   };
 
-  // 既存：途切れ検出＋選手一覧（User互換）を維持するため残す
+  // 既存：途切れ検出＋選手一覧（User互換）を維持
   const fetchTeamAthletesWithActivity = async (teamId: string) => {
     try {
       const { data, error } = await supabase
@@ -292,30 +318,43 @@ export function StaffView({
     }
   };
 
+  // ✅ 週次：cards + cause_tags を同時取得
   const fetchWeekSummary = async (teamId: string, startDate: string, endDate: string) => {
     try {
       setWeekLoading(true);
       setWeekCardsLoading(true);
 
-      const { data, error } = await supabase.rpc('get_coach_week_athlete_cards', {
-        p_team_id: teamId,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      });
+      const [weekRes, tagsRes] = await Promise.all([
+        supabase.rpc('get_coach_week_athlete_cards', {
+          p_team_id: teamId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }),
+        supabase.rpc('get_coach_week_cause_tags', {
+          p_team_id: teamId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }),
+      ]);
 
-      if (error) throw error;
+      if (weekRes.error) throw weekRes.error;
+      if (tagsRes.error) throw tagsRes.error;
 
-      setWeekCards((data || []) as CoachWeekAthleteCard[]);
+      setWeekCards((weekRes.data || []) as CoachWeekAthleteCard[]);
+      setTeamCauseTags((tagsRes.data || []) as TeamCauseTagRow[]);
     } catch (e) {
       console.error('Failed to fetch week summary', e);
       setWeekCards([]);
+      setTeamCauseTags([]);
     } finally {
       setWeekCardsLoading(false);
       setWeekLoading(false);
     }
   };
 
-  // アラート関連（今は中身ダミーでもOK）
+  // =========================
+  // Alert handlers (stub)
+  // =========================
   const markAsRead = async (alertId: string) => {
     console.log('Mark as read:', alertId);
   };
@@ -326,15 +365,11 @@ export function StaffView({
     console.log('Mark all as read');
   };
 
-  const latestTeamACWR =
-    teamACWRData.length > 0 ? teamACWRData[teamACWRData.length - 1] : null;
+  // =========================
+  // Derived UI values
+  // =========================
+  const latestTeamACWR = teamACWRData.length > 0 ? teamACWRData[teamACWRData.length - 1] : null;
 
-  const handleDismissAlert = () => {
-    setAlertDismissed(true);
-    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000);
-  };
-
-  // 🧮 「練習記録が途切れている選手」
   const noDataAthletes = useMemo(() => {
     const now = new Date();
     const msPerDay = 1000 * 60 * 60 * 24;
@@ -357,21 +392,19 @@ export function StaffView({
     setNoDataDismissedToday(true);
   };
 
-  // 週次：原因タグTOP3（回数）
   const topCauseTags = useMemo(() => {
     return [...teamCauseTags].sort((a, b) => b.cnt - a.cnt).slice(0, 3);
   }, [teamCauseTags]);
 
-  // 週次：共有🔓の人数
   const sharingCount = useMemo(() => {
     return weekCards.filter((c) => c.is_sharing_active).length;
   }, [weekCards]);
 
-  // 週次：行動目標 完了率（チーム平均っぽく）
   const teamActionDoneRate = useMemo(() => {
     const rows = weekCards.filter((c) => c.action_total > 0);
     if (rows.length === 0) return null;
-    const avg = rows.reduce((sum, r) => sum + (r.action_done_rate || 0), 0) / rows.length;
+    const avg =
+      rows.reduce((sum, r) => sum + (r.action_done_rate || 0), 0) / rows.length;
     return Math.round(avg);
   }, [weekCards]);
 
@@ -395,6 +428,14 @@ export function StaffView({
     setSelectedAthlete(athlete);
   };
 
+  const handleDismissAlert = () => {
+    setAlertDismissed(true);
+    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000);
+  };
+
+  // =========================
+  // Render
+  // =========================
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -410,6 +451,7 @@ export function StaffView({
           {/* Top Bar */}
           <div className="flex items-center justify-between py-3">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">コーチダッシュボード</h1>
+
             <div className="flex items-center space-x-1">
               {/* 🔔 高リスクアラートがある時だけベル表示 */}
               {highPriorityTeamAlerts.length > 0 && (
@@ -471,6 +513,7 @@ export function StaffView({
                     <div className="px-3 py-1.5">
                       <p className="text-xs font-semibold text-gray-500">法的情報</p>
                     </div>
+
                     {onNavigateToHelp && (
                       <button
                         onClick={() => {
@@ -483,6 +526,7 @@ export function StaffView({
                         <span>ヘルプ・マニュアル</span>
                       </button>
                     )}
+
                     {onNavigateToPrivacy && (
                       <button
                         onClick={() => {
@@ -495,6 +539,7 @@ export function StaffView({
                         <span>プライバシーポリシー</span>
                       </button>
                     )}
+
                     {onNavigateToTerms && (
                       <button
                         onClick={() => {
@@ -507,6 +552,7 @@ export function StaffView({
                         <span>利用規約</span>
                       </button>
                     )}
+
                     {onNavigateToCommercial && (
                       <button
                         onClick={() => {
@@ -594,10 +640,7 @@ export function StaffView({
                     </p>
                   </div>
                   <button
-                    onClick={() => {
-                      setAlertDismissed(true);
-                      setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000);
-                    }}
+                    onClick={handleDismissAlert}
                     className="ml-3 p-1 text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
                     title="30分間非表示"
                   >
@@ -900,6 +943,7 @@ export function StaffView({
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
                       <option value="trends">傾向分析</option>
+                      <option value="team-analytics">チーム分析</option>
                       <option value="reports">レポート</option>
                       <option value="team-access">チームアクセス</option>
                       <option value="transfers">選手移籍</option>
@@ -1047,7 +1091,10 @@ export function StaffView({
 
       {/* Athlete Detail Modal（共有ONのみ開く） */}
       {selectedAthlete && (
-        <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
+        <AthleteDetailModal
+          athlete={selectedAthlete}
+          onClose={() => setSelectedAthlete(null)}
+        />
       )}
 
       {/* Alert Panel */}
