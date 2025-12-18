@@ -942,10 +942,7 @@ export function StaffView({
                       <AthleteList
                         athletes={athletes}
                         onAthleteSelect={setSelectedAthlete}
-                        athleteACWRMap={Object.fromEntries(athleteACWRMap as any)}
-                        weekCardMap={Object.fromEntries(
-                          (weekCards || []).map((c: any) => [c.athlete_user_id, c])
-                        )}
+                        athleteACWRMap={athleteACWRMap}
                       />
                     </div>
                   ) : activeTab === 'team-average' ? (
