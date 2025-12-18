@@ -415,56 +415,41 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-            <div className="flex items-baseline space-x-2">
-              {/* モバイル表示 */}
-              <span
-                className="text-2xl font-bold text-white sm:hidden"
-                style={{
-                  fontFamily:
-                    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Bekuta
-              </span>
-
-              {/* PC表示 */}
-              <span
-                className="hidden sm:inline text-2xl font-bold text-white"
-                style={{
-                  fontFamily:
-                    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Bekuta
-                <span className="ml-2 text-xs font-medium text-blue-100 tracking-widest">
-                  by ARCA
-                </span>
-              </span>
-            </div>
-          {/* 右側 */}
-            <div className="flex items-center space-x-3" data-tutorial="alert-badge">
-              {/* チュートリアル */}
+            <div className="flex items-center justify-between">
+              {/* 左：ロゴ */}
               <button
-                onClick={startTutorial}
-                className="text-white/90 hover:text-white transition-colors"
-                title="チュートリアルを再表示"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
-
-              {/* ハンバーガーメニュー（白・スッキリ） */}
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="p-2 rounded-lg text-white hover:bg-white/15 active:bg-white/20 transition-colors"
-                aria-label="メニュー"
+                type="button"
+                onClick={() => onHome()}
+                className="flex items-baseline space-x-2 active:opacity-70 cursor-pointer"
                 style={{ WebkitTapHighlightColor: 'transparent' }}
               >
-                {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                <span className="text-2xl sm:text-3xl font-bold text-white">Bekuta</span>
+                <span className="text-xs font-medium text-blue-100 hidden sm:inline">by ARCA</span>
               </button>
+
+              {/* 右：? と ハンバーガー */}
+              <div className="flex items-center gap-3 ml-auto">
+                <button
+                  type="button"
+                  onClick={startTutorial}
+                  className="p-2 rounded-lg text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+                  aria-label="チュートリアル"
+                  title="チュートリアル"
+                >
+                  <HelpCircle className="w-5 h-5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+                  aria-label="メニュー"
+                  title="メニュー"
+                >
+                  {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                </button>
+              </div>
             </div>
-          </div>
         </div>
         </div>
       </header>
