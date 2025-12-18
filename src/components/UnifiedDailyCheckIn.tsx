@@ -589,7 +589,7 @@ export function UnifiedDailyCheckIn({
                     type="range"
                     min="0"
                     max="480"
-                    step="15"
+                    step="5"
                     value={duration}
                     onChange={(e) => setDuration(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
