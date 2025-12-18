@@ -147,12 +147,12 @@ export function VectorArrowPicker({
             strokeLinecap="butt"
           />
 
-          {/* 矢尻 */}
+          {/* 矢尻（鋭角・主役） */}
           <polygon
             points={`
               ${geom.x1},${geom.y}
-              ${geom.x1 - geom.head},${geom.y - geom.head * 0.6}
-              ${geom.x1 - geom.head},${geom.y + geom.head * 0.6}
+              ${geom.x1 - geom.head * 1.2},${geom.y - geom.head * 0.7}
+              ${geom.x1 - geom.head * 1.2},${geom.y + geom.head * 0.7}
             `}
             fill="currentColor"
             className="text-blue-600 dark:text-blue-400"
