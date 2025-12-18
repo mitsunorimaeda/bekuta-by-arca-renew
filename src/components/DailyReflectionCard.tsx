@@ -1,152 +1,141 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Save, Trash2, Loader2, Info } from 'lucide-react';
-import { useDailyReflections } from '../hooks/useDailyReflections';
+// src/components/DailyReflectionCard.tsx
+import React, { useMemo, useState } from 'react';
+import { CalendarCheck, PencilLine, Trophy, Tags } from 'lucide-react';
+import { getTodayJSTString } from '../lib/date';
+import { useReflections } from '../hooks/useReflections';
+import { ReflectionModal } from './ReflectionModal';
+import { WeeklyReflectionSummary } from './WeeklyReflectionSummary';
+
+// もし toast があるならここを有効化（無ければ下の addToast 部分はコメントでOK）
+// import { useToast } from '../hooks/useToast';
 
 type Props = {
   userId: string;
-  defaultExpanded?: boolean;
 };
 
-const MAX_CHARS = 800; // コスト/負担の上限（後で変更OK）
+export function DailyReflectionCard({ userId }: Props) {
+  // const { addToast } = useToast(); // あなたの実装に合わせて名称調整
 
-export function DailyReflectionCard({ userId, defaultExpanded = true }: Props) {
-  const {
-    selectedDate,
-    setSelectedDate,
-    reflection,
-    loading,
-    saving,
-    error,
-    save,
-    remove,
-  } = useDailyReflections(userId);
+  const today = getTodayJSTString(); // 既存utilを利用
+  const { todayReflection, weekReflections, upsertReflection, loading } = useReflections(userId);
 
-  console.log('[DailyReflectionCard] mounted. userId=', userId);
+  const [open, setOpen] = useState(false);
 
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [text, setText] = useState('');
-
-  // 取得したDB値をテキストに反映
-  useEffect(() => {
-    setText(reflection?.text ?? '');
-  }, [reflection?.id, selectedDate]);
-
-  const chars = text.length;
-  const isOver = chars > MAX_CHARS;
-
-  const canSave = useMemo(() => {
-    if (loading || saving) return false;
-    if (isOver) return false;
-    // 空保存はさせない（削除は別ボタン）
-    if (!text.trim()) return false;
-    // 変更がないなら保存不要
-    const current = reflection?.text ?? '';
-    return text !== current;
-  }, [loading, saving, isOver, text, reflection?.text]);
+  const statusLabel = useMemo(() => {
+    if (loading) return '読み込み中...';
+    return todayReflection ? '入力済み' : '未入力';
+  }, [loading, todayReflection]);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
-            <Info className="w-5 h-5 text-blue-600 dark:text-blue-300" />
-          </div>
-          <div className="text-left">
-            <p className="font-semibold text-gray-900 dark:text-white">今日の振り返り</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              週次AIサマリーの材料になります（まずは保存だけ）
+    <>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors border border-gray-100 dark:border-gray-700">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <CalendarCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">今日の振り返り</h3>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {today} / {statusLabel}
             </p>
           </div>
-        </div>
-        <span className="text-sm text-gray-500 dark:text-gray-400">{expanded ? '閉じる' : '開く'}</span>
-      </button>
 
-      {expanded && (
-        <div className="px-5 pb-5">
-          {/* Date */}
-          <div className="flex items-center gap-2 py-3">
-            <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600
-                         rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white"
-            />
-            {(loading || saving) && (
-              <span className="ml-2 inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
-                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                {loading ? '読込中' : '保存中'}
-              </span>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <PencilLine className="w-4 h-4" />
+            {todayReflection ? '編集' : '書く'}
+          </button>
+        </div>
+
+        {/* 入力済みのプレビュー */}
+        {todayReflection && (
+          <div className="mt-4 space-y-3 text-sm">
+            {todayReflection.did && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">できたこと</div>
+                <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                  {todayReflection.did}
+                </div>
+              </div>
+            )}
+
+            {todayReflection.next_action && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">次の一手</div>
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {todayReflection.next_action}
+                </div>
+              </div>
+            )}
+
+            {(todayReflection.cause_tags?.length ?? 0) > 0 && (
+              <div>
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  <Tags className="w-3 h-3" />
+                  原因タグ
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {todayReflection.cause_tags.map((t: string) => (
+                    <span
+                      key={t}
+                      className="px-3 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
+        )}
 
-          {/* Text */}
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="例）今日は練習の入りが重かった。睡眠が短かったので、明日は就寝を早める。"
-            rows={6}
-            className="w-full resize-none bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600
-                       rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white
-                       placeholder:text-gray-400 dark:placeholder:text-gray-500"
-          />
-
-          {/* Footer */}
-          <div className="mt-3 flex items-center justify-between">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              <span className={isOver ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>
-                {chars}
-              </span>
-              /{MAX_CHARS}
-              {isOver && <span className="ml-2">文字数が多すぎます</span>}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {reflection?.id && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!confirm('この日の振り返りを削除しますか？')) return;
-                    await remove();
-                  }}
-                  disabled={saving || loading}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm
-                             border border-gray-200 dark:border-gray-600
-                             text-gray-700 dark:text-gray-200
-                             hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  削除
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={async () => {
-                  await save(text.trim(), 'private');
-                }}
-                disabled={!canSave}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold
-                           bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                保存
-              </button>
-            </div>
+        {/* “やったら得” */}
+        <div className="mt-4 flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
+          <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+            <Trophy className="w-4 h-4" />
+            保存で +5pt（任意・でも得）
           </div>
-
-          {error && (
-            <div className="mt-3 text-sm text-red-600 dark:text-red-400">
-              {error}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="text-sm text-blue-700 dark:text-blue-300 font-semibold hover:underline"
+          >
+            {todayReflection ? '追記する' : '今書く'}
+          </button>
         </div>
-      )}
-    </div>
+
+        {/* 週次まとめ */}
+        <div className="mt-6">
+          <WeeklyReflectionSummary reflections={weekReflections} />
+        </div>
+      </div>
+
+      <ReflectionModal
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        initial={todayReflection}
+        onSubmit={async (payload) => {
+          await upsertReflection({
+            reflection_date: today,
+            did: payload.did,
+            didnt: payload.didnt,
+            cause_tags: payload.cause_tags,
+            next_action: payload.next_action,
+            free_note: payload.free_note,
+            award: true,
+            award_points: 5,
+            metadata: { source: 'daily_reflection_card' },
+          });
+
+          // toast があるならここで通知
+          // addToast?.({ type: 'success', title: '保存完了', message: '振り返りを保存しました（+5pt）' });
+
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }

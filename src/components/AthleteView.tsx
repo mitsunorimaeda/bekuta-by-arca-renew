@@ -851,9 +851,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 limitCount={10}
               />
             </div>
-            <div className="mt-6">
-              <DailyReflectionCard userId={user.id} />
-            </div>
+            
           </>
         ) : activeTab === 'trends' ? (
           /* Trend Analysis Tab */
