@@ -466,6 +466,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             </div>
           </div>
         </div>
+        </div>
       </header>
 
       {/* User Info Bar */}
