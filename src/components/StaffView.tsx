@@ -865,31 +865,7 @@ export function StaffView({
               </div>
             )}
 
-            {/* ✅ 週次フォーカス（クリックで選手詳細） */}
-            {selectedTeam && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <div className="text-sm font-semibold text-gray-900 mb-2">
-                  今週のフォーカス
-                </div>
 
-                <div className="space-y-2">
-                  {weekCards.map((it) => (
-                    <button
-                      key={it.athlete_user_id}
-                      onClick={() =>
-                        handleOpenAthleteDetailFromFocus({ user_id: it.athlete_user_id })
-                      }
-                      className="w-full text-left p-3 rounded-lg hover:bg-gray-50 border"
-                    >
-                      <div className="font-semibold">{it.athlete_name}</div>
-                      <div className="text-xs text-gray-600">
-                        今週の負荷：{it.week_load_sum}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* 📌 今週のフォーカス（自動抽出） */}
             {selectedTeam && (
