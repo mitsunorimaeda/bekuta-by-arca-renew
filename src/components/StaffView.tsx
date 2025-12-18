@@ -1,14 +1,12 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useMemo } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
-import { TeamSelector } from './TeamSelector';
 import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
 import { TeamACWRChart } from './TeamACWRChart';
 const TrendAnalysisView = lazy(() =>
   import('./TrendAnalysisView').then((m) => ({ default: m.TrendAnalysisView }))
 );
-import { AlertSummary } from './AlertSummary';
 import { AlertPanel } from './AlertPanel';
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
@@ -38,6 +36,9 @@ import {
   Shield,
   Building2,
   PieChart,
+  Lock,
+  Unlock,
+  CheckCircle2,
 } from 'lucide-react';
 import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
 import { TeamPerformanceComparison } from './TeamPerformanceComparison';
@@ -66,14 +67,66 @@ interface StaffViewProps {
   onNavigateToHelp?: () => void;
 }
 
-// 追加：ビュー用の型（User に + α）
+// 既存の activity view 取得用（維持）
 type StaffAthleteWithActivity = User & {
   training_days_28d: number | null;
   training_sessions_28d: number | null;
   last_training_date: string | null;
 };
 
-const NO_DATA_DAYS_THRESHOLD = 14; // 何日空いたら「途切れている」とみなすか
+type CoachWeekAthleteCard = {
+  team_id: string;
+  athlete_user_id: string;
+  athlete_name: string;
+
+  week_duration_min: number;
+  week_rpe_avg: number | null;
+  week_load_sum: number;
+
+  sleep_hours_avg: number | null;
+  sleep_quality_avg: number | null;
+
+  motivation_avg: number | null;
+  energy_avg: number | null;
+  stress_avg: number | null;
+
+  wellness_shared: boolean;
+
+  action_total: number;
+  action_done: number;
+  action_done_rate: number;
+
+  is_sharing_active: boolean;
+  allow_condition: boolean;
+  allow_training: boolean;
+  allow_body: boolean;
+  allow_reflection: boolean;
+  allow_free_note: boolean;
+};
+
+type TeamCauseTagRow = {
+  team_id: string;
+  tag: string;
+  cnt: number;
+};
+
+const NO_DATA_DAYS_THRESHOLD = 14;
+
+const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+
+const getThisWeekRange = () => {
+  const now = new Date();
+  const day = now.getDay(); // 0 Sun ... 6 Sat
+  const diffToMon = (day + 6) % 7; // Mon=0
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - diffToMon);
+  mon.setHours(0, 0, 0, 0);
+
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+
+  return { start: toISODate(mon), end: toISODate(sun) };
+};
 
 export function StaffView({
   user,
@@ -85,9 +138,21 @@ export function StaffView({
 }: StaffViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
+
+  // 選手一覧/途切れカード用（既存の view を使う）
   const [athletes, setAthletes] = useState<StaffAthleteWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 週次サマリー（RPC）
+  const [weekRange, setWeekRange] = useState(() => getThisWeekRange());
+  const [weekCards, setWeekCards] = useState<any[]>([]);
+  const [weekCardsLoading, setWeekCardsLoading] = useState(false);
+  const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
+  const [weekLoading, setWeekLoading] = useState(false);
+
+  // 選手詳細（既存モーダルは User 前提なので User を保持）
+  const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
+
   const [activeTab, setActiveTab] = useState<
     | 'athletes'
     | 'team-average'
@@ -98,25 +163,23 @@ export function StaffView({
     | 'transfers'
     | 'messages'
   >('athletes');
+
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
-  const [showMessagingPanel, setShowMessagingPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
 
   // 🔔 練習記録なしカード用（今日だけ抑制）
   const todayKey = new Date().toISOString().slice(0, 10);
-  const [noDataDismissedToday, setNoDataDismissedToday] = useState<boolean>(
-    () => {
-      if (typeof window === 'undefined') return false;
-      try {
-        const key = `noDataDismissed-${user.id}-${todayKey}`;
-        return localStorage.getItem(key) === '1';
-      } catch {
-        return false;
-      }
+  const [noDataDismissedToday, setNoDataDismissedToday] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const key = `noDataDismissed-${user.id}-${todayKey}`;
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
     }
-  );
+  });
 
   const {
     isActive,
@@ -127,6 +190,7 @@ export function StaffView({
     currentStepIndex,
     setCurrentStepIndex,
   } = useTutorialContext();
+
   const { organizations } = useOrganizations(user.id);
   const currentOrganizationId =
     selectedTeam?.organization_id ||
@@ -138,11 +202,10 @@ export function StaffView({
     }
   }, [shouldShowTutorial, startTutorial, loading]);
 
-  const {
-    teamACWRData,
-    athleteACWRMap,
-    loading: teamACWRLoading,
-  } = useTeamACWR(selectedTeam?.id || null);
+  const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } = useTeamACWR(
+    selectedTeam?.id || null
+  );
+
   const {
     trendAnalysis,
     loading: trendLoading,
@@ -150,26 +213,29 @@ export function StaffView({
     refreshAnalysis,
   } = useTrendAnalysis(selectedTeam?.id || null, 'team');
 
-  // チーム関連のアラート（no_data は useAlerts 側で既に除外済み）
+  // チーム関連のアラート
   const teamAthleteIds = athletes.map((athlete) => athlete.id);
-  const teamAlerts = alerts.filter((alert) =>
-    teamAthleteIds.includes(alert.user_id)
-  );
-  const highPriorityTeamAlerts = teamAlerts.filter(
-    (alert) => alert.priority === 'high'
-  );
+  const teamAlerts = alerts.filter((alert) => teamAthleteIds.includes(alert.user_id));
+  const highPriorityTeamAlerts = teamAlerts.filter((alert) => alert.priority === 'high');
 
   useEffect(() => {
     fetchStaffTeams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
   useEffect(() => {
-    if (selectedTeam) {
-      fetchTeamAthletes(selectedTeam.id);
-    }
-  }, [selectedTeam]);
+    if (!selectedTeam?.id) return;
+  
+    // ① 選手一覧（途切れ検出維持）
+    fetchTeamAthletesWithActivity(selectedTeam.id);
+  
+    // ② 週次サマリー
+    fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
+  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTeam?.id, weekRange.start, weekRange.end]);
 
-  // 今日が変わったら localStorage を更新（ページ開きっぱなし対策）
+  // 今日が変わったら localStorage を更新
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const key = `noDataDismissed-${user.id}-${todayKey}`;
@@ -186,7 +252,8 @@ export function StaffView({
           teams (
             id,
             name,
-            created_at
+            created_at,
+            organization_id
           )
         `
         )
@@ -195,8 +262,9 @@ export function StaffView({
       if (error) throw error;
 
       const teamsData = (staffTeamLinks || [])
-        .map((link) => link.teams)
+        .map((link: any) => link.teams)
         .filter(Boolean) as Team[];
+
       setTeams(teamsData || []);
 
       if (teamsData && teamsData.length > 0) {
@@ -209,7 +277,8 @@ export function StaffView({
     }
   };
 
-  const fetchTeamAthletes = async (teamId: string) => {
+  // 既存：途切れ検出＋選手一覧（User互換）を維持するため残す
+  const fetchTeamAthletesWithActivity = async (teamId: string) => {
     try {
       const { data, error } = await supabase
         .from('staff_team_athletes_with_activity' as any)
@@ -224,49 +293,68 @@ export function StaffView({
     }
   };
 
+  const fetchWeekSummary = async (
+    teamId: string,
+    startDate: string,
+    endDate: string
+  ) => {
+    try {
+      setWeekCardsLoading(true);
+  
+      const { data, error } = await supabase.rpc(
+        'get_coach_week_athlete_cards',
+        {
+          p_team_id: teamId,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }
+      );
+  
+      if (error) throw error;
+  
+      setWeekCards(data || []);
+    } catch (e) {
+      console.error('Failed to fetch week summary', e);
+      setWeekCards([]);
+    } finally {
+      setWeekCardsLoading(false);
+    }
+  };
+  
+
   // アラート関連（今は中身ダミーでもOK）
   const markAsRead = async (alertId: string) => {
     console.log('Mark as read:', alertId);
   };
-
   const dismissAlert = async (alertId: string) => {
     console.log('Dismiss alert:', alertId);
   };
-
   const markAllAsRead = async () => {
     console.log('Mark all as read');
   };
 
   const latestTeamACWR =
-    teamACWRData.length > 0
-      ? teamACWRData[teamACWRData.length - 1]
-      : null;
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+    teamACWRData.length > 0 ? teamACWRData[teamACWRData.length - 1] : null;
 
   const handleDismissAlert = () => {
     setAlertDismissed(true);
-    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000); // 30分
+    setTimeout(() => setAlertDismissed(false), 30 * 60 * 1000);
   };
 
-  // 🧮 「練習記録が途切れている選手」の算出
-  const now = new Date();
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const noDataAthletes = athletes
-    .filter((a) => a.last_training_date)
-    .map((a) => {
-      const last = new Date(a.last_training_date as string);
-      const days = Math.floor((now.getTime() - last.getTime()) / msPerDay);
-      return { athlete: a, daysSinceLast: days };
-    })
-    .filter((x) => x.daysSinceLast >= NO_DATA_DAYS_THRESHOLD)
-    .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
+  // 🧮 「練習記録が途切れている選手」
+  const noDataAthletes = useMemo(() => {
+    const now = new Date();
+    const msPerDay = 1000 * 60 * 60 * 24;
+    return athletes
+      .filter((a) => a.last_training_date)
+      .map((a) => {
+        const last = new Date(a.last_training_date as string);
+        const days = Math.floor((now.getTime() - last.getTime()) / msPerDay);
+        return { athlete: a, daysSinceLast: days };
+      })
+      .filter((x) => x.daysSinceLast >= NO_DATA_DAYS_THRESHOLD)
+      .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
+  }, [athletes]);
 
   const handleDismissNoDataForToday = () => {
     if (typeof window !== 'undefined') {
@@ -275,6 +363,53 @@ export function StaffView({
     }
     setNoDataDismissedToday(true);
   };
+
+  // 週次：原因タグTOP3（回数）
+  const topCauseTags = useMemo(() => {
+    return [...teamCauseTags].sort((a, b) => b.cnt - a.cnt).slice(0, 3);
+  }, [teamCauseTags]);
+
+  // 週次：共有🔓の人数
+  const sharingCount = useMemo(() => {
+    return weekCards.filter((c) => c.is_sharing_active).length;
+  }, [weekCards]);
+
+  // 週次：行動目標 完了率（チーム平均っぽく）
+  const teamActionDoneRate = useMemo(() => {
+    const rows = weekCards.filter((c) => c.action_total > 0);
+    if (rows.length === 0) return null;
+    const avg = rows.reduce((sum, r) => sum + (r.action_done_rate || 0), 0) / rows.length;
+    return Math.round(avg);
+  }, [weekCards]);
+
+  // 週切替
+  const goPrevWeek = () => {
+    const start = new Date(weekRange.start);
+    const end = new Date(weekRange.end);
+    start.setDate(start.getDate() - 7);
+    end.setDate(end.getDate() - 7);
+    setWeekRange({ start: toISODate(start), end: toISODate(end) });
+  };
+  const goThisWeek = () => setWeekRange(getThisWeekRange());
+
+  // 選手クリック：共有🔓以外はモーダルを開かない
+  const handleAthleteSelect = (athlete: User) => {
+    const card = weekCards.find((c) => c.athlete_user_id === athlete.id);
+    if (!card?.is_sharing_active) {
+      // UX：将来はトーストにしたい（今は簡易）
+      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
+      return;
+    }
+    setSelectedAthlete(athlete);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -323,22 +458,18 @@ export function StaffView({
                   className="p-2 text-gray-600 hover:text-green-600 transition-colors"
                   title="メニュー"
                 >
-                  {showMobileMenu ? (
-                    <X className="w-5 h-5" />
-                  ) : (
-                    <Menu className="w-5 h-5" />
-                  )}
+                  {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
 
                 {showMobileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 max-h-[calc(100vh-6rem)] overflow-y-auto">
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 max-h-[calc(100vh-6rem)] overflow-y-auto">
                     {selectedTeam && (
                       <button
                         onClick={() => {
                           setShowExportPanel(true);
                           setShowMobileMenu(false);
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
                       >
                         <Download className="w-4 h-4" />
                         <span>チームエクスポート</span>
@@ -346,11 +477,9 @@ export function StaffView({
                     )}
 
                     {/* 法的情報 */}
-                    <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                    <div className="border-t border-gray-200 my-1"></div>
                     <div className="px-3 py-1.5">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                        法的情報
-                      </p>
+                      <p className="text-xs font-semibold text-gray-500">法的情報</p>
                     </div>
                     {onNavigateToHelp && (
                       <button
@@ -358,7 +487,7 @@ export function StaffView({
                           setShowMobileMenu(false);
                           onNavigateToHelp();
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
                       >
                         <HelpCircle className="w-4 h-4" />
                         <span>ヘルプ・マニュアル</span>
@@ -370,7 +499,7 @@ export function StaffView({
                           setShowMobileMenu(false);
                           onNavigateToPrivacy();
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
                       >
                         <Shield className="w-4 h-4" />
                         <span>プライバシーポリシー</span>
@@ -382,7 +511,7 @@ export function StaffView({
                           setShowMobileMenu(false);
                           onNavigateToTerms();
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
                       >
                         <FileText className="w-4 h-4" />
                         <span>利用規約</span>
@@ -394,7 +523,7 @@ export function StaffView({
                           setShowMobileMenu(false);
                           onNavigateToCommercial();
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
                       >
                         <Building2 className="w-4 h-4" />
                         <span>特定商取引法に基づく表記</span>
@@ -426,6 +555,29 @@ export function StaffView({
                   ))}
                 </select>
               </div>
+
+              {/* 週切替 */}
+              <div className="flex items-center justify-between gap-2 pt-3">
+                <div className="text-xs sm:text-sm text-gray-600">
+                  対象週：{weekRange.start} 〜 {weekRange.end}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg border text-xs sm:text-sm hover:bg-gray-50"
+                    onClick={goPrevWeek}
+                    disabled={weekLoading}
+                  >
+                    先週
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg border text-xs sm:text-sm hover:bg-gray-50"
+                    onClick={goThisWeek}
+                    disabled={weekLoading}
+                  >
+                    今週
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -438,9 +590,7 @@ export function StaffView({
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               担当チームがありません
             </h3>
-            <p className="text-gray-600">
-              管理者にチームの割り当てを依頼してください。
-            </p>
+            <p className="text-gray-600">管理者にチームの割り当てを依頼してください。</p>
           </div>
         ) : (
           <div className="space-y-6 sm:space-y-8">
@@ -450,12 +600,9 @@ export function StaffView({
                 <div className="flex items-center">
                   <AlertTriangle className="w-6 h-6 text-red-600 mr-3 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-red-900">
-                      高リスクアラート
-                    </h3>
+                    <h3 className="font-semibold text-red-900">高リスクアラート</h3>
                     <p className="text-sm text-red-700">
-                      {highPriorityTeamAlerts.length}
-                      名の選手に注意が必要です
+                      {highPriorityTeamAlerts.length}名の選手に注意が必要です
                     </p>
                   </div>
                   <button
@@ -496,13 +643,10 @@ export function StaffView({
                       className="flex items-baseline justify-between border-t border-gray-100 pt-1.5 first:border-t-0 first:pt-0"
                     >
                       <div className="font-medium text-gray-900 truncate mr-2">
-                        {athlete.name || athlete.nickname || athlete.email}
+                        {athlete.name || athlete.email}
                       </div>
                       <div className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">
-                        最終日{' '}
-                        {athlete.last_training_date ||
-                          '-'}{' '}
-                        （{daysSinceLast}日間）
+                        最終日 {athlete.last_training_date || '-'}（{daysSinceLast}日間）
                       </div>
                     </li>
                   ))}
@@ -510,14 +654,80 @@ export function StaffView({
               </div>
             )}
 
-            {/* Team Overview */}
+            {/* ✅ 週次サマリー（共有🔓 / 行動目標 / 原因タグTOP） */}
+            {selectedTeam && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* 共有状況 */}
+                <div className="bg-white rounded-xl shadow-sm border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-900">共有状況（今週）</div>
+                    {weekLoading ? (
+                      <div className="text-xs text-gray-500">取得中…</div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                        <Unlock className="w-4 h-4" />
+                        <span>{sharingCount} / {athletes.length}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 text-xs text-gray-600">
+                    🔓 共有ONの選手だけ、詳細モーダルを開けます
+                  </div>
+                </div>
+
+                {/* 行動目標 */}
+                <div className="bg-white rounded-xl shadow-sm border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-900">行動目標の達成（今週）</div>
+                    {teamActionDoneRate == null ? (
+                      <div className="text-xs text-gray-500">データなし</div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-xs text-gray-700">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{teamActionDoneRate}%</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 text-xs text-gray-600">
+                    next_action_items の完了率（行動目標がある選手のみで平均）
+                  </div>
+                </div>
+
+                {/* 原因タグTOP */}
+                <div className="bg-white rounded-xl shadow-sm border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-900">原因タグTOP（今週）</div>
+                    {weekLoading && <div className="text-xs text-gray-500">取得中…</div>}
+                  </div>
+
+                  <div className="mt-3">
+                    {topCauseTags.length === 0 ? (
+                      <div className="text-xs text-gray-500">
+                        まだ振り返りデータがありません
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {topCauseTags.map((t) => (
+                          <span
+                            key={t.tag}
+                            className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-800"
+                          >
+                            {t.tag} <span className="text-gray-500">×{t.cnt}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Team Overview（既存） */}
             {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
-                    <span className="hidden sm:inline">
-                      {selectedTeam.name} -{' '}
-                    </span>
+                    <span className="hidden sm:inline">{selectedTeam.name} - </span>
                     <span className="sm:hidden">チーム</span>概要
                   </h2>
                   <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 ml-2" />
@@ -539,40 +749,28 @@ export function StaffView({
                       <div className="text-xl sm:text-2xl font-bold text-purple-600 mb-1">
                         {latestTeamACWR.averageACWR}
                       </div>
-                      <div className="text-xs sm:text-sm text-purple-700">
-                        チーム平均ACWR
-                      </div>
+                      <div className="text-xs sm:text-sm text-purple-700">チーム平均ACWR</div>
                     </div>
 
                     <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-blue-600 mb-1">
                         {latestTeamACWR.athleteCount}
                       </div>
-                      <div className="text-xs sm:text-sm text-blue-700">
-                        データ有効選手数
-                      </div>
+                      <div className="text-xs sm:text-sm text-blue-700">データ有効選手数</div>
                     </div>
 
                     <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-gray-600 mb-1">
                         {athletes.length}
                       </div>
-                      <div className="text-xs sm:text-sm text-gray-700">
-                        総選手数
-                      </div>
+                      <div className="text-xs sm:text-sm text-gray-700">総選手数</div>
                     </div>
 
                     <div className="bg-red-50 rounded-lg p-4 sm:p-6 text-center">
                       <div className="text-xl sm:text-2xl font-bold text-red-600 mb-1">
-                        {
-                          teamAlerts.filter(
-                            (alert) => alert.priority === 'high'
-                          ).length
-                        }
+                        {teamAlerts.filter((alert) => alert.priority === 'high').length}
                       </div>
-                      <div className="text-xs sm:text-sm text-red-700">
-                        高リスク選手
-                      </div>
+                      <div className="text-xs sm:text-sm text-red-700">高リスク選手</div>
                     </div>
                   </div>
                 )}
@@ -698,9 +896,7 @@ export function StaffView({
                   <div className="sm:hidden px-4 py-3">
                     <select
                       value={activeTab}
-                      onChange={(e) =>
-                        setActiveTab(e.target.value as typeof activeTab)
-                      }
+                      onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     >
                       <option value="athletes">選手一覧</option>
@@ -725,6 +921,10 @@ export function StaffView({
                           <span className="bg-gray-100 text-gray-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
                             {athletes.length}名
                           </span>
+                          <span className="bg-emerald-100 text-emerald-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm flex items-center gap-1">
+                            <Unlock className="w-4 h-4" />
+                            共有ON {sharingCount}
+                          </span>
                           {teamAlerts.length > 0 && (
                             <span className="bg-red-100 text-red-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
                               アラート {teamAlerts.length}件
@@ -732,13 +932,21 @@ export function StaffView({
                           )}
                         </div>
                       </div>
-                      <div data-tutorial="athlete-list">
-                        <AthleteList
-                          athletes={athletes}
-                          onAthleteSelect={setSelectedAthlete}
-                          athleteACWRMap={athleteACWRMap}
-                        />
+
+                      {/* 共有OFFの選手は詳細が開けないことを示す小さな説明 */}
+                      <div className="text-xs text-gray-600 mb-3 flex items-center gap-2">
+                        <Lock className="w-4 h-4" />
+                        共有OFF（🔒）の選手は、詳細モーダルを開けません
                       </div>
+
+                      <AthleteList
+                        athletes={athletes}
+                        onAthleteSelect={setSelectedAthlete}
+                        athleteACWRMap={Object.fromEntries(athleteACWRMap as any)}
+                        weekCardMap={Object.fromEntries(
+                          (weekCards || []).map((c: any) => [c.athlete_user_id, c])
+                        )}
+                      />
                     </div>
                   ) : activeTab === 'team-average' ? (
                     <div>
@@ -747,10 +955,7 @@ export function StaffView({
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                         </div>
                       ) : (
-                        <TeamACWRChart
-                          data={teamACWRData}
-                          teamName={selectedTeam.name}
-                        />
+                        <TeamACWRChart data={teamACWRData} teamName={selectedTeam.name} />
                       )}
                     </div>
                   ) : activeTab === 'trends' ? (
@@ -846,12 +1051,9 @@ export function StaffView({
         )}
       </main>
 
-      {/* Athlete Detail Modal */}
+      {/* Athlete Detail Modal（共有ONのみ開く） */}
       {selectedAthlete && (
-        <AthleteDetailModal
-          athlete={selectedAthlete}
-          onClose={() => setSelectedAthlete(null)}
-        />
+        <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
       )}
 
       {/* Alert Panel */}
@@ -875,10 +1077,7 @@ export function StaffView({
             </div>
           }
         >
-          <TeamExportPanel
-            team={selectedTeam}
-            onClose={() => setShowExportPanel(false)}
-          />
+          <TeamExportPanel team={selectedTeam} onClose={() => setShowExportPanel(false)} />
         </Suspense>
       )}
 
