@@ -35,7 +35,8 @@ import { TeamPerformanceComparison } from './TeamPerformanceComparison';
 import { TeamTrendAnalysis } from './TeamTrendAnalysis';
 import { useOrganizations } from '../hooks/useOrganizations';
 
-
+const [athletesLoading, setAthletesLoading] = useState(false);
+const [athletesError, setAthletesError] = useState<string | null>(null);
 
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
@@ -238,14 +239,14 @@ export function StaffView({
 
   useEffect(() => {
     if (!selectedTeam?.id) return;
-
-    // ① 選手一覧（途切れ検出維持）
+  
+    // 🔑 チーム切替時に一旦リセット
+    setAthletes([]);
+    setWeekCards([]);
+    setTeamCauseTags([]);
+  
     fetchTeamAthletesWithActivity(selectedTeam.id);
-
-    // ② 週次サマリー（cards + cause_tags）
     fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTeam?.id, weekRange.start, weekRange.end]);
 
   // 今日が変わったら localStorage を更新
@@ -293,19 +294,28 @@ export function StaffView({
     }
   };
 
-  // 既存：途切れ検出＋選手一覧（User互換）を維持
   const fetchTeamAthletesWithActivity = async (teamId: string) => {
     try {
+      setAthletesLoading(true);
+  
+      const currentTeamId = teamId; // 🔒 この fetch 専用のID
+  
       const { data, error } = await supabase
         .from('staff_team_athletes_with_activity' as any)
         .select('*')
         .eq('team_id', teamId);
-
+  
       if (error) throw error;
-
+  
+      // 🚨 チームが変わってたら捨てる
+      if (selectedTeam?.id !== currentTeamId) return;
+  
       setAthletes((data || []) as StaffAthleteWithActivity[]);
-    } catch (error) {
-      console.error('Error fetching team athletes:', error);
+    } catch (e) {
+      console.error(e);
+      setAthletesError('選手データの取得に失敗しました');
+    } finally {
+      setAthletesLoading(false);
     }
   };
 
@@ -499,6 +509,33 @@ export function StaffView({
   const sharingCount = useMemo(() => {
     return weekCards.filter((c) => c.is_sharing_active).length;
   }, [weekCards]);
+
+  const sharingOffCount = useMemo(() => {
+    return Math.max(0, athletes.length - sharingCount);
+  }, [athletes.length, sharingCount]);
+  
+  const sharingOnRate = useMemo(() => {
+    if (athletes.length === 0) return null;
+    return Math.round((sharingCount / athletes.length) * 100);
+  }, [athletes.length, sharingCount]);
+
+  const sharingActiveMap = useMemo<Record<string, boolean>>(() => {
+    const m: Record<string, boolean> = {};
+    for (const c of weekCards) {
+      m[c.athlete_user_id] = !!c.is_sharing_active;
+    }
+    return m;
+  }, [weekCards]);
+
+  const weekCardMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const c of weekCards) {
+      map[c.athlete_user_id] = c;
+    }
+    return map;
+  }, [weekCards]);
+
+
 
   const teamActionDoneRate = useMemo(() => {
     const rows = weekCards.filter((c) => c.action_total > 0);
@@ -798,11 +835,32 @@ export function StaffView({
                     {weekCardsLoading ? (
                       <div className="text-xs text-gray-500">取得中…</div>
                     ) : (
-                      <div className="flex items-center gap-1 text-xs text-gray-600">
-                        <Unlock className="w-4 h-4" />
-                        <span>
-                          {sharingCount} / {athletes.length}
+                      <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+                        <span className="bg-gray-100 text-gray-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
+                          {athletes.length}名
                         </span>
+
+                        <span className="bg-emerald-100 text-emerald-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm flex items-center gap-1">
+                          <Unlock className="w-4 h-4" />
+                          共有ON {sharingCount}
+                        </span>
+
+                        <span className="bg-gray-200 text-gray-800 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm flex items-center gap-1">
+                          <Lock className="w-4 h-4" />
+                          共有OFF {sharingOffCount}
+                        </span>
+
+                        {sharingOnRate != null && (
+                          <span className="bg-blue-50 text-blue-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
+                            ON率 {sharingOnRate}%
+                          </span>
+                        )}
+
+                        {teamAlerts.length > 0 && (
+                          <span className="bg-red-100 text-red-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
+                            アラート {teamAlerts.length}件
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1142,11 +1200,37 @@ export function StaffView({
                         共有OFF（🔒）の選手は、詳細モーダルを開けません
                       </div>
 
-                      <AthleteList
-                        athletes={athletes}
-                        onAthleteSelect={handleAthleteSelect}
-                        athleteACWRMap={athleteACWRMap}
-                      />
+                      {athletesLoading ? (
+                          <div className="flex items-center justify-center py-12">
+                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                          </div>
+                        ) : athletesError ? (
+                          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+                            <div className="font-semibold mb-1">選手一覧の取得に失敗しました</div>
+                            <div className="mb-3">{athletesError}</div>
+                            <button
+                              className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
+                              onClick={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
+                            >
+                              再取得
+                            </button>
+                          </div>
+                        ) : athletes.length === 0 ? (
+                          <div className="bg-white border rounded-xl p-6 text-center text-gray-600">
+                            <div className="font-semibold text-gray-900 mb-1">選手がまだいません</div>
+                            <div className="text-sm">
+                              チームに選手が所属しているか（team_id / view 条件）を確認してください。
+                            </div>
+                          </div>
+                        ) : (
+                          <AthleteList
+                            athletes={athletes}
+                            onAthleteSelect={handleAthleteSelect}
+                            athleteACWRMap={athleteACWRMap}
+                            weekCardMap={weekCardMap}
+                          />
+                        )}
+
                     </div>
                   ) : activeTab === 'team-average' ? (
                     <div>
