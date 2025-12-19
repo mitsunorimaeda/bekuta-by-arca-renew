@@ -25,14 +25,10 @@ function toNumber(v: any): number | null {
 
 function toISODateString(v: any): string | null {
   if (!v) return null;
-
-  // すでに YYYY-MM-DD っぽいならそのまま
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
 
   const d = new Date(v);
-  if (isNaN(d.getTime())) return null;
-
-  // UTCで日付統一（ここはチーム運用により local にしたければ調整）
+  if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
 }
 
@@ -59,15 +55,16 @@ export function useTeamACWR(teamId: string | null) {
     return 'low';
   };
 
-  const fetchTeamACWR = async (teamId: string) => {
+  const fetchTeamACWR = async (teamIdStr: string) => {
     setLoading(true);
+
     try {
       // 1) チームのアスリート取得
       const { data: athletes, error: athletesError } = await supabase
         .from('users')
         .select('id')
         .eq('role', 'athlete')
-        .eq('team_id', teamId);
+        .eq('team_id', teamIdStr);
 
       if (athletesError) throw athletesError;
 
@@ -111,10 +108,10 @@ export function useTeamACWR(teamId: string | null) {
 
             return {
               ...r,
-              date,       // YYYY-MM-DD
-              rpe,        // number|null
-              duration,   // number|null (calculateACWRがdurationを期待)
-              load,       // number|null
+              date,     // YYYY-MM-DD
+              rpe,      // number|null
+              duration, // number|null
+              load,     // number|null
             };
           })
           .filter(Boolean) ?? [];
@@ -124,15 +121,14 @@ export function useTeamACWR(teamId: string | null) {
         console.log('[useTeamACWR] sample normalized:', normalizedRecords[0]);
       }
 
-      // 3) 選手別にまとめる（filter連発より高速）
+      // 3) 選手別にまとめる（filter連発回避）
       const byAthlete: Record<string, any[]> = {};
-      for (const r of normalizedRecords) {
+      for (const r of normalizedRecords as any[]) {
         const id = r.user_id;
         if (!byAthlete[id]) byAthlete[id] = [];
         byAthlete[id].push(r);
       }
 
-      // データ多い選手TOPを出す（ACWR確認用）
       const top10 = Object.entries(byAthlete)
         .map(([id, arr]) => [id, arr.length] as const)
         .sort((a, b) => b[1] - a[1])
@@ -143,28 +139,22 @@ export function useTeamACWR(teamId: string | null) {
       const athleteACWRData: { [athleteId: string]: any[] } = {};
 
       for (const athleteId of athleteIds) {
-        const athleteRecords =
-          normalizedRecords.filter((r) => r.user_id === athleteId) || [];
-      
+        const athleteRecords = byAthlete[athleteId] || [];
         if (athleteRecords.length > 0) {
           const acwrArr = calculateACWR(athleteRecords);
-      
-          console.log(
-            '[ACWR raw]',
-            athleteId,
-            acwrArr?.slice(0, 3) // ← 先頭3件だけでOK
-          );
-          athleteACWRData[athleteId] = acwrArr;
-          if (!acwrArr || acwrArr.length === 0) {
-            console.log('[ACWR] empty for athlete:', athleteId, 'records:', athleteRecords.length);
+
+          console.log('[ACWR raw]', athleteId, acwrArr?.slice(0, 3));
+
+          // ★ここ：タイポ修正（athleteleteACWRData ではない）
+          athleteACWRData[athleteId] = Array.isArray(acwrArr) ? acwrArr : [];
         }
       }
 
-      // 5) チーム平均 ACWR（日付一致が命）
+      // 5) チーム平均 ACWR（日付一致）
       const teamAverages: TeamACWRData[] = [];
 
       const allDates = new Set<string>();
-      normalizedRecords.forEach((r) => allDates.add(r.date));
+      (normalizedRecords as any[]).forEach((r) => allDates.add(r.date));
       const sortedDates = Array.from(allDates).sort();
 
       for (const dateStr of sortedDates) {
@@ -172,23 +162,27 @@ export function useTeamACWR(teamId: string | null) {
 
         for (const athleteId of athleteIds) {
           const athleteData = athleteACWRData[athleteId];
-          if (!athleteData) continue;
+          if (!athleteData || athleteData.length === 0) continue;
 
-          const dayData = athleteData.find((d: any) => d.date === dateStr);
+          const dayData = athleteData.find((d: any) => {
+            const dDate = toISODateString(d?.date);
+            return dDate === dateStr;
+          });
+
           if (dayData && typeof dayData.acwr === 'number' && dayData.acwr > 0) {
             dailyACWRs.push(dayData.acwr);
           }
         }
 
         if (dailyACWRs.length > 0) {
-          const averageACWR =
+          const avg =
             dailyACWRs.reduce((sum, a) => sum + a, 0) / dailyACWRs.length;
 
           teamAverages.push({
             date: dateStr,
-            averageACWR: Number(averageACWR.toFixed(2)),
+            averageACWR: Number(avg.toFixed(2)),
             athleteCount: dailyACWRs.length,
-            riskLevel: evalRisk(averageACWR),
+            riskLevel: evalRisk(avg),
           });
         }
       }
@@ -201,19 +195,16 @@ export function useTeamACWR(teamId: string | null) {
       // 6) 各選手の最新ACWR
       const acwrMap: AthleteACWRMap = {};
       for (const athleteId of athleteIds) {
-        const dataArr = athleteACWRData[athleteId];
-        if (dataArr && dataArr.length > 0) {
-          const latest = dataArr[dataArr.length - 1];
-          const latestACWR = typeof latest.acwr === 'number' ? latest.acwr : null;
+        const arr = athleteACWRData[athleteId];
+        if (arr && arr.length > 0) {
+          const latest = arr[arr.length - 1];
+          const latestACWR = typeof latest?.acwr === 'number' ? latest.acwr : null;
           acwrMap[athleteId] = {
             latestACWR,
             riskLevel: evalRisk(latestACWR),
           };
         } else {
-          acwrMap[athleteId] = {
-            latestACWR: null,
-            riskLevel: 'unknown',
-          };
+          acwrMap[athleteId] = { latestACWR: null, riskLevel: 'unknown' };
         }
       }
       setAthleteACWRMap(acwrMap);
