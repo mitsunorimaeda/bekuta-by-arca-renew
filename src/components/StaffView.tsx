@@ -7,7 +7,6 @@ import { TeamACWRChart } from './TeamACWRChart';
 import { AlertPanel } from './AlertPanel';
 import { TutorialController } from './TutorialController';
 import { useTeamACWR } from '../hooks/useTeamACWR';
-import { useTrendAnalysis } from '../hooks/useTrendAnalysis';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import {
@@ -36,9 +35,7 @@ import { TeamPerformanceComparison } from './TeamPerformanceComparison';
 import { TeamTrendAnalysis } from './TeamTrendAnalysis';
 import { useOrganizations } from '../hooks/useOrganizations';
 
-const TrendAnalysisView = lazy(() =>
-  import('./TrendAnalysisView').then((m) => ({ default: m.TrendAnalysisView }))
-);
+
 
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
@@ -168,7 +165,6 @@ export function StaffView({
   const [activeTab, setActiveTab] = useState<
     | 'athletes'
     | 'team-average'
-    | 'trends'
     | 'team-analytics'
     | 'reports'
     | 'team-access'
@@ -217,18 +213,13 @@ export function StaffView({
   }, [shouldShowTutorial, startTutorial, loading]);
 
   // =========================
-  // ACWR / Trends
+  // ACWR 
   // =========================
   const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } = useTeamACWR(
     selectedTeam?.id || null
   );
 
-  const {
-    trendAnalysis,
-    loading: trendLoading,
-    error: trendError,
-    refreshAnalysis,
-  } = useTrendAnalysis(selectedTeam?.id || null, 'team');
+ 
 
   // =========================
   // Alerts derived
@@ -1032,20 +1023,7 @@ export function StaffView({
                       </div>
                     </button>
 
-                    <button
-                      onClick={() => setActiveTab('trends')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'trends'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                      data-tutorial="trends-tab"
-                    >
-                      <div className="flex items-center">
-                        <TrendingUp className="w-4 h-4 mr-2" />
-                        傾向分析
-                      </div>
-                    </button>
+                   
 
                     <button
                       onClick={() => setActiveTab('team-analytics')}
@@ -1127,7 +1105,6 @@ export function StaffView({
                     >
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
-                      <option value="trends">傾向分析</option>
                       <option value="team-analytics">チーム分析</option>
                       <option value="reports">レポート</option>
                       <option value="team-access">チームアクセス</option>
@@ -1181,21 +1158,7 @@ export function StaffView({
                         <TeamACWRChart data={teamACWRData} teamName={selectedTeam.name} />
                       )}
                     </div>
-                  ) : activeTab === 'trends' ? (
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center h-64">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                        </div>
-                      }
-                    >
-                      <TrendAnalysisView
-                        trendAnalysis={trendAnalysis}
-                        loading={trendLoading}
-                        error={trendError}
-                        onRefresh={refreshAnalysis}
-                      />
-                    </Suspense>
+                
                   ) : activeTab === 'team-analytics' ? (
                     <div className="space-y-6">
                       <TeamInjuryRiskHeatmap teamId={selectedTeam.id} />

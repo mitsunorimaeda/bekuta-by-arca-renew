@@ -8,7 +8,7 @@ import { ACWRChart } from './ACWRChart';
 import { TrainingRecordsList } from './TrainingRecordsList';
 import { AlertSummary } from './AlertSummary';
 // Lazy load heavy components
-const TrendAnalysisView = lazy(() => import('./TrendAnalysisView').then(m => ({ default: m.TrendAnalysisView })));
+
 const ExportPanel = lazy(() => import('./ExportPanel').then(m => ({ default: m.ExportPanel })));
 import { WeightForm } from './WeightForm';
 import { WeightChart } from './WeightChart';
@@ -24,7 +24,6 @@ import { PerformanceRecordsList } from './PerformanceRecordsList';
 import { PerformanceOverview } from './PerformanceOverview';
 import { PersonalBestCelebration } from './PersonalBestCelebration';
 import { useTrainingData } from '../hooks/useTrainingData';
-import { useTrendAnalysis } from '../hooks/useTrendAnalysis';
 import { useWeightData } from '../hooks/useWeightData';
 import { usePerformanceData } from '../hooks/usePerformanceData';
 import { useSleepData } from '../hooks/useSleepData';
@@ -103,7 +102,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   } = useTrainingData(user.id);
 
 
-  const { trendAnalysis, loading: trendLoading, error: trendError, refreshAnalysis } = useTrendAnalysis(user.id, 'user');
 
   const {
     records: weightRecords,
@@ -165,7 +163,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   const [, setProfileRefreshKey] = useState(0);
   const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
   const [activeTab, setActiveTab] = useState<
-    'unified' | 'overview' | 'trends' | 'weight' | 'insights' | 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
+    'unified' | 'overview'  | 'weight' | 'insights' | 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
   >('unified');
 
   const [celebrationData, setCelebrationData] = useState<{
@@ -548,19 +546,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <span className="text-sm font-medium">練習記録</span>
               </button>
 
-              {/* 傾向分析 */}
-              <button
-                onClick={() => { setActiveTab('trends'); setMenuOpen(false); }}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'trends'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span className="text-sm font-medium">傾向分析</span>
-              </button>
-
               {/* パフォーマンス */}
               <button
                 onClick={() => { setActiveTab('performance'); setMenuOpen(false); }}
@@ -847,16 +832,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             </div>
             
           </>
-        ) : activeTab === 'trends' ? (
-          /* Trend Analysis Tab */
-          <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
-            <TrendAnalysisView
-              trendAnalysis={trendAnalysis}
-              loading={trendLoading}
-              error={trendError}
-              onRefresh={refreshAnalysis}
-            />
-          </Suspense>
+        
         ) : activeTab === 'weight' ? (
           /* Weight Management Tab */
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -1353,7 +1329,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             user={user}
             trainingRecords={records}
             acwrData={acwrData}
-            trendAnalysis={trendAnalysis || undefined}
+            weightRecords={weightRecords}
+            sleepRecords={sleepRecords}
             onClose={() => setShowExportPanel(false)}
           />
         </Suspense>
