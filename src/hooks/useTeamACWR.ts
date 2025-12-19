@@ -143,21 +143,19 @@ export function useTeamACWR(teamId: string | null) {
       const athleteACWRData: { [athleteId: string]: any[] } = {};
 
       for (const athleteId of athleteIds) {
-        const athleteRecords = byAthlete[athleteId] || [];
+        const athleteRecords =
+          normalizedRecords.filter((r) => r.user_id === athleteId) || [];
+      
         if (athleteRecords.length > 0) {
           const acwrArr = calculateACWR(athleteRecords);
-
-          // 返ってくる date も YYYY-MM-DD に統一（ここがズレると team average が死ぬ）
-          athleteACWRData[athleteId] = (acwrArr || [])
-            .map((d: any) => ({
-              ...d,
-              date: toISODateString(d.date) ?? d.date,
-            }))
-            .filter((d: any) => d.date);
-
-          if (athleteACWRData[athleteId].length > 0 && athleteId === top10?.[0]?.[0]) {
-            console.log('[useTeamACWR] TOP1 athlete ACWR sample:', athleteACWRData[athleteId].slice(-5));
-          }
+      
+          console.log(
+            '[ACWR raw]',
+            athleteId,
+            acwrArr?.slice(0, 3) // ← 先頭3件だけでOK
+          );
+      
+          athleteleteACWRData[athleteId] = acwrArr;
         }
       }
 
