@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Send, X } from 'lucide-react';
+import { Send, X, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 type Props = {
   userId: string;
@@ -14,10 +14,19 @@ export function ShareStatusButton({ userId, highlight }: Props) {
   const [checked, setChecked] = useState(false);
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
+
   const canSend = useMemo(() => checked && !sending, [checked, sending]);
+
+  const resetAndClose = () => {
+    setOpen(false);
+    setDone(false);
+    setNote('');
+    setChecked(false);
+  };
 
   const submit = async () => {
     if (!canSend) return;
+
     setSending(true);
     try {
       const { error } = await supabase.from('shared_reports').insert({
@@ -28,12 +37,8 @@ export function ShareStatusButton({ userId, highlight }: Props) {
       if (error) throw error;
 
       setDone(true);
-      // 完了メッセージを少し見せて閉じる
       setTimeout(() => {
-        setOpen(false);
-        setDone(false);
-        setNote('');
-        setChecked(false);
+        resetAndClose();
       }, 900);
     } catch (e) {
       console.error('[ShareStatusButton] insert failed:', e);
@@ -52,8 +57,8 @@ export function ShareStatusButton({ userId, highlight }: Props) {
           'w-full rounded-xl px-4 py-3 flex items-center justify-center gap-2 transition-colors',
           'border',
           highlight
-            ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-            : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40',
+            ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 active:bg-blue-800'
+            : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60 active:bg-gray-100 dark:active:bg-gray-800',
         ].join(' ')}
       >
         <Send className="w-4 h-4" />
@@ -62,17 +67,21 @@ export function ShareStatusButton({ userId, highlight }: Props) {
 
       {open && (
         <div className="fixed inset-0 z-50">
+          {/* overlay */}
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/60"
             onClick={() => !sending && setOpen(false)}
           />
-          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+
+          {/* modal */}
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 shadow-2xl overflow-hidden">
+            {/* header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
               <div className="font-semibold text-gray-900 dark:text-white">共有内容の確認</div>
               <button
                 type="button"
                 onClick={() => !sending && setOpen(false)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 active:bg-gray-200 dark:active:bg-white/15"
                 aria-label="閉じる"
               >
                 <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
@@ -80,6 +89,7 @@ export function ShareStatusButton({ userId, highlight }: Props) {
             </div>
 
             <div className="p-4 space-y-4">
+              {/* what will be shared */}
               <div className="text-sm text-gray-700 dark:text-gray-200 space-y-1">
                 <p>スタッフに以下の情報が共有されます：</p>
                 <ul className="list-disc pl-5 space-y-1">
@@ -92,6 +102,7 @@ export function ShareStatusButton({ userId, highlight }: Props) {
                 </p>
               </div>
 
+              {/* note */}
               <div>
                 <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
                   メモ（任意）
@@ -100,21 +111,57 @@ export function ShareStatusButton({ userId, highlight }: Props) {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
-                  className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60"
                   placeholder="例：膝に違和感、睡眠が浅い、今日はやり切れない感じ など"
                 />
               </div>
 
-              <label className="flex items-start gap-3 text-sm text-gray-800 dark:text-gray-200">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(e) => setChecked(e.target.checked)}
-                  className="mt-1"
-                />
-                <span>共有する内容を確認しました</span>
-              </label>
+              {/* ✅ confirm row (tapable) */}
+              <button
+                type="button"
+                onClick={() => setChecked((v) => !v)}
+                className={[
+                  'w-full text-left rounded-xl border px-3 py-3 transition',
+                  'flex items-start gap-3',
+                  checked
+                    ? 'border-blue-500/60 bg-blue-50 dark:bg-blue-500/10'
+                    : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10',
+                ].join(' ')}
+                aria-pressed={checked}
+              >
+                <span
+                  className={[
+                    'mt-0.5 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition',
+                    checked
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'bg-transparent border-gray-400/60 dark:border-gray-300/40',
+                  ].join(' ')}
+                >
+                  {checked && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </span>
 
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    共有する内容を確認しました{' '}
+                    <span className="text-xs text-amber-700 dark:text-amber-300">（必須）</span>
+                  </div>
+                  {!checked && (
+                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                      ここをタップして確認すると「共有する」ボタンが有効になります
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              {/* disabled reason */}
+              {!checked && !done && (
+                <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div>共有するには「共有内容を確認しました（必須）」をONにしてください</div>
+                </div>
+              )}
+
+              {/* submit */}
               <button
                 type="button"
                 onClick={submit}
@@ -122,8 +169,8 @@ export function ShareStatusButton({ userId, highlight }: Props) {
                 className={[
                   'w-full rounded-xl px-4 py-3 font-semibold transition-colors',
                   canSend
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                    : 'bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-white/40 cursor-not-allowed',
                 ].join(' ')}
               >
                 {done ? '共有しました' : sending ? '送信中...' : '共有する'}

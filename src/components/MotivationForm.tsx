@@ -1,222 +1,234 @@
-import React, { useState, useEffect } from 'react';
-import { Heart, Zap, AlertCircle } from 'lucide-react';
-import { getTodayJSTString } from '../lib/date';
+import React, { useMemo, useRef, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { Send, X, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-interface LastRecordInfo {
-  date: string;
-  motivation_level: number;
-  energy_level: number;
-  stress_level: number;
-}
+type Props = {
+  userId: string;
+  highlight?: boolean;
+};
 
-interface MotivationFormProps {
-  onSubmit: (data: {
-    motivation_level: number;
-    energy_level: number;
-    stress_level: number;
-    date: string;
-    notes?: string;
-  }) => Promise<void>;
-  loading?: boolean;
-  /** 前回の記録（任意） */
-  lastRecord?: LastRecordInfo | null;
-}
+type ToastState = {
+  open: boolean;
+  message: string;
+  type: 'success' | 'error';
+};
 
-export function MotivationForm({
-  onSubmit,
-  loading = false,
-  lastRecord,
-}: MotivationFormProps) {
-  const [motivationLevel, setMotivationLevel] = useState(5);
-  const [energyLevel, setEnergyLevel] = useState(5);
-  const [stressLevel, setStressLevel] = useState(5);
-  const [date, setDate] = useState(getTodayJSTString());
-  const [notes, setNotes] = useState('');
-  const [error, setError] = useState('');
-  const [initializedFromLast, setInitializedFromLast] = useState(false);
+export function ShareStatusButton({ userId, highlight }: Props) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [checked, setChecked] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  // 🔁 前回記録が入ってきたタイミングで、一度だけスライダー初期値に反映
-  useEffect(() => {
-    if (lastRecord && !initializedFromLast) {
-      setMotivationLevel(lastRecord.motivation_level);
-      setEnergyLevel(lastRecord.energy_level);
-      setStressLevel(lastRecord.stress_level);
-      // 日付は「今日」のまま
-      setInitializedFromLast(true);
+  const [toast, setToast] = useState<ToastState>({
+    open: false,
+    message: '',
+    type: 'success',
+  });
+
+  const toastTimerRef = useRef<number | null>(null);
+
+  const canSend = useMemo(() => checked && !sending, [checked, sending]);
+
+  const showToast = (message: string, type: ToastState['type']) => {
+    // 連打対策：前のタイマーをクリア
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
     }
-  }, [lastRecord, initializedFromLast]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+    setToast({ open: true, message, type });
 
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast((t) => ({ ...t, open: false }));
+      toastTimerRef.current = null;
+    }, 2200);
+  };
+
+  const resetAndClose = () => {
+    setOpen(false);
+    setNote('');
+    setChecked(false);
+  };
+
+  const submit = async () => {
+    if (!canSend) return;
+
+    setSending(true);
     try {
-      await onSubmit({
-        motivation_level: motivationLevel,
-        energy_level: energyLevel,
-        stress_level: stressLevel,
-        date,
-        notes: notes || undefined,
+      const { error } = await supabase.from('shared_reports').insert({
+        user_id: userId,
+        note: note.trim() ? note.trim() : null,
       });
 
-      // ここは今まで通り、送信後はリセット
-      setMotivationLevel(5);
-      setEnergyLevel(5);
-      setStressLevel(5);
-      setDate(getTodayJSTString());
-      setNotes('');
-      setInitializedFromLast(false); // 次回マウント時にまた lastRecord から初期化できるように
-    } catch (err) {
-      setError('モチベーション記録の追加に失敗しました');
-      console.error('Error submitting motivation record:', err);
+      if (error) throw error;
+
+      // ✅ 成功トースト
+      showToast('スタッフに共有しました', 'success');
+
+      // モーダルは少しだけ間を置いて閉じる（押した感を残す）
+      setTimeout(() => {
+        resetAndClose();
+      }, 350);
+    } catch (e) {
+      console.error('[ShareStatusButton] insert failed:', e);
+      showToast('共有に失敗しました。通信状況をご確認ください', 'error');
+    } finally {
+      setSending(false);
     }
   };
 
-  const renderSlider = (
-    value: number,
-    onChange: (value: number) => void,
-    label: string,
-    icon: React.ReactNode,
-    lowLabel: string,
-    highLabel: string,
-    color: string,
-    previousValue?: number
-  ) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-        {icon}
-        {label}
-      </label>
-
-      {/* 🧊 ここが「うっすら前回表示」 */}
-      {previousValue !== undefined && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
-          前回: <span className="font-semibold">{previousValue}</span> / 10
-          {lastRecord?.date && (
-            <span className="ml-1">（{lastRecord.date}）</span>
-          )}
-        </p>
-      )}
-
-      <div className="flex items-center space-x-3">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">
-          {lowLabel}
-        </span>
-        <input
-          type="range"
-          min="1"
-          max="10"
-          value={value}
-          onChange={(e) => onChange(parseInt(e.target.value))}
-          className={`flex-1 h-2 rounded-lg appearance-none cursor-pointer ${color}`}
-          style={{
-            background: `linear-gradient(to right, ${
-              color.includes('blue')
-                ? '#3b82f6'
-                : color.includes('green')
-                ? '#10b981'
-                : '#ef4444'
-            } 0%, ${
-              color.includes('blue')
-                ? '#3b82f6'
-                : color.includes('green')
-                ? '#10b981'
-                : '#ef4444'
-            } ${(value - 1) * 11.11}%, #9ca3af ${(value - 1) * 11.11}%, #9ca3af 100%)`,
-          }}
-        />
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right">
-          {highLabel}
-        </span>
-      </div>
-      <div className="text-center mt-2">
-        <span className={`text-2xl font-bold ${color}`}>{value}</span>
-        <span className="text-sm text-gray-500 dark:text-gray-400"> / 10</span>
-      </div>
-    </div>
-  );
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
-          {error}
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={[
+          'w-full rounded-xl px-4 py-3 flex items-center justify-center gap-2 transition-colors',
+          'border',
+          highlight
+            ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 active:bg-blue-800'
+            : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60 active:bg-gray-100 dark:active:bg-gray-800',
+        ].join(' ')}
+      >
+        <Send className="w-4 h-4" />
+        <span className="font-medium">状態をスタッフに共有する</span>
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50">
+          {/* overlay */}
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !sending && setOpen(false)}
+          />
+
+          {/* modal */}
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 shadow-2xl overflow-hidden">
+            {/* header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+              <div className="font-semibold text-gray-900 dark:text-white">共有内容の確認</div>
+              <button
+                type="button"
+                onClick={() => !sending && setOpen(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 active:bg-gray-200 dark:active:bg-white/15"
+                aria-label="閉じる"
+              >
+                <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* what will be shared */}
+              <div className="text-sm text-gray-700 dark:text-gray-200 space-y-1">
+                <p>スタッフに以下の情報が共有されます：</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>直近の練習負荷（sRPE / ACWR）</li>
+                  <li>最近の体重・コンディション</li>
+                  <li>現在出ているアラート</li>
+                </ul>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  ※記録データ自体は保存せず、共有ログのみ残します。
+                </p>
+              </div>
+
+              {/* note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+                  メモ（任意）
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                  placeholder="例：膝に違和感、睡眠が浅い、今日はやり切れない感じ など"
+                />
+              </div>
+
+              {/* confirm row (tapable) */}
+              <button
+                type="button"
+                onClick={() => setChecked((v) => !v)}
+                className={[
+                  'w-full text-left rounded-xl border px-3 py-3 transition',
+                  'flex items-start gap-3',
+                  checked
+                    ? 'border-blue-500/60 bg-blue-50 dark:bg-blue-500/10'
+                    : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10',
+                ].join(' ')}
+                aria-pressed={checked}
+              >
+                <span
+                  className={[
+                    'mt-0.5 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition',
+                    checked
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'bg-transparent border-gray-400/60 dark:border-gray-300/40',
+                  ].join(' ')}
+                >
+                  {checked && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </span>
+
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    共有する内容を確認しました{' '}
+                    <span className="text-xs text-amber-700 dark:text-amber-300">（必須）</span>
+                  </div>
+                  {!checked && (
+                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                      ここをタップして確認すると「共有する」ボタンが有効になります
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              {!checked && (
+                <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div>共有するには「共有内容を確認しました（必須）」をONにしてください</div>
+                </div>
+              )}
+
+              {/* submit */}
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!canSend}
+                className={[
+                  'w-full rounded-xl px-4 py-3 font-semibold transition-colors',
+                  canSend
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                    : 'bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-white/40 cursor-not-allowed',
+                ].join(' ')}
+              >
+                {sending ? '送信中...' : '共有する'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          日付
-        </label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-          required
-        />
-      </div>
-
-      {renderSlider(
-        motivationLevel,
-        setMotivationLevel,
-        'モチベーション',
-        <Heart className="w-4 h-4 inline mr-2 text-blue-500" />,
-        '低い',
-        '高い',
-        'text-blue-500',
-        lastRecord?.motivation_level
-      )}
-
-      {renderSlider(
-        energyLevel,
-        setEnergyLevel,
-        'エネルギーレベル',
-        <Zap className="w-4 h-4 inline mr-2 text-green-500" />,
-        '疲労',
-        '充実',
-        'text-green-500',
-        lastRecord?.energy_level
-      )}
-
-      {renderSlider(
-        stressLevel,
-        setStressLevel,
-        'ストレスレベル',
-        <AlertCircle className="w-4 h-4 inline mr-2 text-red-500" />,
-        'リラックス',
-        '高ストレス',
-        'text-red-500',
-        lastRecord?.stress_level
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          メモ（任意）
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="今日の出来事や気持ちを記録..."
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
-        />
-      </div>
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+      {/* ✅ bottom toast */}
+      <div
+        className={[
+          'fixed left-1/2 bottom-5 -translate-x-1/2 z-[60]',
+          'transition-all duration-200',
+          toast.open ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none',
+        ].join(' ')}
+        role="status"
+        aria-live="polite"
       >
-        {loading ? (
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-        ) : (
-          <>
-            <Heart className="w-5 h-5 mr-2" />
-            モチベーション記録を追加
-          </>
-        )}
-      </button>
-    </form>
+        <div
+          className={[
+            'min-w-[260px] max-w-[92vw] rounded-2xl px-4 py-3 shadow-xl border backdrop-blur',
+            toast.type === 'success'
+              ? 'bg-emerald-600/90 text-white border-emerald-500/40'
+              : 'bg-red-600/90 text-white border-red-500/40',
+          ].join(' ')}
+        >
+          <div className="text-sm font-semibold">{toast.message}</div>
+        </div>
+      </div>
+    </>
   );
 }
