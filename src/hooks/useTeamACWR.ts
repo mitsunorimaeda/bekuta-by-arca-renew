@@ -154,8 +154,9 @@ export function useTeamACWR(teamId: string | null) {
             athleteId,
             acwrArr?.slice(0, 3) // ← 先頭3件だけでOK
           );
-      
-          athleteleteACWRData[athleteId] = acwrArr;
+          athleteACWRData[athleteId] = acwrArr;
+          if (!acwrArr || acwrArr.length === 0) {
+            console.log('[ACWR] empty for athlete:', athleteId, 'records:', athleteRecords.length);
         }
       }
 
