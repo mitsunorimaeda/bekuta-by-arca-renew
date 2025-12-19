@@ -474,11 +474,14 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
       {menuOpen && (
         <div className="fixed inset-0 z-50" onClick={() => setMenuOpen(false)}>
           <div className="absolute inset-0 bg-black bg-opacity-50"></div>
+
           <div
             className="absolute top-20 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-72 max-h-[calc(100vh-6rem)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2">
+
+              {/* 🏠 ホーム（旧：統合ビュー） */}
               <button
                 onClick={() => { setActiveTab('unified'); setMenuOpen(false); }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -488,30 +491,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                <span className="text-sm font-medium">統合ビュー</span>
+                <span className="text-sm font-medium">ホーム</span>
               </button>
-              <button
-                onClick={() => { setActiveTab('overview'); setMenuOpen(false); }}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'overview'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <Activity className="w-4 h-4" />
-                <span className="text-sm font-medium">練習記録</span>
-              </button>
-              <button
-                onClick={() => { setActiveTab('trends'); setMenuOpen(false); }}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'trends'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span className="text-sm font-medium">傾向分析</span>
-              </button>
+
+              {/* 体重管理 */}
               <button
                 onClick={() => { setActiveTab('weight'); setMenuOpen(false); }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -523,28 +506,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <Scale className="w-4 h-4" />
                 <span className="text-sm font-medium">体重管理</span>
               </button>
-              <button
-                onClick={() => { setActiveTab('insights'); setMenuOpen(false); }}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'insights'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <LineChart className="w-4 h-4" />
-                <span className="text-sm font-medium">相関分析</span>
-              </button>
-              <button
-                onClick={() => { setActiveTab('performance'); setMenuOpen(false); }}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'performance'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <Zap className="w-4 h-4" />
-                <span className="text-sm font-medium">パフォーマンス</span>
-              </button>
+
+              {/* コンディション管理 */}
               <button
                 onClick={() => { setActiveTab('conditioning'); setMenuOpen(false); }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -554,8 +517,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 }`}
               >
                 <Heart className="w-4 h-4" />
-                <span className="text-sm font-medium">コンディション</span>
+                <span className="text-sm font-medium">コンディション管理</span>
               </button>
+
+              {/* 女性のみ：月経周期 */}
               {user.gender === 'female' && (
                 <button
                   onClick={() => { setActiveTab('cycle'); setMenuOpen(false); }}
@@ -569,6 +534,47 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                   <span className="text-sm font-medium">月経周期</span>
                 </button>
               )}
+
+              {/* 練習記録 */}
+              <button
+                onClick={() => { setActiveTab('overview'); setMenuOpen(false); }}
+                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                  activeTab === 'overview'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <Activity className="w-4 h-4" />
+                <span className="text-sm font-medium">練習記録</span>
+              </button>
+
+              {/* 傾向分析 */}
+              <button
+                onClick={() => { setActiveTab('trends'); setMenuOpen(false); }}
+                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                  activeTab === 'trends'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span className="text-sm font-medium">傾向分析</span>
+              </button>
+
+              {/* パフォーマンス */}
+              <button
+                onClick={() => { setActiveTab('performance'); setMenuOpen(false); }}
+                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                  activeTab === 'performance'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <Zap className="w-4 h-4" />
+                <span className="text-sm font-medium">パフォーマンス</span>
+              </button>
+
+              {/* ゲーミフィケーション */}
               <button
                 onClick={() => { setActiveTab('gamification'); setMenuOpen(false); }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -581,18 +587,13 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <Trophy className="w-4 h-4" />
                 <span className="text-sm font-medium">ゲーミフィケーション</span>
               </button>
+
+              {/* 設定・法的情報 */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
-              <button
-                onClick={() => { setShowExportPanel(true); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <Download className="w-4 h-4" />
-                <span className="text-sm font-medium">エクスポート</span>
-              </button>
+
               <button
                 onClick={() => { setActiveTab('settings'); setMenuOpen(false); }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'messages' ||
                   activeTab === 'settings'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -601,65 +602,43 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <Settings className="w-4 h-4" />
                 <span className="text-sm font-medium">設定</span>
               </button>
-              <button
-                onClick={() => setActiveTab('messages')}
-                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                  activeTab === 'messages'
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span className="text-sm font-medium">メッセージ</span>
-              </button>
 
-              {/* 法的情報セクション */}
+              {/* 法的情報 */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-              <div className="px-3 py-1.5">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">法的情報</p>
-              </div>
+
               {onNavigateToHelp && (
                 <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToHelp();
-                  }}
+                  onClick={() => { setMenuOpen(false); onNavigateToHelp(); }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <HelpCircle className="w-4 h-4" />
                   <span className="text-sm font-medium">ヘルプ・マニュアル</span>
                 </button>
               )}
+
               {onNavigateToPrivacy && (
                 <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToPrivacy();
-                  }}
+                  onClick={() => { setMenuOpen(false); onNavigateToPrivacy(); }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <Shield className="w-4 h-4" />
                   <span className="text-sm font-medium">プライバシーポリシー</span>
                 </button>
               )}
+
               {onNavigateToTerms && (
                 <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToTerms();
-                  }}
+                  onClick={() => { setMenuOpen(false); onNavigateToTerms(); }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <FileText className="w-4 h-4" />
                   <span className="text-sm font-medium">利用規約</span>
                 </button>
               )}
+
               {onNavigateToCommercial && (
                 <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToCommercial();
-                  }}
+                  onClick={() => { setMenuOpen(false); onNavigateToCommercial(); }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <Building2 className="w-4 h-4" />
