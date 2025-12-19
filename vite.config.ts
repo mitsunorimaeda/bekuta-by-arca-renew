@@ -1,14 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react()
-  ],
+  plugins: [react()],
+
+  // ✅ 追加：React の二重読み込みを防ぐ
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
@@ -21,6 +25,7 @@ export default defineConfig({
       },
     },
   },
+
   server: {
     host: true,
     port: 5173,
