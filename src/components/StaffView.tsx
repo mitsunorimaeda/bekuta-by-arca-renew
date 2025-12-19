@@ -35,9 +35,6 @@ import { TeamPerformanceComparison } from './TeamPerformanceComparison';
 import { TeamTrendAnalysis } from './TeamTrendAnalysis';
 import { useOrganizations } from '../hooks/useOrganizations';
 
-const [athletesLoading, setAthletesLoading] = useState(false);
-const [athletesError, setAthletesError] = useState<string | null>(null);
-
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
 );
@@ -133,6 +130,24 @@ const getThisWeekRange = () => {
   return { start: toISODate(mon), end: toISODate(sun) };
 };
 
+// -------------------------
+// ACWR helpers
+// -------------------------
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+const calcRisk = (acwr: number): 'high' | 'caution' | 'good' | 'low' => {
+  if (acwr >= 1.5) return 'high';
+  if (acwr >= 1.3) return 'caution';
+  if (acwr >= 0.8) return 'good';
+  return 'low';
+};
+
+type TrainingRow = {
+  user_id: string;
+  date: string; // yyyy-mm-dd 想定
+  load: number | null;
+};
+
 export function StaffView({
   user,
   alerts,
@@ -146,6 +161,16 @@ export function StaffView({
   // =========================
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+
+  const [athletesLoading, setAthletesLoading] = useState(false);
+  const [athletesError, setAthletesError] = useState<string | null>(null);
+
+  // ✅ AthleteList に渡すのは「数値Map」にする（表示が目的）
+  const [athleteACWRMap, setAthleteACWRMap] = useState<Record<string, number>>({});
+  const [athleteACWRMeta, setAthleteACWRMeta] = useState<
+    Record<string, { daysOfData: number; riskLevel: 'high' | 'caution' | 'good' | 'low' } >
+  >({});
+  const [acwrLoading, setAcwrLoading] = useState(false);
 
   // 選手一覧/途切れカード用（既存の view を使う）
   const [athletes, setAthletes] = useState<StaffAthleteWithActivity[]>([]);
@@ -214,13 +239,10 @@ export function StaffView({
   }, [shouldShowTutorial, startTutorial, loading]);
 
   // =========================
-  // ACWR 
+  // Team ACWR (chart用は既存hookを使う)
+  // ※ hookの athleteACWRMap と名前衝突しないように別名
   // =========================
-  const { teamACWRData, athleteACWRMap, loading: teamACWRLoading } = useTeamACWR(
-    selectedTeam?.id || null
-  );
-
- 
+  const { teamACWRData, loading: teamACWRLoading } = useTeamACWR(selectedTeam?.id || null);
 
   // =========================
   // Alerts derived
@@ -239,15 +261,26 @@ export function StaffView({
 
   useEffect(() => {
     if (!selectedTeam?.id) return;
-  
+
     // 🔑 チーム切替時に一旦リセット
     setAthletes([]);
     setWeekCards([]);
     setTeamCauseTags([]);
-  
+    setAthleteACWRMap({});
+    setAthleteACWRMeta({});
+
     fetchTeamAthletesWithActivity(selectedTeam.id);
     fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
   }, [selectedTeam?.id, weekRange.start, weekRange.end]);
+
+  // ✅ athletes が取れたタイミングで ACWR を計算して反映（team_idがtraining_recordsに無くても動く）
+  useEffect(() => {
+    if (!selectedTeam?.id) return;
+    if (!athletes || athletes.length === 0) return;
+
+    fetchAthleteACWRFromTrainingRecords(athletes.map((a) => a.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTeam?.id, athletes]);
 
   // 今日が変わったら localStorage を更新
   useEffect(() => {
@@ -297,19 +330,19 @@ export function StaffView({
   const fetchTeamAthletesWithActivity = async (teamId: string) => {
     try {
       setAthletesLoading(true);
-  
-      const currentTeamId = teamId; // 🔒 この fetch 専用のID
-  
+      setAthletesError(null);
+
+      const currentTeamId = teamId;
+
       const { data, error } = await supabase
         .from('staff_team_athletes_with_activity' as any)
         .select('*')
         .eq('team_id', teamId);
-  
+
       if (error) throw error;
-  
-      // 🚨 チームが変わってたら捨てる
+
       if (selectedTeam?.id !== currentTeamId) return;
-  
+
       setAthletes((data || []) as StaffAthleteWithActivity[]);
     } catch (e) {
       console.error(e);
@@ -350,6 +383,98 @@ export function StaffView({
     } finally {
       setWeekCardsLoading(false);
       setWeekLoading(false);
+    }
+  };
+
+  // =========================
+  // ✅ ACWR（training_records から計算して数値を反映）
+  // =========================
+  const fetchAthleteACWRFromTrainingRecords = async (athleteIds: string[]) => {
+    try {
+      setAcwrLoading(true);
+
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 28);
+
+      const startISO = toISODate(start);
+      const endISO = toISODate(end);
+
+      // training_records: user_id, date, load がある前提
+      // team_id が無くても「対象athleteIdsのみ」取ればOK
+      const { data, error } = await supabase
+        .from('training_records')
+        .select('user_id,date,load')
+        .in('user_id', athleteIds)
+        .gte('date', startISO)
+        .lte('date', endISO);
+
+      if (error) throw error;
+
+      const rows = (data || []) as TrainingRow[];
+
+      // athlete -> date -> load の形にする（同一日複数あれば合算）
+      const byAthlete = new Map<string, Map<string, number>>();
+
+      for (const r of rows) {
+        const uid = r.user_id;
+        if (!uid) continue;
+
+        // date を yyyy-mm-dd に寄せる
+        const d = (r.date || '').slice(0, 10);
+        if (!d) continue;
+
+        const load = typeof r.load === 'number' ? r.load : Number(r.load ?? 0);
+        if (!Number.isFinite(load)) continue;
+
+        if (!byAthlete.has(uid)) byAthlete.set(uid, new Map());
+        const byDate = byAthlete.get(uid)!;
+
+        byDate.set(d, (byDate.get(d) ?? 0) + load);
+      }
+
+      const newMap: Record<string, number> = {};
+      const newMeta: Record<string, { daysOfData: number; riskLevel: 'high' | 'caution' | 'good' | 'low' }> = {};
+
+      for (const uid of athleteIds) {
+        const byDate = byAthlete.get(uid);
+        if (!byDate || byDate.size === 0) continue;
+
+        const dates = Array.from(byDate.keys()).sort(); // yyyy-mm-dd なので文字列sortでOK
+        const daysOfData = dates.length;
+
+        // 直近7日
+        const last7 = dates.slice(-7);
+        const acute = last7.reduce((sum, d) => sum + (byDate.get(d) ?? 0), 0);
+
+        // 直近28日（取れてる分）
+        const chronicTotal = dates.reduce((sum, d) => sum + (byDate.get(d) ?? 0), 0);
+        const chronic = chronicTotal / 4;
+
+        if (chronic <= 0) continue;
+
+        const acwr = acute / chronic;
+
+        // データが少なすぎる場合は表示しない（好みで調整OK）
+        // 例：7日未満は空にする
+        if (daysOfData < 7) continue;
+
+        newMap[uid] = round2(acwr);
+        newMeta[uid] = {
+          daysOfData,
+          riskLevel: calcRisk(acwr),
+        };
+      }
+
+      setAthleteACWRMap(newMap);
+      setAthleteACWRMeta(newMeta);
+    } catch (e) {
+      console.error('Failed to calc athlete ACWR', e);
+      // 失敗しても画面は落とさない
+      setAthleteACWRMap({});
+      setAthleteACWRMeta({});
+    } finally {
+      setAcwrLoading(false);
     }
   };
 
@@ -410,11 +535,11 @@ export function StaffView({
     reason: string;
     meta?: string; // 補足（例：ACWR 1.8 / 睡眠5.2h）
   };
-  
+
   const focusItems = useMemo<FocusItem[]>(() => {
     const items: FocusItem[] = [];
-  
-    // 🟥 注意：記録途切れ（noDataAthletes が既にあるので最優先で入れる）
+
+    // 🟥 注意：記録途切れ
     noDataAthletes.slice(0, 3).forEach(({ athlete, daysSinceLast }) => {
       items.push({
         user_id: athlete.id,
@@ -424,15 +549,14 @@ export function StaffView({
         meta: `${daysSinceLast}日未入力`,
       });
     });
-  
-    // weekCards が無いと以降は作れない
+
     if (!weekCards || weekCards.length === 0) return items.slice(0, 5);
-  
+
     // 🟥 注意：ACWR高め（共有ONのみ）
     weekCards.forEach((c) => {
       if (!c.is_sharing_active) return;
-  
-      const acwr = (athleteACWRMap as any)?.[c.athlete_user_id];
+
+      const acwr = athleteACWRMap?.[c.athlete_user_id];
       if (typeof acwr === 'number' && acwr >= 1.5) {
         items.push({
           user_id: c.athlete_user_id,
@@ -443,8 +567,8 @@ export function StaffView({
         });
       }
     });
-  
-    // 🟨 声かけ：睡眠が短い（共有ONのみ、値がある人だけ）
+
+    // 🟨 声かけ：睡眠が短い
     weekCards.forEach((c) => {
       if (!c.is_sharing_active) return;
       if (c.sleep_hours_avg != null && c.sleep_hours_avg <= 5.5) {
@@ -457,7 +581,7 @@ export function StaffView({
         });
       }
     });
-  
+
     // 🟩 称賛：行動目標達成率高い
     weekCards.forEach((c) => {
       if (c.action_total > 0 && (c.action_done_rate ?? 0) >= 90) {
@@ -470,14 +594,13 @@ export function StaffView({
         });
       }
     });
-  
-    // 同一選手が複数出るので「優先順位で1件にまとめる」
+
     const priority: Record<FocusItem['category'], number> = {
       risk: 3,
       checkin: 2,
       praise: 1,
     };
-  
+
     const map = new Map<string, FocusItem>();
     for (const it of items) {
       const prev = map.get(it.user_id);
@@ -485,12 +608,10 @@ export function StaffView({
         map.set(it.user_id, it);
       }
     }
-  
+
     const merged = Array.from(map.values());
-  
-    // 並び順：risk → checkin → praise
     merged.sort((a, b) => priority[b.category] - priority[a.category]);
-  
+
     return merged.slice(0, 5);
   }, [noDataAthletes, weekCards, athleteACWRMap]);
 
@@ -513,7 +634,7 @@ export function StaffView({
   const sharingOffCount = useMemo(() => {
     return Math.max(0, athletes.length - sharingCount);
   }, [athletes.length, sharingCount]);
-  
+
   const sharingOnRate = useMemo(() => {
     if (athletes.length === 0) return null;
     return Math.round((sharingCount / athletes.length) * 100);
@@ -535,13 +656,10 @@ export function StaffView({
     return map;
   }, [weekCards]);
 
-
-
   const teamActionDoneRate = useMemo(() => {
     const rows = weekCards.filter((c) => c.action_total > 0);
     if (rows.length === 0) return null;
-    const avg =
-      rows.reduce((sum, r) => sum + (r.action_done_rate || 0), 0) / rows.length;
+    const avg = rows.reduce((sum, r) => sum + (r.action_done_rate || 0), 0) / rows.length;
     return Math.round(avg);
   }, [weekCards]);
 
@@ -914,18 +1032,12 @@ export function StaffView({
               </div>
             )}
 
-
-
             {/* 📌 今週のフォーカス（自動抽出） */}
             {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm border p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                    今週のフォーカス
-                  </h3>
-                  <div className="text-xs text-gray-500">
-                    最大5名（自動抽出）
-                  </div>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">今週のフォーカス</h3>
+                  <div className="text-xs text-gray-500">最大5名（自動抽出）</div>
                 </div>
 
                 {focusItems.length === 0 ? (
@@ -943,11 +1055,7 @@ export function StaffView({
                           : 'bg-emerald-100 text-emerald-700';
 
                       const label =
-                        it.category === 'risk'
-                          ? '注意'
-                          : it.category === 'checkin'
-                          ? '声かけ'
-                          : '称賛';
+                        it.category === 'risk' ? '注意' : it.category === 'checkin' ? '声かけ' : '称賛';
 
                       return (
                         <li
@@ -959,9 +1067,7 @@ export function StaffView({
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${badge}`}>
                                 {label}
                               </span>
-                              <div className="font-medium text-gray-900 truncate">
-                                {it.name}
-                              </div>
+                              <div className="font-medium text-gray-900 truncate">{it.name}</div>
                             </div>
                             <div className="text-xs sm:text-sm text-gray-600 mt-1">
                               {it.reason}
@@ -971,14 +1077,7 @@ export function StaffView({
 
                           <button
                             className="text-xs sm:text-sm px-3 py-1.5 rounded-lg border hover:bg-white"
-                            onClick={() => {
-                              const target = athletes.find((a) => a.id === it.user_id);
-                              if (!target) {
-                                window.alert('選手データが見つかりませんでした');
-                                return;
-                              }
-                              handleAthleteSelect(target as User);
-                            }}
+                            onClick={() => handleOpenAthleteDetailFromFocus({ user_id: it.user_id })}
                           >
                             詳細を見る
                           </button>
@@ -1081,8 +1180,6 @@ export function StaffView({
                       </div>
                     </button>
 
-                   
-
                     <button
                       onClick={() => setActiveTab('team-analytics')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -1176,9 +1273,7 @@ export function StaffView({
                   {activeTab === 'athletes' ? (
                     <div>
                       <div className="flex items-center justify-between mb-4 sm:mb-6">
-                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                          選手一覧
-                        </h3>
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">選手一覧</h3>
                         <div className="flex items-center space-x-4">
                           <span className="bg-gray-100 text-gray-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
                             {athletes.length}名
@@ -1198,39 +1293,41 @@ export function StaffView({
                       <div className="text-xs text-gray-600 mb-3 flex items-center gap-2">
                         <Lock className="w-4 h-4" />
                         共有OFF（🔒）の選手は、詳細モーダルを開けません
+                        {acwrLoading && (
+                          <span className="ml-2 text-xs text-gray-500">（ACWR計算中…）</span>
+                        )}
                       </div>
 
                       {athletesLoading ? (
-                          <div className="flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                        <div className="flex items-center justify-center py-12">
+                          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                        </div>
+                      ) : athletesError ? (
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+                          <div className="font-semibold mb-1">選手一覧の取得に失敗しました</div>
+                          <div className="mb-3">{athletesError}</div>
+                          <button
+                            className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
+                            onClick={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
+                          >
+                            再取得
+                          </button>
+                        </div>
+                      ) : athletes.length === 0 ? (
+                        <div className="bg-white border rounded-xl p-6 text-center text-gray-600">
+                          <div className="font-semibold text-gray-900 mb-1">選手がまだいません</div>
+                          <div className="text-sm">
+                            チームに選手が所属しているか（team_id / view 条件）を確認してください。
                           </div>
-                        ) : athletesError ? (
-                          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-                            <div className="font-semibold mb-1">選手一覧の取得に失敗しました</div>
-                            <div className="mb-3">{athletesError}</div>
-                            <button
-                              className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
-                              onClick={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
-                            >
-                              再取得
-                            </button>
-                          </div>
-                        ) : athletes.length === 0 ? (
-                          <div className="bg-white border rounded-xl p-6 text-center text-gray-600">
-                            <div className="font-semibold text-gray-900 mb-1">選手がまだいません</div>
-                            <div className="text-sm">
-                              チームに選手が所属しているか（team_id / view 条件）を確認してください。
-                            </div>
-                          </div>
-                        ) : (
-                          <AthleteList
-                            athletes={athletes}
-                            onAthleteSelect={handleAthleteSelect}
-                            athleteACWRMap={athleteACWRMap}
-                            weekCardMap={weekCardMap}
-                          />
-                        )}
-
+                        </div>
+                      ) : (
+                        <AthleteList
+                          athletes={athletes}
+                          onAthleteSelect={handleAthleteSelect}
+                          athleteACWRMap={athleteACWRMap}
+                          weekCardMap={weekCardMap}
+                        />
+                      )}
                     </div>
                   ) : activeTab === 'team-average' ? (
                     <div>
@@ -1242,7 +1339,6 @@ export function StaffView({
                         <TeamACWRChart data={teamACWRData} teamName={selectedTeam.name} />
                       )}
                     </div>
-                
                   ) : activeTab === 'team-analytics' ? (
                     <div className="space-y-6">
                       <TeamInjuryRiskHeatmap teamId={selectedTeam.id} />
@@ -1323,10 +1419,7 @@ export function StaffView({
 
       {/* Athlete Detail Modal（共有ONのみ開く） */}
       {selectedAthlete && (
-        <AthleteDetailModal
-          athlete={selectedAthlete}
-          onClose={() => setSelectedAthlete(null)}
-        />
+        <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
       )}
 
       {/* Alert Panel */}
