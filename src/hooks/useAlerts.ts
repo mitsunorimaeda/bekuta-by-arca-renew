@@ -1,14 +1,21 @@
+// src/hooks/useAlerts.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Alert, AlertRule, DEFAULT_ALERT_RULES, generateAlerts, filterActiveAlerts, sortAlertsByPriority } from '../lib/alerts';
+import {
+  Alert,
+  AlertRule,
+  DEFAULT_ALERT_RULES,
+  generateAlerts,
+  filterActiveAlerts,
+  sortAlertsByPriority,
+} from '../lib/alerts';
 import { calculateACWR } from '../lib/acwr';
-
-// --- 省略（インポート部はそのまま） ---
-const MIN_DAYS_FOR_ACWR = 21;
 
 const ENABLE_REALTIME_ALERT_EMAILS = false;
 
-export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin') {
+type UserRole = 'athlete' | 'staff' | 'admin';
+
+export function useAlerts(userId: string, userRole: UserRole) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,31 +31,29 @@ export function useAlerts(userId: string, userRole: 'athlete' | 'staff' | 'admin
     }
   };
 
-  // ---- 以下は全て同じ（変更なし） ----
+  // -----------------------------
+  // ✅ Users取得（staff/admin含む） + dedupe
+  // -----------------------------
+  const loadUsersToCheck = useCallback(async () => {
+    if (!userId || !userRole) return [];
 
-  // メモ化されたアラートチェック関数
-const checkAndGenerateAlerts = useCallback(async () => {
-  if (!userId || !userRole) return;
-
-  try {
     let usersToCheck: Array<{ id: string; name: string }> = [];
 
     if (userRole === 'athlete') {
-      // 選手の場合は自分のみ
       const { data: userData } = await supabase
         .from('users')
         .select('id, name')
         .eq('id', userId)
         .single();
 
-      if (userData) {
-        usersToCheck = [userData];
-      }
-    } else if (userRole === 'staff') {
-      // スタッフの場合は担当チームの選手
-      const { data: teamData } = await supabase
+      if (userData) usersToCheck = [userData];
+    }
+
+    if (userRole === 'staff') {
+      const { data: teamData, error } = await supabase
         .from('staff_team_links')
-        .select(`
+        .select(
+          `
           team_id,
           teams!inner (
             users!inner (
@@ -56,48 +61,97 @@ const checkAndGenerateAlerts = useCallback(async () => {
               name
             )
           )
-        `)
+        `
+        )
         .eq('staff_user_id', userId);
 
-      if (teamData) {
-        usersToCheck = teamData.flatMap((link) =>
-          (link.teams as any)?.users || []
-        );
+      if (error) {
+        console.error('[useAlerts] staff team fetch error:', error);
       }
-    } else if (userRole === 'admin') {
-      // 管理者の場合は全選手
-      const { data: allAthletes } = await supabase
+
+      // ここが重複しやすい（複数team linkで同じ選手が混ざる）
+      const rawUsers =
+        teamData?.flatMap((link: any) => (link.teams as any)?.users || []) || [];
+
+      // ✅ dedupe (id)
+      const deduped = new Map<string, { id: string; name: string }>();
+      for (const u of rawUsers) {
+        if (!u?.id) continue;
+        if (!deduped.has(u.id)) deduped.set(u.id, { id: u.id, name: u.name ?? '' });
+      }
+
+      usersToCheck = Array.from(deduped.values());
+    }
+
+    if (userRole === 'admin') {
+      const { data: allAthletes, error } = await supabase
         .from('users')
         .select('id, name')
         .eq('role', 'athlete');
 
-      usersToCheck = allAthletes || [];
+      if (error) console.error('[useAlerts] admin athletes fetch error:', error);
+
+      // admin は基本重複しにくいけど念のためdedupe
+      const deduped = new Map<string, { id: string; name: string }>();
+      for (const u of allAthletes || []) {
+        if (!u?.id) continue;
+        if (!deduped.has(u.id)) deduped.set(u.id, { id: u.id, name: u.name ?? '' });
+      }
+      usersToCheck = Array.from(deduped.values());
     }
 
-    const newAlerts: Alert[] = [];
+    return usersToCheck;
+  }, [userId, userRole]);
 
-    // ★ ここで役割ごとに使うルールを調整
-    // staff / admin には no_data アラートを出さない
-    const effectiveRules = alertRules.filter((rule) => {
-      if (userRole !== 'athlete' && rule.type === 'no_data') {
-        return false;
-      }
-      return true;
-    });
+  // -----------------------------
+  // ✅ Alert生成（並列化）
+  // -----------------------------
+  const checkAndGenerateAlerts = useCallback(async () => {
+    if (!userId || !userRole) return;
 
-    for (const user of usersToCheck) {
-      // 練習記録を取得
-      const { data: trainingRecords } = await supabase
-        .from('training_records')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: true });
+    try {
+      const usersToCheck = await loadUsersToCheck();
+      if (!usersToCheck.length) return;
 
-      if (trainingRecords) {
+      // ★ roleごとのルール調整：staff/admin には no_data を出さない
+      const effectiveRules = alertRules.filter((rule) => {
+        if (userRole !== 'athlete' && rule.type === 'no_data') return false;
+        return true;
+      });
+
+      // ✅ training_records を並列取得
+      const fetchPromises = usersToCheck.map(async (u) => {
+        const { data: trainingRecords, error } = await supabase
+          .from('training_records')
+          .select('*')
+          .eq('user_id', u.id)
+          .order('date', { ascending: true });
+
+        if (error) {
+          // ここで throw すると全体が落ちるので、呼び出し側で握る
+          throw { user: u, error };
+        }
+
+        return { user: u, trainingRecords: trainingRecords || [] };
+      });
+
+      // ✅ 一部失敗しても全体は生かす
+      const results = await Promise.allSettled(fetchPromises);
+
+      const newAlerts: Alert[] = [];
+
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          console.error('[useAlerts] training_records fetch failed:', r.reason);
+          continue;
+        }
+
+        const { user, trainingRecords } = r.value;
+
         // ACWRデータを計算
         const acwrData = calculateACWR(trainingRecords);
 
-        // アラートを生成（有効ルールのみ）
+        // アラート生成（有効ルールのみ）
         const userAlerts = generateAlerts(
           user.id,
           user.name,
@@ -108,52 +162,50 @@ const checkAndGenerateAlerts = useCallback(async () => {
 
         newAlerts.push(...userAlerts);
       }
-    }
 
-    // 既存のアラートと重複チェック（ここはそのまま）
-    setAlerts(prev => {
-      const existingAlertKeys = new Set(
-        prev.map(alert => `${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
-      );
-    
-      const uniqueNewAlerts = newAlerts.filter(alert =>
-        !existingAlertKeys.has(`${alert.user_id}-${alert.type}-${alert.created_at.split('T')[0]}`)
-      );
-    
-      if (uniqueNewAlerts.length > 0) {
-        // ★ ここをフラグでガード：今はリアルタイムのメール送信は停止
-        if (ENABLE_REALTIME_ALERT_EMAILS) {
-          sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch(error => {
-            console.error('Error sending alert emails:', error);
-          });
+      // 既存アラートと重複チェック（既存ロジック維持）
+      setAlerts((prev) => {
+        const existingAlertKeys = new Set(
+          prev.map((a) => `${a.user_id}-${a.type}-${a.created_at.split('T')[0]}`)
+        );
+
+        const uniqueNewAlerts = newAlerts.filter(
+          (a) => !existingAlertKeys.has(`${a.user_id}-${a.type}-${a.created_at.split('T')[0]}`)
+        );
+
+        if (uniqueNewAlerts.length > 0) {
+          if (ENABLE_REALTIME_ALERT_EMAILS) {
+            sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch((error) => {
+              console.error('Error sending alert emails:', error);
+            });
+          }
+
+          const combined = [...prev, ...uniqueNewAlerts];
+          return sortAlertsByPriority(filterActiveAlerts(combined));
         }
-    
-        const combined = [...prev, ...uniqueNewAlerts];
-        return sortAlertsByPriority(filterActiveAlerts(combined));
-      }
-    
-      return filterActiveAlerts(prev);
-    });
-  } catch (error) {
-    console.error('Error checking and generating alerts:', error);
-  }
-}, [userId, userRole, alertRules]);
 
-  // アラートルールの初期化
+        return filterActiveAlerts(prev);
+      });
+    } catch (error) {
+      console.error('Error checking and generating alerts:', error);
+    }
+  }, [userId, userRole, alertRules, loadUsersToCheck]);
+
+  // -----------------------------
+  // Alertルール初期化
+  // -----------------------------
   const loadAlertRules = useCallback(async () => {
     try {
-      // アラートルールテーブルが存在しない場合はデフォルトルールを使用
       const rules = DEFAULT_ALERT_RULES.map((rule, index) => ({
         id: `default-${index}`,
-        ...rule
+        ...rule,
       }));
       setAlertRules(rules);
     } catch (error) {
       console.error('Error loading alert rules:', error);
-      // フォールバック: デフォルトルールを使用
       const rules = DEFAULT_ALERT_RULES.map((rule, index) => ({
         id: `default-${index}`,
-        ...rule
+        ...rule,
       }));
       setAlertRules(rules);
     }
@@ -171,60 +223,47 @@ const checkAndGenerateAlerts = useCallback(async () => {
           setLoading(false);
         }
       };
-
       initializeAlerts();
     }
   }, [userId, userRole, loadAlertRules]);
 
-  // アラートルールが設定された後にアラートチェックを実行
+  // ルール設定後にチェック
   useEffect(() => {
     if (alertRules.length > 0 && userId && userRole) {
       checkAndGenerateAlerts();
     }
-  }, [alertRules, checkAndGenerateAlerts]);
+  }, [alertRules, checkAndGenerateAlerts, userId, userRole]);
 
-  // 定期的なアラートチェック（30分ごとに変更）
+  // 定期チェック（30分）
   useEffect(() => {
     if (alertRules.length > 0 && userId && userRole) {
-      const interval = setInterval(checkAndGenerateAlerts, 30 * 60 * 1000); // 30分ごと
+      const interval = setInterval(checkAndGenerateAlerts, 30 * 60 * 1000);
       return () => clearInterval(interval);
     }
-  }, [alertRules, checkAndGenerateAlerts]);
+  }, [alertRules, checkAndGenerateAlerts, userId, userRole]);
 
-  // 未読数の更新
+  // 未読数更新
   useEffect(() => {
-    const unread = alerts.filter(alert => !alert.is_read && !alert.is_dismissed).length;
+    const unread = alerts.filter((a) => !a.is_read && !a.is_dismissed).length;
     setUnreadCount(unread);
   }, [alerts]);
 
   const markAsRead = useCallback(async (alertId: string) => {
-    setAlerts(prev => 
-      prev.map(alert => 
-        alert.id === alertId 
-          ? { ...alert, is_read: true }
-          : alert
-      )
-    );
+    setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a)));
   }, []);
 
   const dismissAlert = useCallback(async (alertId: string) => {
-    setAlerts(prev => 
-      prev.map(alert => 
-        alert.id === alertId 
-          ? { ...alert, is_dismissed: true }
-          : alert
-      )
+    setAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a))
     );
   }, []);
 
   const markAllAsRead = useCallback(async () => {
-    setAlerts(prev => 
-      prev.map(alert => ({ ...alert, is_read: true }))
-    );
+    setAlerts((prev) => prev.map((a) => ({ ...a, is_read: true })));
   }, []);
 
   const clearDismissedAlerts = useCallback(() => {
-    setAlerts(prev => prev.filter(alert => !alert.is_dismissed));
+    setAlerts((prev) => prev.filter((a) => !a.is_dismissed));
   }, []);
 
   const getActiveAlerts = useCallback(() => {
@@ -232,16 +271,18 @@ const checkAndGenerateAlerts = useCallback(async () => {
   }, [alerts]);
 
   const getUnreadAlerts = useCallback(() => {
-    return alerts.filter(alert => !alert.is_read && !alert.is_dismissed);
+    return alerts.filter((a) => !a.is_read && !a.is_dismissed);
   }, [alerts]);
 
-  const getAlertsByPriority = useCallback((priority: Alert['priority']) => {
-    return getActiveAlerts().filter(alert => alert.priority === priority);
-  }, [getActiveAlerts]);
+  const getAlertsByPriority = useCallback(
+    (priority: Alert['priority']) => getActiveAlerts().filter((a) => a.priority === priority),
+    [getActiveAlerts]
+  );
 
-  const getAlertsByUser = useCallback((targetUserId: string) => {
-    return getActiveAlerts().filter(alert => alert.user_id === targetUserId);
-  }, [getActiveAlerts]);
+  const getAlertsByUser = useCallback(
+    (targetUserId: string) => getActiveAlerts().filter((a) => a.user_id === targetUserId),
+    [getActiveAlerts]
+  );
 
   return {
     alerts: getActiveAlerts(),
@@ -255,6 +296,6 @@ const checkAndGenerateAlerts = useCallback(async () => {
     getUnreadAlerts,
     getAlertsByPriority,
     getAlertsByUser,
-    refreshAlerts: checkAndGenerateAlerts
+    refreshAlerts: checkAndGenerateAlerts,
   };
 }
