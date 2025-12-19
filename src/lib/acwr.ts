@@ -1,99 +1,64 @@
-import { TrainingRecord } from './supabase';
+// src/lib/acwr.ts
+type RecordLike = {
+  date: string;        // YYYY-MM-DD
+  load: number | null; // 1日あたりの負荷（sRPE等）
+};
 
-export interface ACWRData {
-  date: string;
-  acwr: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  riskLevel: 'low' | 'good' | 'caution' | 'high';
+function toISO(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
 }
 
-export function calculateACWR(records: TrainingRecord[]): ACWRData[] {
-  if (records.length === 0) return [];
+export function calculateACWR(records: RecordLike[]) {
+  // 1) 日別に合算
+  const dailyMap = new Map<string, number>();
+  for (const r of records) {
+    if (!r?.date) continue;
+    const load = typeof r.load === 'number' && isFinite(r.load) ? r.load : 0;
+    dailyMap.set(r.date, (dailyMap.get(r.date) ?? 0) + load);
+  }
 
-  // Sort records by date
-  const sortedRecords = [...records].sort((a, b) =>
-    new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
+  const dates = Array.from(dailyMap.keys()).sort();
+  if (dates.length === 0) return [];
 
-  const acwrData: ACWRData[] = [];
+  // 2) 連続日付を生成（空白日は0）
+  const start = new Date(dates[0]);
+  const end = new Date(dates[dates.length - 1]);
 
-  // 実際に練習記録がある日のみを対象にACWRを計算
-  sortedRecords.forEach(currentRecord => {
-    const currentDate = new Date(currentRecord.date);
-    const dateStr = currentRecord.date;
+  const series: { date: string; load: number }[] = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    const key = toISO(d);
+    series.push({ date: key, load: dailyMap.get(key) ?? 0 });
+  }
 
-    // Get records up to current date (including current date)
-    const recordsUpToDate = sortedRecords.filter(r =>
-      new Date(r.date) <= currentDate
-    );
+  // 3) rolling計算（急性=直近7日合計, 慢性=過去28日合計/4）
+  const out: any[] = [];
+  for (let i = 0; i < series.length; i++) {
+    const date = series[i].date;
 
-    if (recordsUpToDate.length === 0) return;
+    // ★ここが重要：21日分揃うまで “計算しない”
+    if (i < 20) {
+      out.push({ date, acwr: null, acuteLoad: null, chronicLoad: null });
+      continue;
+    }
 
-    // Calculate acute load (last 7 days including current day) - DAILY AVERAGE
-    const acuteStartDate = new Date(currentDate);
-    acuteStartDate.setDate(currentDate.getDate() - 6);
+    const acuteSum = series.slice(i - 6, i + 1).reduce((s, x) => s + x.load, 0);
+    const chronicSum = series.slice(i - 27, i + 1).reduce((s, x) => s + x.load, 0);
+    const chronic = chronicSum / 4; // 4週平均（週負荷の平均）
 
-    const acuteRecords = recordsUpToDate.filter(r =>
-      new Date(r.date) >= acuteStartDate && new Date(r.date) <= currentDate
-    );
+    const acwr = chronic > 0 ? acuteSum / chronic : null;
 
-    const totalAcuteLoad = acuteRecords.reduce((sum, r) => sum + r.load, 0);
-    const acuteLoad = totalAcuteLoad / 7; // Daily average over 7 days
-
-    // Calculate chronic load (last 28 days including current day) - DAILY AVERAGE
-    const chronicStartDate = new Date(currentDate);
-    chronicStartDate.setDate(currentDate.getDate() - 27);
-
-    const chronicRecords = recordsUpToDate.filter(r =>
-      new Date(r.date) >= chronicStartDate && new Date(r.date) <= currentDate
-    );
-
-    if (chronicRecords.length === 0) return;
-
-    const totalChronicLoad = chronicRecords.reduce((sum, r) => sum + r.load, 0);
-    const chronicLoad = totalChronicLoad / 28; // Daily average over 28 days
-
-    if (chronicLoad === 0) return;
-
-    // ACWR = Daily average acute load / Daily average chronic load
-    const acwr = acuteLoad / chronicLoad;
-
-    // Determine risk level
-    let riskLevel: ACWRData['riskLevel'];
-    if (acwr > 1.5) riskLevel = 'high';
-    else if (acwr >= 1.3) riskLevel = 'caution';
-    else if (acwr >= 0.8) riskLevel = 'good';
-    else riskLevel = 'low';
-
-    acwrData.push({
-      date: dateStr,
-      acwr: Number(acwr.toFixed(2)),
-      acuteLoad: Number(acuteLoad.toFixed(1)),
-      chronicLoad: Number(chronicLoad.toFixed(1)),
-      riskLevel
+    out.push({
+      date,
+      acuteLoad: Number(acuteSum.toFixed(1)),
+      chronicLoad: chronic > 0 ? Number(chronic.toFixed(1)) : null,
+      acwr: acwr != null ? Number(acwr.toFixed(2)) : null,
     });
-  });
-
-  return acwrData;
-}
-
-export function getRiskColor(riskLevel: ACWRData['riskLevel']): string {
-  switch (riskLevel) {
-    case 'high': return '#EF4444'; // Red
-    case 'caution': return '#F59E0B'; // Yellow
-    case 'good': return '#10B981'; // Green
-    case 'low': return '#3B82F6'; // Blue
-    default: return '#6B7280'; // Gray
   }
-}
 
-export function getRiskLabel(riskLevel: ACWRData['riskLevel']): string {
-  switch (riskLevel) {
-    case 'high': return '高リスク';
-    case 'caution': return '注意';
-    case 'good': return '良好';
-    case 'low': return '低負荷';
-    default: return '不明';
-  }
+  return out;
 }
