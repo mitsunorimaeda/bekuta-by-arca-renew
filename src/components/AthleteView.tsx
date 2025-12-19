@@ -41,6 +41,7 @@ import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
 import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
 import { DailyReflectionCard } from './DailyReflectionCard';
+import { ShareStatusButton } from './ShareStatusBotton';
 import {
   Activity,
   TrendingUp,
@@ -456,7 +457,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {user.name}さん · {activeTab === 'unified' ? 'すべての記録を一目で確認' :
              activeTab === 'overview' ? '今日の練習データを記録' :
-             activeTab === 'trends' ? 'ACWR傾向を分析' :
              activeTab === 'weight' ? '体重の変化を管理' :
              activeTab === 'insights' ? 'データから新しい発見を' :
              activeTab === 'performance' ? 'パフォーマンスを測定' :
@@ -678,6 +678,14 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               <DailyReflectionCard userId={user.id} />
             </div>
 
+            {/* ✅ スタッフに共有ボタン（まずはここに置く） */}
+            <div className="mt-4">
+              <ShareStatusButton
+                userId={user.id}
+                highlight={highPriorityAlerts.length > 0}
+              />
+            </div>
+
             <div className="mt-6">
               <MultiMetricTimeline
                 acwrData={acwrData}
@@ -718,6 +726,13 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     onViewAll={() => setShowAlertPanel(true)}
                   />
                 )}
+
+                <div className="mt-3">
+                  <ShareStatusButton
+                    userId={user.id}
+                    highlight={highPriorityAlerts.length > 0}
+                  />
+                </div>
 
                 {/* High Priority Alert Banner */}
                 {highPriorityAlerts.length > 0 && (
