@@ -233,18 +233,19 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   
 
   // Get last records for quick record suggestions
-  const lastTrainingRecord =
-  records.length > 0
-    ? records.reduce((latest, r) =>
+  // const lastTrainingRecord =
+  // records.length > 0
+  //   ? records.reduce((latest, r) =>
+  //       !latest || new Date(r.date) > new Date(latest.date) ? r : latest
+  //     , null as (typeof records)[number] | null)
+  //   : null;
+
+  const lastWeightRecord =
+  weightRecords.length > 0
+    ? weightRecords.reduce((latest, r) =>
         !latest || new Date(r.date) > new Date(latest.date) ? r : latest
-      , null as (typeof records)[number] | null)
+      , null as (typeof weightRecords)[number] | null)
     : null;
-    const lastWeightRecord =
-    weightRecords.length > 0
-      ? weightRecords.reduce((latest, r) =>
-          !latest || new Date(r.date) > new Date(latest.date) ? r : latest
-        , null as (typeof weightRecords)[number] | null)
-      : null;
 
   // // Calculate weekly average for smart input
   // const getWeeklyAverage = () => {
@@ -417,9 +418,35 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
   const weeklyAverage = derived.weeklyAverage;
-  //const lastTrainingRecord = derived.lastTrainingRecord;
+  const lastTrainingRecord = derived.lastTrainingRecord;
   //const lastSleepRecord = derived.lastSleepRecord;
   //const lastMotivationRecord = derived.lastMotivationRecord;
+
+  type LastTrainingRecordForForm = {
+    date: string;
+    rpe: number;
+    duration_min: number;
+    load?: number;
+  };
+  
+  const normalizedLastTrainingRecord: LastTrainingRecordForForm | null =
+    lastTrainingRecord && lastTrainingRecord.date
+      ? {
+          date: lastTrainingRecord.date,
+          rpe: lastTrainingRecord.rpe ?? 0,
+          duration_min: lastTrainingRecord.duration_min ?? 0,
+          load: lastTrainingRecord.load ?? 0,
+        }
+      : null;
+  
+  const normalizedLastTrainingRecordForCheckIn =
+  lastTrainingRecord && lastTrainingRecord.date
+    ? {
+        date: lastTrainingRecord.date,
+        rpe: lastTrainingRecord.rpe ?? 0,
+        duration_min: lastTrainingRecord.duration_min ?? 0,
+      }
+    : null;
 
   
   useEffect(() => {
@@ -817,7 +844,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     onCheckExisting={checkExistingTrainingRecord}
                     onUpdate={handleTrainingUpdate}
                     loading={loading}
-                    lastRecord={lastTrainingRecord}
+                    lastRecord={normalizedLastTrainingRecord}
                     weeklyAverage={weeklyAverage}
                     daysWithData={daysWithData}
                     consecutiveDays={consecutiveDays}
@@ -1393,7 +1420,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
           onCycleSubmit={addMenstrualCycle}
           onCycleUpdate={updateMenstrualCycle}
           onClose={() => setShowUnifiedCheckIn(false)}
-          lastTrainingRecord={lastTrainingRecord}
+          lastTrainingRecord={normalizedLastTrainingRecordForCheckIn}
           lastWeightRecord={lastWeightRecord}
           lastSleepRecord={lastSleepRecord}
           lastMotivationRecord={lastMotivationRecord}

@@ -50,6 +50,7 @@ function App() {
     signOut,
     changePassword,
     acceptTerms,
+    refreshUserProfile, 
   } = useAuth();
 
   useRealtimeHub(userProfile?.id ?? '');
@@ -357,6 +358,7 @@ function App() {
               user={userProfile}
               alerts={alerts}
               onLogout={signOut}
+              onUserUpdated={refreshUserProfile}
               onHome={() => {
                 console.log('🏠 Athlete Bekuta home tapped');
                 window.location.assign('https://bekuta.netlify.app/');
