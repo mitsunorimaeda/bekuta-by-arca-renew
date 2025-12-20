@@ -147,6 +147,7 @@ export function UnifiedDailyCheckIn({
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
+  const [isSliding, setIsSliding] = useState(false);
 
   // Duplicate detection states
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -513,7 +514,11 @@ export function UnifiedDailyCheckIn({
       />
 
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div
+            className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] ${
+              isSliding ? 'overflow-hidden' : 'overflow-y-auto'
+            }`}
+          >
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 z-10">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">今日の記録</h2>
@@ -602,6 +607,10 @@ export function UnifiedDailyCheckIn({
                     max="10"
                     value={rpe}
                     onChange={(e) => setRpe(Number(e.target.value))}
+                      // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{rpeLabels[rpe]}</p>
@@ -615,6 +624,7 @@ export function UnifiedDailyCheckIn({
                     </span>
                   </label>
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="0"
@@ -622,8 +632,14 @@ export function UnifiedDailyCheckIn({
                     step="5"
                     value={duration}
                     onChange={(e) => setDuration(Number(e.target.value))}
+                     // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
+
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
+                  </div>
 
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                     <span>0分</span>
@@ -725,6 +741,7 @@ export function UnifiedDailyCheckIn({
                     </p>
                   )}
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="0"
@@ -732,8 +749,13 @@ export function UnifiedDailyCheckIn({
                     step="0.25"
                     value={sleepHours}
                     onChange={(e) => setSleepHours(Number(e.target.value))}
+                    // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+                  </div>
 
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                     <span>0h</span>
@@ -753,6 +775,7 @@ export function UnifiedDailyCheckIn({
                     </p>
                   )}
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="1"
@@ -760,8 +783,13 @@ export function UnifiedDailyCheckIn({
                     step="1"
                     value={sleepQuality}
                     onChange={(e) => setSleepQuality(Number(e.target.value))}
+                    // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+                  </div>
 
                   <TinyScale values={[1, 2, 3, 4, 5]} highlight={sleepQuality} />
 
@@ -786,6 +814,7 @@ export function UnifiedDailyCheckIn({
                     </p>
                   )}
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="1"
@@ -793,8 +822,13 @@ export function UnifiedDailyCheckIn({
                     step="1"
                     value={motivationLevel}
                     onChange={(e) => setMotivationLevel(Number(e.target.value))}
+                    // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+                  </div>
 
                   <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={motivationLevel} />
                 </div>
@@ -810,6 +844,7 @@ export function UnifiedDailyCheckIn({
                     </p>
                   )}
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="1"
@@ -817,8 +852,14 @@ export function UnifiedDailyCheckIn({
                     step="1"
                     value={energyLevel}
                     onChange={(e) => setEnergyLevel(Number(e.target.value))}
+                    // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+                  </div>
+
 
                   <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={energyLevel} />
                 </div>
@@ -834,6 +875,7 @@ export function UnifiedDailyCheckIn({
                     </p>
                   )}
 
+                  <div className="py-3 -my-3">
                   <input
                     type="range"
                     min="1"
@@ -841,8 +883,13 @@ export function UnifiedDailyCheckIn({
                     step="1"
                     value={stressLevel}
                     onChange={(e) => setStressLevel(Number(e.target.value))}
+                    // ✅ ここを追加
+                    onPointerDown={() => setIsSliding(true)}
+                    onPointerUp={() => setIsSliding(false)}
+                    onPointerCancel={() => setIsSliding(false)}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+                  </div>
 
                   <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={stressLevel} />
                 </div>
