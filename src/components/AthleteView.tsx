@@ -44,6 +44,11 @@ import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusBotton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
+import { normalizeTrainingRecord } from '../lib/normalizeRecords';
+import {
+  normalizeTrainingForForm,
+  normalizeTrainingForCheckIn,
+} from '../lib/normalize';
 import {
   Activity,
   TrendingUp,
@@ -413,7 +418,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     sleepRecords,
     motivationRecords,
   });
-  
+
+
   //
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
@@ -422,31 +428,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   //const lastSleepRecord = derived.lastSleepRecord;
   //const lastMotivationRecord = derived.lastMotivationRecord;
 
-  type LastTrainingRecordForForm = {
-    date: string;
-    rpe: number;
-    duration_min: number;
-    load?: number;
-  };
-  
-  const normalizedLastTrainingRecord: LastTrainingRecordForForm | null =
-    lastTrainingRecord && lastTrainingRecord.date
-      ? {
-          date: lastTrainingRecord.date,
-          rpe: lastTrainingRecord.rpe ?? 0,
-          duration_min: lastTrainingRecord.duration_min ?? 0,
-          load: lastTrainingRecord.load ?? 0,
-        }
-      : null;
-  
-  const normalizedLastTrainingRecordForCheckIn =
-  lastTrainingRecord && lastTrainingRecord.date
-    ? {
-        date: lastTrainingRecord.date,
-        rpe: lastTrainingRecord.rpe ?? 0,
-        duration_min: lastTrainingRecord.duration_min ?? 0,
-      }
-    : null;
+  const normalizedLastTrainingRecord = normalizeTrainingForForm(lastTrainingRecord);
+  const normalizedLastTrainingRecordForCheckIn = normalizeTrainingForCheckIn(lastTrainingRecord);
+
+
 
   
   useEffect(() => {
