@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { User as UserIcon, Calendar, Ruler, Users, Save, AlertCircle } from 'lucide-react';
+// ProfileEditForm.tsx
+import React, { useState } from 'react';
+import { User as UserIcon, Calendar, Ruler, Users, Save, AlertCircle, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
 import { getYearsAgoString } from '../lib/date';
@@ -13,61 +14,32 @@ interface ProfileEditFormProps {
   onClose: () => void;
 }
 
+// 電話番号を「半角数字のみ」に正規化（ハイフン・空白・全角数字などを吸収）
+function normalizePhoneNumber(input: string) {
+  if (!input) return '';
+  // 全角数字 → 半角
+  const half = input.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+  // 数字以外を除去
+  return half.replace(/\D/g, '');
+}
+
+function isLikelyJpMobile(phoneDigits: string) {
+  // ゆるめ：10〜11桁の数字
+  if (!phoneDigits) return true; // 任意入力なので空はOK
+  if (!/^\d{10,11}$/.test(phoneDigits)) return false;
+  return true;
+}
+
 export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProps) {
-  const [name, setName] = useState(user.name);
+  const [name, setName] = useState(user.name ?? '');
   const [gender, setGender] = useState<string>(user.gender || '');
   const [heightCm, setHeightCm] = useState<string>(user.height_cm?.toString() || '');
   const [dateOfBirth, setDateOfBirth] = useState<string>(user.date_of_birth || '');
+  const [phoneNumber, setPhoneNumber] = useState<string>(user.phone_number || '');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess(false);
-    setLoading(true);
-
-    try {
-      const updateData: UserUpdate = {
-        name: name.trim(),
-        gender: gender || null,
-        height_cm: heightCm ? parseFloat(heightCm) : null,
-        date_of_birth: dateOfBirth || null,
-      };
-
-      if (updateData.height_cm && (updateData.height_cm < 100 || updateData.height_cm > 250)) {
-        throw new Error('身長は100〜250cmの範囲で入力してください。');
-      }
-
-      if (updateData.date_of_birth) {
-        const birthDate = new Date(updateData.date_of_birth);
-        const today = new Date();
-        const age = today.getFullYear() - birthDate.getFullYear();
-        if (age < 10 || age > 150) {
-          throw new Error('生年月日を正しく入力してください（10歳以上）。');
-        }
-      }
-
-      const { error: updateError } = await supabase
-        .from('users')
-        .update(updateData)
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      setSuccess(true);
-      setTimeout(() => {
-        onUpdate();
-        onClose();
-      }, 1500);
-    } catch (err) {
-      console.error('Error updating profile:', err);
-      setError(err instanceof Error ? err.message : 'プロフィールの更新に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const calculateAge = () => {
     if (!dateOfBirth) return null;
@@ -82,6 +54,69 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
   };
 
   const age = calculateAge();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess(false);
+    setLoading(true);
+
+    try {
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      // --- バリデーション ---
+      const trimmedName = name.trim();
+      if (!trimmedName) throw new Error('名前を入力してください。');
+
+      const parsedHeight = heightCm ? Number(heightCm) : null;
+      if (parsedHeight !== null && (Number.isNaN(parsedHeight) || parsedHeight < 100 || parsedHeight > 250)) {
+        throw new Error('身長は100〜250cmの範囲で入力してください。');
+      }
+
+      if (dateOfBirth) {
+        const birthDate = new Date(dateOfBirth);
+        const today = new Date();
+        const ageGuess = today.getFullYear() - birthDate.getFullYear();
+        if (Number.isNaN(birthDate.getTime()) || ageGuess < 10 || ageGuess > 150) {
+          throw new Error('生年月日を正しく入力してください（10歳以上）。');
+        }
+      }
+
+      if (!isLikelyJpMobile(normalizedPhone)) {
+        throw new Error('電話番号は10〜11桁の数字で入力してください（ハイフンはOK）。');
+      }
+
+      // --- 更新データ ---
+      const updateData: UserUpdate = {
+        name: trimmedName,
+        gender: gender || null,
+        height_cm: parsedHeight,
+        date_of_birth: dateOfBirth || null,
+        phone_number: normalizedPhone || null, // 保存はハイフンなしに統一
+      };
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setSuccess(true);
+      setTimeout(() => {
+        onUpdate();
+        onClose();
+      }, 1200);
+    } catch (err) {
+      console.error('Error updating profile:', err);
+      setError(err instanceof Error ? err.message : 'プロフィールの更新に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 表示用（入力中でも見やすく）
+  const normalizedPreview = normalizePhoneNumber(phoneNumber);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -102,6 +137,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 名前 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 名前
@@ -115,6 +151,31 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               />
             </div>
 
+            {/* 電話番号 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
+                <Phone className="w-4 h-4 mr-2" />
+                電話番号（任意）
+              </label>
+              <input
+                type="tel"
+                inputMode="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="090-1234-5678"
+              />
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-1">
+                <p>CSVで取り込む InBody データの本人紐付けに使用します。</p>
+                {!!phoneNumber && (
+                  <p>
+                    保存形式プレビュー（ハイフンなし）: <span className="font-mono">{normalizedPreview}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 性別 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                 <Users className="w-4 h-4 mr-2" />
@@ -136,6 +197,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               </p>
             </div>
 
+            {/* 身長 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                 <Ruler className="w-4 h-4 mr-2" />
@@ -156,6 +218,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               </p>
             </div>
 
+            {/* 生年月日 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                 <Calendar className="w-4 h-4 mr-2" />
@@ -165,7 +228,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
                 type="date"
                 value={dateOfBirth}
                 onChange={(e) => setDateOfBirth(e.target.value)}
-                max={getYearsAgoString(10)}   // ← ここだけ変更！
+                max={getYearsAgoString(10)}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 dark:text-white"
               />
               {age !== null && (
@@ -178,6 +241,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               </p>
             </div>
 
+            {/* エラー */}
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <div className="flex items-center">
@@ -187,6 +251,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               </div>
             )}
 
+            {/* 成功 */}
             {success && (
               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                 <div className="flex items-center">
@@ -198,6 +263,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               </div>
             )}
 
+            {/* ボタン */}
             <div className="flex space-x-3 pt-4">
               <button
                 type="submit"

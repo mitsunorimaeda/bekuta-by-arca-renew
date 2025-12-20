@@ -14,7 +14,7 @@
     - Replace placeholder values with actual admin information
     - The ID should be updated when linking to actual Supabase auth user
 */
-
+/*
 -- 管理者用のプレースホルダーレコードを作成
 -- 注意: 実際の管理者情報に変更してください
 INSERT INTO users (
@@ -32,3 +32,4 @@ INSERT INTO users (
 ) ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   email = EXCLUDED.email;
+  */

@@ -15,6 +15,12 @@
   - Users can only access their own menstrual cycle data
   - Admin access added for management purposes
 */
+DO $$
+BEGIN
+  IF to_regclass('public.menstrual_cycles') IS NULL THEN
+    RAISE NOTICE 'skip: public.menstrual_cycles does not exist';
+    RETURN;
+  END IF;
 
 -- Drop existing incorrect policies
 DROP POLICY IF EXISTS "Users can view own menstrual cycle data" ON menstrual_cycles;
@@ -73,3 +79,5 @@ CREATE POLICY "Staff can view team menstrual cycle data"
       WHERE stl.staff_user_id = auth.uid()
     )
   );
+
+END $$;

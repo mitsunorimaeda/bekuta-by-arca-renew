@@ -17,6 +17,7 @@ INSERT INTO teams (id, name) VALUES
   ('550e8400-e29b-41d4-a716-446655440000', 'サンプルチーム')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
+/*
 -- Create sample users with proper conflict handling
 DO $$
 BEGIN
@@ -71,7 +72,9 @@ EXCEPTION
         team_id = EXCLUDED.team_id;
     END IF;
 END $$;
+*/
 
+/*
 DO $$
 BEGIN
   -- Insert staff user record with comprehensive conflict handling
@@ -125,6 +128,7 @@ EXCEPTION
         team_id = EXCLUDED.team_id;
     END IF;
 END $$;
+*/
 
 -- Insert staff team link (using the actual user ID from the users table)
 DO $$
