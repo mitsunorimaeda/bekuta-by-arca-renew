@@ -269,31 +269,31 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   const weeklyAverage = getWeeklyAverage();
 
 
-  const getConsecutiveDays = () => {
-    if (records.length === 0) return 0;
+  //const getConsecutiveDays = () => {
+  //  //if (records.length === 0) return 0;
+//
+  //  const sortedDates = [...new Set(records.map(r => r.date))].sort();
+    //const todayDate = new Date();
+    //todayDate.setHours(0, 0, 0, 0);
 
-    const sortedDates = [...new Set(records.map(r => r.date))].sort();
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
+    //let consecutive = 0;
+    //let currentDate = new Date(todayDate);
 
-    let consecutive = 0;
-    let currentDate = new Date(todayDate);
+//    for (let i = 0; i < 365; i++) {
+  //    const dateStr = toJSTDateString(currentDate);
+    //  if (sortedDates.includes(dateStr)) {
+      //  consecutive++;
+     //   currentDate.setDate(currentDate.getDate() - 1);
+    //  } else {
+    //    break;
+    //  }
+  //  }
 
-    for (let i = 0; i < 365; i++) {
-      const dateStr = toJSTDateString(currentDate);
-      if (sortedDates.includes(dateStr)) {
-        consecutive++;
-        currentDate.setDate(currentDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-
-    return consecutive;
-  };
+  //  return consecutive;
+  //};
 
   
-  const consecutiveDays = getConsecutiveDays();
+ // const consecutiveDays = getConsecutiveDays();
 
   const handlePerformanceRecordSubmit = async (recordData: any) => {
     const result = await addPerformanceRecord(recordData);
@@ -415,6 +415,11 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   
   //
   const daysWithData = derived.daysWithTrainingData;
+  const consecutiveDays = derived.consecutiveTrainingDays;
+  const weeklyAverage = derived.weeklyAverage;
+  const lastTrainingRecord = derived.lastTrainingRecord;
+  const lastSleepRecord = derived.lastSleepRecord;
+  const lastMotivationRecord = derived.lastMotivationRecord;
 
   
   useEffect(() => {
