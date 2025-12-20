@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 interface GenericDuplicateModalProps {
@@ -22,11 +22,32 @@ export function GenericDuplicateModal({
   existingValues,
   newValues
 }: GenericDuplicateModalProps) {
+
+  // ✅ ここに追加：モーダル表示中は背景スクロールをロック（iOS対策）
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4 overscroll-contain">
+      {/* ✅ モーダル本体：ここだけ縦スクロール可能に */}
+      <div
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
@@ -39,6 +60,7 @@ export function GenericDuplicateModal({
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            type="button"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,6 +83,7 @@ export function GenericDuplicateModal({
                   {new Date(date).toLocaleDateString('ja-JP')}
                 </p>
               </div>
+
               <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">現在の値</p>
@@ -75,6 +98,7 @@ export function GenericDuplicateModal({
                     ))}
                   </div>
                 </div>
+
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">新しい値</p>
                   <div className="space-y-1">
@@ -89,6 +113,7 @@ export function GenericDuplicateModal({
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
 
@@ -103,12 +128,14 @@ export function GenericDuplicateModal({
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            type="button"
           >
             キャンセル
           </button>
           <button
             onClick={onOverwrite}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            type="button"
           >
             上書きする
           </button>

@@ -472,6 +472,31 @@ export function UnifiedDailyCheckIn({
     }
   };
 
+    // 小さい目盛り（数値）表示：幅を取らないように超小さく
+  const TinyScale = ({
+    values,
+    highlight,
+  }: {
+    values: number[];
+    highlight?: number;
+  }) => {
+    return (
+      <div className="mt-1 flex justify-between text-[10px] leading-none text-gray-500 dark:text-gray-400 select-none">
+        {values.map((v) => (
+          <span
+            key={v}
+            className={v === highlight ? 'font-semibold text-gray-700 dark:text-gray-200' : ''}
+          >
+            {v}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+
+
+
   const modalValues = getModalValues();
 
   return (
@@ -519,6 +544,11 @@ export function UnifiedDailyCheckIn({
                 const Icon = getSectionIcon(section);
                 const isActive = activeSection === section;
                 const isCompleted = completedSections.has(section);
+
+
+
+
+
 
                 return (
                   <button
@@ -714,16 +744,27 @@ export function UnifiedDailyCheckIn({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    睡眠の質
+                    睡眠の質：<span className="font-semibold">{sleepQuality}</span>/5
                   </label>
+
+                  {lastSleepRecord && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-2">
+                      前回（{lastSleepRecord.date}）：{lastSleepRecord.sleep_quality ?? '—'}/5
+                    </p>
+                  )}
+
                   <input
                     type="range"
                     min="1"
                     max="5"
+                    step="1"
                     value={sleepQuality}
                     onChange={(e) => setSleepQuality(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+
+                  <TinyScale values={[1, 2, 3, 4, 5]} highlight={sleepQuality} />
+
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {sleepQuality === 5 && '最高の睡眠'}
                     {sleepQuality === 4 && '良い睡眠'}
@@ -736,44 +777,74 @@ export function UnifiedDailyCheckIn({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <Zap className="w-4 h-4 inline mr-1" />
-                    モチベーション
+                    モチベーション：<span className="font-semibold">{motivationLevel}</span>/10
                   </label>
+
+                  {lastMotivationRecord && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-2">
+                      前回（{lastMotivationRecord.date}）：{lastMotivationRecord.motivation_level}/10
+                    </p>
+                  )}
+
                   <input
                     type="range"
                     min="1"
                     max="10"
+                    step="1"
                     value={motivationLevel}
                     onChange={(e) => setMotivationLevel(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+
+                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={motivationLevel} />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    エネルギー
+                    エネルギー：<span className="font-semibold">{energyLevel}</span>/10
                   </label>
+
+                  {lastMotivationRecord && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-2">
+                      前回（{lastMotivationRecord.date}）：{lastMotivationRecord.energy_level}/10
+                    </p>
+                  )}
+
                   <input
                     type="range"
                     min="1"
                     max="10"
+                    step="1"
                     value={energyLevel}
                     onChange={(e) => setEnergyLevel(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+
+                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={energyLevel} />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    ストレス
+                    ストレス：<span className="font-semibold">{stressLevel}</span>/10
                   </label>
+
+                  {lastMotivationRecord && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-2">
+                      前回（{lastMotivationRecord.date}）：{lastMotivationRecord.stress_level}/10
+                    </p>
+                  )}
+
                   <input
                     type="range"
                     min="1"
                     max="10"
+                    step="1"
                     value={stressLevel}
                     onChange={(e) => setStressLevel(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+
+                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={stressLevel} />
                 </div>
 
                 <div>
