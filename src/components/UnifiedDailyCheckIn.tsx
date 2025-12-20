@@ -682,17 +682,34 @@ export function UnifiedDailyCheckIn({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <Moon className="w-4 h-4 inline mr-1" />
-                    睡眠時間
+                    睡眠時間：<span className="font-semibold">{sleepHours}時間</span>
+                    <span className="ml-2 text-xs text-gray-500">
+                      （{Math.floor(sleepHours)}時間{Math.round((sleepHours % 1) * 60)}分）
+                    </span>
                   </label>
+
+                  {lastSleepRecord && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                      前回（{lastSleepRecord.date}）：{lastSleepRecord.sleep_hours}時間
+                      {lastSleepRecord.sleep_quality != null ? ` / 質 ${lastSleepRecord.sleep_quality}/5` : ''}
+                    </p>
+                  )}
+
                   <input
                     type="range"
                     min="0"
                     max="12"
-                    step="0.5"
+                    step="0.25"
                     value={sleepHours}
                     onChange={(e) => setSleepHours(Number(e.target.value))}
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
                   />
+
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <span>0h</span>
+                    <span>6h</span>
+                    <span>12h</span>
+                  </div>
                 </div>
 
                 <div>
