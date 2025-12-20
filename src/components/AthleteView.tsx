@@ -43,6 +43,7 @@ import { FloatingActionButton } from './FloatingActionButton';
 import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusBotton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
+import { DerivedStatsBar } from './DerivedStatsBar';
 import {
   Activity,
   TrendingUp,
@@ -799,16 +800,11 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                   </div>
 
-                  <div className="mb-3 rounded-lg bg-gray-50 dark:bg-gray-700/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
-                    記録日数: <span className="font-semibold">{daysWithData}</span> ／
-                    連続: <span className="font-semibold">{consecutiveDays}</span>
-                    {weeklyAverage && (
-                      <>
-                        {' '}／ 7日平均RPE: <span className="font-semibold">{weeklyAverage.rpe.toFixed(1)}</span>
-                        {' '}平均時間: <span className="font-semibold">{weeklyAverage.duration.toFixed(0)}分</span>
-                      </>
-                    )}
-                  </div>
+                  <DerivedStatsBar
+                    daysWithData={daysWithData}
+                    consecutiveDays={consecutiveDays}
+                    weeklyAverage={weeklyAverage}
+                  />  
 
                   <TrainingForm
                     userId={user.id}
