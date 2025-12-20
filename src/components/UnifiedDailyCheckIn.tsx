@@ -6,14 +6,25 @@ import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 
 // ✅ 追加：矢印/電波 UI
-import {VectorArrowPicker} from './VectorArrowPicker';
+import { VectorArrowPicker } from './VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
+
+// ✅ last◯◯Record の型は normalizeRecords に寄せる
+import type {
+  TrainingRecordCheckIn,
+  SleepRecordForm,
+  MotivationRecordForm,
+  // WeightRecordForm が normalizeRecords 側に無い場合は下の暫定型を使う
+} from '../lib/normalizeRecords';
+
+// Weight の型が normalizeRecords に無いなら暫定でこれ（必要なら後で normalizeRecords に追加）
+type WeightRecordForm = { weight_kg: number; date: string; notes?: string | null };
 
 interface UnifiedDailyCheckInProps {
   userId: string;
   userGender?: 'male' | 'female' | null;
 
-  // ✅ training は arrow/signal を含める
+  // training（arrow/signal 含む）
   onTrainingSubmit: (data: {
     rpe: number;
     duration_min: number;
@@ -24,13 +35,15 @@ interface UnifiedDailyCheckInProps {
   onTrainingCheckExisting: (date: string) => Promise<TrainingRecord | null>;
   onTrainingUpdate: (
     id: string,
-    data: { rpe: number; duration_min: number; arrow_score: number; signal_score: number },
+    data: { rpe: number; duration_min: number; arrow_score: number; signal_score: number }
   ) => Promise<void>;
 
+  // weight
   onWeightSubmit: (data: { weight_kg: number; date: string; notes?: string }) => Promise<void>;
   onWeightCheckExisting: (date: string) => Promise<WeightRecord | null>;
   onWeightUpdate: (id: string, data: { weight_kg: number; notes?: string }) => Promise<void>;
 
+  // sleep
   onSleepSubmit: (data: {
     sleep_hours: number;
     sleep_quality: number;
@@ -40,6 +53,7 @@ interface UnifiedDailyCheckInProps {
   onSleepCheckExisting: (date: string) => Promise<SleepRecord | null>;
   onSleepUpdate: (id: string, data: any) => Promise<void>;
 
+  // motivation
   onMotivationSubmit: (data: {
     motivation_level: number;
     energy_level: number;
@@ -50,6 +64,7 @@ interface UnifiedDailyCheckInProps {
   onMotivationCheckExisting: (date: string) => Promise<MotivationRecord | null>;
   onMotivationUpdate: (id: string, data: any) => Promise<void>;
 
+  // cycle
   onCycleSubmit: (data: {
     cycle_start_date: string;
     period_duration_days?: number;
@@ -66,27 +81,20 @@ interface UnifiedDailyCheckInProps {
       symptoms?: string[];
       flow_intensity?: string;
       notes?: string;
-    },
+    }
   ) => Promise<any>;
 
   onClose: () => void;
 
-  lastTrainingRecord?: { rpe: number; duration_min: number; date: string } | null;
-  lastWeightRecord?: { weight_kg: number; date: string } | null;
-  lastSleepRecord?: {
-    sleep_hours: number;
-    sleep_quality: number | null;
-    date: string;
-  } | null;
-  lastMotivationRecord?: {
-    motivation_level: number;
-    energy_level: number;
-    stress_level: number;
-    date: string;
-  } | null;
+  // ✅ “必ず渡す / ただし null あり” に統一
+  lastTrainingRecord: TrainingRecordCheckIn | null;
+  lastWeightRecord: WeightRecordForm | null;
+  lastSleepRecord: SleepRecordForm | null;
+  lastMotivationRecord: MotivationRecordForm | null;
 }
 
 export function UnifiedDailyCheckIn({
+  userId,
   userGender,
   onTrainingSubmit,
   onTrainingCheckExisting,
@@ -112,23 +120,24 @@ export function UnifiedDailyCheckIn({
 
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [activeSection, setActiveSection] = useState<'training' | 'weight' | 'conditioning' | 'cycle'>(
-    'training',
+    'training'
   );
 
-  const [rpe, setRpe] = useState<number>(lastTrainingRecord?.rpe || 5);
-  const [duration, setDuration] = useState<number>(lastTrainingRecord?.duration_min || 60);
+  // ✅ 0 を潰さないために「||」ではなく「??」
+  const [rpe, setRpe] = useState<number>(lastTrainingRecord?.rpe ?? 5);
+  const [duration, setDuration] = useState<number>(lastTrainingRecord?.duration_min ?? 60);
 
-  // ✅ 追加：矢印/電波（保存用0..100）
-  const [arrowScore, setArrowScore] = useState<number>(50);
-  const [signalScore, setSignalScore] = useState<number>(50);
+  // ✅ 矢印/電波（前回があれば反映）
+  const [arrowScore, setArrowScore] = useState<number>((lastTrainingRecord as any)?.arrow_score ?? 50);
+  const [signalScore, setSignalScore] = useState<number>((lastTrainingRecord as any)?.signal_score ?? 50);
 
   const [weight, setWeight] = useState<string>(
-    lastWeightRecord?.weight_kg ? String(lastWeightRecord.weight_kg) : '',
+    lastWeightRecord?.weight_kg != null ? String(lastWeightRecord.weight_kg) : ''
   );
   const [weightNotes, setWeightNotes] = useState<string>('');
 
   const [sleepHours, setSleepHours] = useState<number>(lastSleepRecord?.sleep_hours ?? 7);
-  const [sleepQuality, setSleepQuality] = useState<number>(lastSleepRecord?.sleep_quality ?? 3);
+  const [sleepQuality, setSleepQuality] = useState<number>((lastSleepRecord as any)?.sleep_quality ?? 3);
   const [sleepNotes, setSleepNotes] = useState<string>('');
 
   const [motivationLevel, setMotivationLevel] = useState<number>(lastMotivationRecord?.motivation_level ?? 7);
@@ -293,7 +302,7 @@ export function UnifiedDailyCheckIn({
             : section === 'cycle'
             ? '周期'
             : 'コンディション'
-        }記録の保存に失敗しました: ${errorMessage}`,
+        }記録の保存に失敗しました: ${errorMessage}`
       );
     } finally {
       setSubmitting(false);
@@ -473,30 +482,18 @@ export function UnifiedDailyCheckIn({
     }
   };
 
-    // 小さい目盛り（数値）表示：幅を取らないように超小さく
-  const TinyScale = ({
-    values,
-    highlight,
-  }: {
-    values: number[];
-    highlight?: number;
-  }) => {
+  // 小さい目盛り（数値）表示：幅を取らないように超小さく
+  const TinyScale = ({ values, highlight }: { values: number[]; highlight?: number }) => {
     return (
       <div className="mt-1 flex justify-between text-[10px] leading-none text-gray-500 dark:text-gray-400 select-none">
         {values.map((v) => (
-          <span
-            key={v}
-            className={v === highlight ? 'font-semibold text-gray-700 dark:text-gray-200' : ''}
-          >
+          <span key={v} className={v === highlight ? 'font-semibold text-gray-700 dark:text-gray-200' : ''}>
             {v}
           </span>
         ))}
       </div>
     );
   };
-
-
-
 
   const modalValues = getModalValues();
 
@@ -514,11 +511,11 @@ export function UnifiedDailyCheckIn({
       />
 
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div
-            className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] ${
-              isSliding ? 'overflow-hidden' : 'overflow-y-auto'
-            }`}
-          >
+        <div
+          className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] ${
+            isSliding ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 z-10">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">今日の記録</h2>
@@ -549,11 +546,6 @@ export function UnifiedDailyCheckIn({
                 const Icon = getSectionIcon(section);
                 const isActive = activeSection === section;
                 const isCompleted = completedSections.has(section);
-
-
-
-
-
 
                 return (
                   <button
@@ -607,7 +599,6 @@ export function UnifiedDailyCheckIn({
                     max="10"
                     value={rpe}
                     onChange={(e) => setRpe(Number(e.target.value))}
-                      // ✅ ここを追加
                     onPointerDown={() => setIsSliding(true)}
                     onPointerUp={() => setIsSliding(false)}
                     onPointerCancel={() => setIsSliding(false)}
@@ -625,20 +616,18 @@ export function UnifiedDailyCheckIn({
                   </label>
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="480"
-                    step="5"
-                    value={duration}
-                    onChange={(e) => setDuration(Number(e.target.value))}
-                     // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                    <input
+                      type="range"
+                      min="0"
+                      max="480"
+                      step="5"
+                      value={duration}
+                      onChange={(e) => setDuration(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
                   </div>
 
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -654,13 +643,9 @@ export function UnifiedDailyCheckIn({
                   </p>
                 </div>
 
-
-
-                {/* ✅ 追加：矢印/電波（直感UI） */}
+                {/* ✅ 矢印/電波 */}
                 <VectorArrowPicker value={arrowScore} onChange={setArrowScore} />
                 <SignalPicker value={signalScore} onChange={setSignalScore} />
-
-                
               </div>
             )}
 
@@ -737,24 +722,25 @@ export function UnifiedDailyCheckIn({
                   {lastSleepRecord && (
                     <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
                       前回（{lastSleepRecord.date}）：{lastSleepRecord.sleep_hours}時間
-                      {lastSleepRecord.sleep_quality != null ? ` / 質 ${lastSleepRecord.sleep_quality}/5` : ''}
+                      {(lastSleepRecord as any)?.sleep_quality != null
+                        ? ` / 質 ${(lastSleepRecord as any).sleep_quality}/5`
+                        : ''}
                     </p>
                   )}
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="12"
-                    step="0.25"
-                    value={sleepHours}
-                    onChange={(e) => setSleepHours(Number(e.target.value))}
-                    // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                  />
+                    <input
+                      type="range"
+                      min="0"
+                      max="12"
+                      step="0.25"
+                      value={sleepHours}
+                      onChange={(e) => setSleepHours(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
                   </div>
 
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -771,24 +757,23 @@ export function UnifiedDailyCheckIn({
 
                   {lastSleepRecord && (
                     <p className="text-[11px] text-gray-400 dark:text-gray-500 -mt-1 mb-2">
-                      前回（{lastSleepRecord.date}）：{lastSleepRecord.sleep_quality ?? '—'}/5
+                      前回（{lastSleepRecord.date}）：{(lastSleepRecord as any)?.sleep_quality ?? '—'}/5
                     </p>
                   )}
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="1"
-                    value={sleepQuality}
-                    onChange={(e) => setSleepQuality(Number(e.target.value))}
-                    // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                  />
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={sleepQuality}
+                      onChange={(e) => setSleepQuality(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
                   </div>
 
                   <TinyScale values={[1, 2, 3, 4, 5]} highlight={sleepQuality} />
@@ -815,22 +800,21 @@ export function UnifiedDailyCheckIn({
                   )}
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={motivationLevel}
-                    onChange={(e) => setMotivationLevel(Number(e.target.value))}
-                    // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                  />
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={motivationLevel}
+                      onChange={(e) => setMotivationLevel(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
                   </div>
 
-                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={motivationLevel} />
+                  <TinyScale values={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} highlight={motivationLevel} />
                 </div>
 
                 <div>
@@ -845,23 +829,21 @@ export function UnifiedDailyCheckIn({
                   )}
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={energyLevel}
-                    onChange={(e) => setEnergyLevel(Number(e.target.value))}
-                    // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                  />
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={energyLevel}
+                      onChange={(e) => setEnergyLevel(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
                   </div>
 
-
-                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={energyLevel} />
+                  <TinyScale values={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} highlight={energyLevel} />
                 </div>
 
                 <div>
@@ -876,22 +858,21 @@ export function UnifiedDailyCheckIn({
                   )}
 
                   <div className="py-3 -my-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={stressLevel}
-                    onChange={(e) => setStressLevel(Number(e.target.value))}
-                    // ✅ ここを追加
-                    onPointerDown={() => setIsSliding(true)}
-                    onPointerUp={() => setIsSliding(false)}
-                    onPointerCancel={() => setIsSliding(false)}
-                    className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                  />
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={stressLevel}
+                      onChange={(e) => setStressLevel(Number(e.target.value))}
+                      onPointerDown={() => setIsSliding(true)}
+                      onPointerUp={() => setIsSliding(false)}
+                      onPointerCancel={() => setIsSliding(false)}
+                      className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
                   </div>
 
-                  <TinyScale values={[1,2,3,4,5,6,7,8,9,10]} highlight={stressLevel} />
+                  <TinyScale values={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} highlight={stressLevel} />
                 </div>
 
                 <div>

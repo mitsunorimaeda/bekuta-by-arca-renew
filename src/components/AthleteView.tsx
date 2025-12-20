@@ -44,11 +44,9 @@ import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusBotton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
-import { normalizeTrainingRecord } from '../lib/normalizeRecords';
-import {
-  normalizeTrainingForForm,
-  normalizeTrainingForCheckIn,
-} from '../lib/normalize';
+import type { WeightRecord } from '../lib/supabase';
+import { getRiskLabel,getRiskColor } from '../lib/riskUtils';
+import { useLastRecords } from '../hooks/useLastRecords';
 import {
   Activity,
   TrendingUp,
@@ -193,25 +191,25 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   const latestMotivation = getLatestMotivation();
   const latestWeight = getLatestWeight();
 
-  // ★ 最新 sleep record（必ず一番新しい日付を選ぶ）
-  const lastSleepRecord =
-    sleepRecords.length > 0
-      ? sleepRecords.reduce(
-          (latest, r) =>
-            !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
-          null as (typeof sleepRecords)[number] | null
-        )
-      : null;
+  // // ★ 最新 sleep record（必ず一番新しい日付を選ぶ）
+  // const lastSleepRecord =
+  //   sleepRecords.length > 0
+  //     ? sleepRecords.reduce(
+  //         (latest, r) =>
+  //           !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
+  //         null as (typeof sleepRecords)[number] | null
+  //       )
+  //     : null;
 
-  // ★ 最新 motivation record（必ず一番新しい日付を選ぶ）
-  const lastMotivationRecord =
-    motivationRecords.length > 0
-      ? motivationRecords.reduce(
-          (latest, r) =>
-            !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
-          null as (typeof motivationRecords)[number] | null
-        )
-      : null;
+  // // ★ 最新 motivation record（必ず一番新しい日付を選ぶ）
+  // const lastMotivationRecord =
+  //   motivationRecords.length > 0
+  //     ? motivationRecords.reduce(
+  //         (latest, r) =>
+  //           !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
+  //         null as (typeof motivationRecords)[number] | null
+  //       )
+  //     : null;
 
   // gender をコンポーネント用に正規化
   const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null =
@@ -348,8 +346,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
       rpe: data.rpe,
       duration_min: data.duration_min,
       date: data.date,
-      arrow_score: data.arrow_score ?? null,
-      signal_score: data.signal_score ?? null,
+      arrow_score: data.arrow_score ?? 50,
+      signal_score: data.signal_score ?? 50,
     } as any);
   };
 
@@ -366,8 +364,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     await updateTrainingRecord(recordId, {
       rpe: recordData.rpe,
       duration_min: recordData.duration_min,
-      arrow_score: recordData.arrow_score ?? null,
-      signal_score: recordData.signal_score ?? null,
+      arrow_score: recordData.arrow_score ?? 50,
+      signal_score: recordData.signal_score ?? 50,
     } as any);
   };
 
@@ -415,23 +413,30 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
   const derived = useAthleteDerivedValues({
     trainingRecords: records,
+    weightRecords,
     sleepRecords,
     motivationRecords,
   });
-
-
-  //
+  
+  // ✅ ここ3つだけ使うならこれでOK
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
   const weeklyAverage = derived.weeklyAverage;
-  const lastTrainingRecord = derived.lastTrainingRecord;
-  //const lastSleepRecord = derived.lastSleepRecord;
-  //const lastMotivationRecord = derived.lastMotivationRecord;
-
-  const normalizedLastTrainingRecord = normalizeTrainingForForm(lastTrainingRecord);
-  const normalizedLastTrainingRecordForCheckIn = normalizeTrainingForCheckIn(lastTrainingRecord);
-
-
+  
+  // ✅ lastRecord系は “直接” 渡す（中間変数いらない）
+  const {
+    normalizedLastTrainingRecord,
+    normalizedLastTrainingRecordForCheckIn,
+    normalizedLastWeightRecord,
+    normalizedLastSleepRecord,
+    normalizedLastMotivationRecord,
+  } = useLastRecords({
+    lastTrainingRecord: derived.lastTrainingRecord,
+    lastWeightRecord: derived.lastWeightRecord,
+    lastSleepRecord: derived.lastSleepRecord,
+    lastMotivationRecord: derived.lastMotivationRecord,
+  });
+  
 
   
   useEffect(() => {
@@ -897,119 +902,136 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             
           </>
         
-        ) : activeTab === 'weight' ? (
-          /* Weight Management Tab */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-            {/* Left Column - Weight Form and Stats */}
-            <div className="lg:col-span-1 space-y-6">
-              {/* Cross-tab reference: Latest ACWR */}
-              {latestACWR && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">現在のACWR</p>
-                      <p className="text-2xl font-bold" style={{ color: getRiskColor(latestACWR.riskLevel) }}>{latestACWR.acwr}</p>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{getRiskLabel(latestACWR.riskLevel)}</p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('overview')}
-                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+      ) : activeTab === 'weight' ? (
+        /* Weight Management Tab */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+          {/* Left Column - Weight Form and Stats */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Cross-tab reference: Latest ACWR */}
+            {latestACWR && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">現在のACWR</p>
+                    <p
+                      className="text-2xl font-bold"
+                      style={{ color: getRiskColor(latestACWR.riskLevel) }}
                     >
-                      練習記録へ →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Weight Stats Card */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">体重サマリー</h3>
-                <div className="space-y-4">
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    <p className="text-xs text-blue-600 mb-1">現在の体重</p>
-                    <p className="text-2xl font-bold text-blue-700">
-                      {getLatestWeight() !== null ? `${getLatestWeight()!.toFixed(1)} kg` : '未記録'}
+                      {latestACWR.acwr}
+                    </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {getRiskLabel(latestACWR.riskLevel ?? 'unknown')}
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">30日変化</p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {getWeightChange(30) !== null ? (
-                          <>
-                            {getWeightChange(30)! > 0 ? '+' : ''}
-                            {getWeightChange(30)!.toFixed(1)} kg
-                          </>
-                        ) : '-'}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">記録数</p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">{weightRecords.length}</p>
-                    </div>
-                  </div>
+                  <button
+                    onClick={() => setActiveTab('overview')}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    練習記録へ →
+                  </button>
                 </div>
               </div>
-
-              {/* BMI Display - Show only if height is set */}
-              {user.height_cm && latestWeight && (
-                <BMIDisplay
-                  weightKg={latestWeight}
-                  heightCm={user.height_cm}
-                  dateOfBirth={user.date_of_birth}
-                  gender={normalizedGenderFull}
-                />
-              )}
-
-              {!user.height_cm && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 transition-colors">
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                    身長を設定するとBMIが表示されます。設定タブからプロフィールを編集してください。
+            )}
+      
+            {/* Weight Stats Card */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                体重サマリー
+              </h3>
+              <div className="space-y-4">
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-xs text-blue-600 mb-1">現在の体重</p>
+                  <p className="text-2xl font-bold text-blue-700">
+                    {getLatestWeight() !== null ? `${getLatestWeight()!.toFixed(1)} kg` : '未記録'}
                   </p>
                 </div>
-              )}
-
-              {/* Weight Form */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">体重記録</h2>
-                  <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
+      
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">30日変化</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {getWeightChange(30) !== null ? (
+                        <>
+                          {getWeightChange(30)! > 0 ? '+' : ''}
+                          {getWeightChange(30)!.toFixed(1)} kg
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </p>
+                  </div>
+      
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">記録数</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {weightRecords.length}
+                    </p>
+                  </div>
                 </div>
-                <WeightForm
-                  onSubmit={addWeightRecord}
-                  onCheckExisting={checkExistingWeightRecord}
-                  onUpdate={updateWeightRecord}
-                  loading={weightLoading}
-                  lastRecord={lastWeightRecord}   // ★ ここを追加
-                />
               </div>
             </div>
-
-            {/* Right Column - Chart */}
-            <div className="lg:col-span-2">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">体重推移グラフ</h2>
-                {weightLoading ? (
-                  <div className="flex items-center justify-center h-64 sm:h-80">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                  </div>
-                ) : (
-                  <WeightChart data={weightRecords} />
-                )}
+      
+            {/* BMI Display - Show only if height is set */}
+            {user.height_cm && latestWeight && (
+              <BMIDisplay
+                weightKg={latestWeight}
+                heightCm={user.height_cm}
+                dateOfBirth={user.date_of_birth}
+                gender={normalizedGenderFull}
+              />
+            )}
+      
+            {!user.height_cm && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 transition-colors">
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  身長を設定するとBMIが表示されます。設定タブからプロフィールを編集してください。
+                </p>
               </div>
-
-              {/* Weight Records List */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <WeightRecordsList
-                  records={weightRecords}
-                  onUpdate={updateWeightRecord}
-                  onDelete={deleteWeightRecord}
-                  loading={weightLoading}
-                />
+            )}
+      
+            {/* Weight Form */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">体重記録</h2>
+                <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
               </div>
+              <WeightForm
+                onSubmit={addWeightRecord}
+                onCheckExisting={checkExistingWeightRecord}
+                onUpdate={updateWeightRecord}
+                loading={weightLoading}
+                lastRecord={lastWeightRecord}
+              />
             </div>
           </div>
-        ) : activeTab === 'insights' ? (
+      
+          {/* Right Column - Chart */}
+          <div className="lg:col-span-2">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+                体重推移グラフ
+              </h2>
+              {weightLoading ? (
+                <div className="flex items-center justify-center h-64 sm:h-80">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <WeightChart data={weightRecords} />
+              )}
+            </div>
+      
+            {/* Weight Records List */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+              <WeightRecordsList
+                records={weightRecords}
+                onUpdate={updateWeightRecord}
+                onDelete={deleteWeightRecord}
+                loading={weightLoading}
+              />
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'insights' ? (
           /* Correlation Analysis Tab */
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
@@ -1164,23 +1186,25 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               stressLevel={getLatestMotivation()?.stress_level ?? null}
             />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Sleep Section */}
+            {/* Sleep Section */}
               <div className="space-y-6">
+                {/* Sleep Form */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">睡眠記録</h2>
                     <Moon className="w-6 h-6 text-indigo-500" />
                   </div>
+
                   <SleepForm
                     onSubmit={addSleepRecord}
                     onCheckExisting={checkExistingSleepRecord}
                     onUpdate={updateSleepRecord}
                     loading={sleepLoading}
-                    lastRecord={lastSleepRecord}
+                    lastRecord={normalizedLastSleepRecord}
                   />
                 </div>
 
+                {/* Sleep Chart */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">睡眠推移グラフ</h3>
                   {sleepLoading ? (
@@ -1219,16 +1243,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                   <MotivationForm
                     onSubmit={addMotivationRecord}
                     loading={motivationLoading}
-                    lastRecord={
-                      latestMotivation
-                        ? {
-                            date: latestMotivation.date,
-                            motivation_level: latestMotivation.motivation_level,
-                            energy_level: latestMotivation.energy_level,
-                            stress_level: latestMotivation.stress_level,
-                          }
-                        : undefined
-                    }
+                    lastRecord={normalizedLastMotivationRecord ?? undefined}
                   />
                 </div>
 
@@ -1266,8 +1281,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 </div>
               </div>
             </div>
-          </div>
-        ) : activeTab === 'cycle' ? (
+        ): // Add semicolon to fix the error
+        activeTab === 'cycle' ? (
           user.gender === 'female' ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1348,8 +1363,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             user={user}
             trainingRecords={records}
             acwrData={acwrData}
-            weightRecords={weightRecords}
-            sleepRecords={sleepRecords}
             onClose={() => setShowExportPanel(false)}
           />
         </Suspense>
@@ -1390,28 +1403,42 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <UnifiedDailyCheckIn
           userId={user.id}
           userGender={normalizedGenderBinary}
-          onTrainingSubmit={handleTrainingSubmitForCheckIn}   // ← ここ
+
+          onTrainingSubmit={handleTrainingSubmitForCheckIn}
           onTrainingCheckExisting={checkExistingTrainingRecord}
-          onTrainingUpdate={handleTrainingUpdateForCheckIn}   // ← ここ
+          onTrainingUpdate={handleTrainingUpdateForCheckIn}
+
           onWeightSubmit={addWeightRecord}
           onWeightCheckExisting={checkExistingWeightRecord}
           onWeightUpdate={updateWeightRecord}
+
           onSleepSubmit={addSleepRecord}
           onSleepCheckExisting={checkExistingSleepRecord}
           onSleepUpdate={updateSleepRecord}
+
           onMotivationSubmit={addMotivationRecord}
           onMotivationCheckExisting={checkExistingMotivationRecord}
           onMotivationUpdate={updateMotivationRecord}
+
           onCycleSubmit={addMenstrualCycle}
           onCycleUpdate={updateMenstrualCycle}
+
           onClose={() => setShowUnifiedCheckIn(false)}
-          lastTrainingRecord={normalizedLastTrainingRecordForCheckIn}
-          lastWeightRecord={lastWeightRecord}
-          lastSleepRecord={lastSleepRecord}
-          lastMotivationRecord={lastMotivationRecord}
+
+          // ✅ null を必ず渡す（undefined を潰す）
+          lastTrainingRecord={normalizedLastTrainingRecordForCheckIn ?? null}
+
+          // ✅ Supabase Row をそのまま渡さず、UnifiedDailyCheckIn が期待する形に詰め替え
+          lastWeightRecord={
+            lastWeightRecord
+              ? { weight_kg: Number(lastWeightRecord.weight_kg), date: lastWeightRecord.date }
+              : null
+          }
+
+          lastSleepRecord={normalizedLastSleepRecord ?? null}
+          lastMotivationRecord={normalizedLastMotivationRecord ?? null}
         />
       )}
-
       {activeTab === 'unified' && (
         <FloatingActionButton onClick={() => {
           console.log('[AthleteView] Floating action button clicked, opening UnifiedDailyCheckIn');
@@ -1420,24 +1447,4 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
       )}
     </div>
   );
-}
-
-function getRiskColor(riskLevel: string): string {
-  switch (riskLevel) {
-    case 'high': return '#EF4444';
-    case 'caution': return '#F59E0B';
-    case 'good': return '#10B981';
-    case 'low': return '#3B82F6';
-    default: return '#6B7280';
-  }
-}
-
-function getRiskLabel(riskLevel: string): string {
-  switch (riskLevel) {
-    case 'high': return '高リスク';
-    case 'caution': return '注意';
-    case 'good': return '良好';
-    case 'low': return '低負荷';
-    default: return '不明';
-  }
 }

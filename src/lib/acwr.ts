@@ -5,13 +5,22 @@ export type RecordLike = {
   load: number | null; // 1日あたりの負荷（sRPE等）
 };
 
+export type RiskLevel =
+  | 'high'
+  | 'caution'
+  | 'good'
+  | 'low'
+  | 'unknown';
+
 export type ACWRData = {
   date: string;                 // YYYY-MM-DD
   acwr: number | null;
   acuteLoad: number | null;
   chronicLoad: number | null;
-  riskLevel?: string;
+  riskLevel?: RiskLevel;
 };
+
+
 
 function toISO(d: Date) {
   return d.toISOString().slice(0, 10);

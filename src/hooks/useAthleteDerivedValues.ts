@@ -1,16 +1,37 @@
+// src/hooks/useAthleteDerivedValues.ts
 import { useMemo } from 'react';
 import { toJSTDateString } from '../lib/date';
 
-type Dated = { date: string | null | undefined };
+// ====== Types (軽量: DB Row っぽい shape を受ける想定) ======
 type TrainingRecord = {
   date: string | null | undefined;
   rpe: number | null | undefined;
   duration_min: number | null | undefined;
-  load?: number | null;
+  load?: number | null | undefined;
+};
+
+type WeightRecord = {
+  date: string | null | undefined;
+  weight_kg?: string | number | null | undefined;
+};
+
+type SleepRecord = {
+  date: string | null | undefined;
+  sleep_hours?: string | number | null | undefined; // "7.00" 対応
+  sleep_quality?: number | null | undefined;
+  bedtime?: string | null | undefined;
+  waketime?: string | null | undefined;
+  notes?: string | null | undefined;
+};
+
+type MotivationRecord = {
+  date: string | null | undefined;
+  motivation?: number | null | undefined;
+  motivation_level?: number | null | undefined;
+  notes?: string | null | undefined;
 };
 
 function isValidYMD(dateStr: unknown): dateStr is string {
-  // ざっくり YYYY-MM-DD のみ許可（ズレた形式で new Date が壊れるのを防ぐ）
   return typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
 }
 
@@ -20,59 +41,37 @@ function safeTime(dateStr: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+// ✅ 共通：最新レコードを返す
+function pickLatestByDate<T extends { date: string | null | undefined }>(items: T[]): T | null {
+  let best: T | null = null;
+  let bestT = -Infinity;
+
+  for (const r of items) {
+    const t = safeTime(r?.date);
+    if (t === null) continue;
+    if (!best || t > bestT) {
+      best = r;
+      bestT = t;
+    }
+  }
+  return best;
+}
+
 export function useAthleteDerivedValues(params: {
   trainingRecords?: TrainingRecord[];
-  sleepRecords?: Dated[];
-  motivationRecords?: Dated[];
+  weightRecords?: WeightRecord[];
+  sleepRecords?: SleepRecord[];
+  motivationRecords?: MotivationRecord[];
 }) {
   const trainingRecords = params.trainingRecords ?? [];
+  const weightRecords = params.weightRecords ?? [];
   const sleepRecords = params.sleepRecords ?? [];
   const motivationRecords = params.motivationRecords ?? [];
 
-  const lastTrainingRecord = useMemo(() => {
-    let best: TrainingRecord | null = null;
-    let bestT = -Infinity;
-
-    for (const r of trainingRecords) {
-      const t = safeTime(r?.date);
-      if (t === null) continue;
-      if (!best || t > bestT) {
-        best = r;
-        bestT = t;
-      }
-    }
-    return best;
-  }, [trainingRecords]);
-
-  const lastSleepRecord = useMemo(() => {
-    let best: Dated | null = null;
-    let bestT = -Infinity;
-
-    for (const r of sleepRecords) {
-      const t = safeTime(r?.date);
-      if (t === null) continue;
-      if (!best || t > bestT) {
-        best = r;
-        bestT = t;
-      }
-    }
-    return best;
-  }, [sleepRecords]);
-
-  const lastMotivationRecord = useMemo(() => {
-    let best: Dated | null = null;
-    let bestT = -Infinity;
-
-    for (const r of motivationRecords) {
-      const t = safeTime(r?.date);
-      if (t === null) continue;
-      if (!best || t > bestT) {
-        best = r;
-        bestT = t;
-      }
-    }
-    return best;
-  }, [motivationRecords]);
+  const lastTrainingRecord = useMemo(() => pickLatestByDate(trainingRecords), [trainingRecords]);
+  const lastWeightRecord = useMemo(() => pickLatestByDate(weightRecords), [weightRecords]);
+  const lastSleepRecord = useMemo(() => pickLatestByDate(sleepRecords), [sleepRecords]);
+  const lastMotivationRecord = useMemo(() => pickLatestByDate(motivationRecords), [motivationRecords]);
 
   const daysWithTrainingData = useMemo(() => {
     const s = new Set<string>();
@@ -88,20 +87,18 @@ export function useAthleteDerivedValues(params: {
       if (isValidYMD(r?.date)) dateSet.add(r.date);
     }
     if (dateSet.size === 0) return 0;
-  
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-  
-    // ✅ 今日に記録が無ければ「昨日」から連続を数える
+
+    // ✅ 今日に記録が無ければ「昨日」から
     const start = new Date(today);
     const todayStr = toJSTDateString(start);
-    if (!dateSet.has(todayStr)) {
-      start.setDate(start.getDate() - 1);
-    }
-  
+    if (!dateSet.has(todayStr)) start.setDate(start.getDate() - 1);
+
     let consecutive = 0;
     const cur = new Date(start);
-  
+
     for (let i = 0; i < 365; i++) {
       const dateStr = toJSTDateString(cur);
       if (dateSet.has(dateStr)) {
@@ -148,6 +145,7 @@ export function useAthleteDerivedValues(params: {
 
   return {
     lastTrainingRecord,
+    lastWeightRecord,
     lastSleepRecord,
     lastMotivationRecord,
     daysWithTrainingData,

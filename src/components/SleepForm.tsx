@@ -3,6 +3,7 @@ import { Moon, Star } from 'lucide-react';
 import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
+import type { SleepRecordForm } from '../lib/normalizeRecords';
 
 interface SleepFormProps {
   onSubmit: (data: {
@@ -11,11 +12,24 @@ interface SleepFormProps {
     sleep_quality?: number;
     notes?: string;
   }) => Promise<void>;
+
   onCheckExisting: (date: string) => Promise<SleepRecord | null>;
-  onUpdate: (id: string, data: any) => Promise<void>;
+
+  // ✅ any じゃなくて最低限の型にする（Sleep側はこれで十分）
+  onUpdate: (
+    id: string,
+    data: {
+      sleep_hours: number;
+      date: string;
+      sleep_quality?: number;
+      notes?: string;
+    }
+  ) => Promise<void>;
+
   loading?: boolean;
-  /** 前回の睡眠記録（あれば） */
-  lastRecord?: SleepRecord | null;
+
+  /** ✅ 前回の睡眠記録（正規化済みフォーム型で統一） */
+  lastRecord?: SleepRecordForm | null;
 }
 
 export function SleepForm({
@@ -32,17 +46,24 @@ export function SleepForm({
   const [error, setError] = useState('');
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [existingRecord, setExistingRecord] = useState<SleepRecord | null>(null);
-  const [pendingData, setPendingData] = useState<any>(null);
+
+  // ✅ pendingData も any をやめて型を揃える
+  const [pendingData, setPendingData] = useState<{
+    sleep_hours: number;
+    date: string;
+    sleep_quality?: number;
+    notes?: string;
+  } | null>(null);
 
   // ✅ 前回記録が変わったときに初期値を前回値に合わせる
   useEffect(() => {
-    if (lastRecord) {
-      if (lastRecord.sleep_hours != null) {
-        setSleepHours(String(lastRecord.sleep_hours));
-      }
-      if (lastRecord.sleep_quality != null) {
-        setSleepQuality(lastRecord.sleep_quality);
-      }
+    if (!lastRecord) return;
+
+    if (lastRecord.sleep_hours != null) {
+      setSleepHours(String(lastRecord.sleep_hours));
+    }
+    if (lastRecord.sleep_quality != null) {
+      setSleepQuality(lastRecord.sleep_quality);
     }
   }, [lastRecord]);
 
@@ -126,9 +147,7 @@ export function SleepForm({
                 : 'text-gray-300 dark:text-gray-600 hover:text-gray-400'
             }`}
           >
-            <Star
-              className={`w-6 h-6 ${star <= sleepQuality ? 'fill-current' : ''}`}
-            />
+            <Star className={`w-6 h-6 ${star <= sleepQuality ? 'fill-current' : ''}`} />
           </button>
         ))}
       </div>
@@ -196,9 +215,7 @@ export function SleepForm({
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             required
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            推奨: 7-9時間
-          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">推奨: 7-9時間</p>
         </div>
 
         {/* 睡眠の質（前回値のチラ見せ＋星） */}

@@ -152,48 +152,52 @@ export function useTrainingData(userId: string) {
   );
 
   // ✅ updateにも arrow_score / signal_score
-  const updateTrainingRecord = useCallback(
-    async (
-      recordId: string,
-      recordData: Omit<TrainingUpsertPayload, 'date'> & { date?: string }
-    ) => {
-      try {
-        const { data, error } = await supabase
-          .from('training_records')
-          .update({
-            rpe: recordData.rpe,
-            duration_min: recordData.duration_min,
-            arrow_score: recordData.arrow_score,
-            signal_score: recordData.signal_score,
-            ...(recordData.date && { date: recordData.date }),
-          })
-          .eq('id', recordId)
-          .eq('user_id', userId)
-          .select()
-          .single();
+// ✅ updateにも arrow_score / signal_score（Partialで受ける）
+const updateTrainingRecord = useCallback(
+  async (
+    recordId: string,
+    recordData: Partial<Omit<TrainingUpsertPayload, 'date'>> & { date?: string }
+  ) => {
+    try {
+      const updatePayload: Record<string, any> = {
+        ...(recordData.rpe !== undefined ? { rpe: recordData.rpe } : {}),
+        ...(recordData.duration_min !== undefined ? { duration_min: recordData.duration_min } : {}),
+        ...(recordData.arrow_score !== undefined ? { arrow_score: recordData.arrow_score } : {}),
+        ...(recordData.signal_score !== undefined ? { signal_score: recordData.signal_score } : {}),
+        ...(recordData.date ? { date: recordData.date } : {}),
+      };
 
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from('training_records')
+        .update(updatePayload)
+        .eq('id', recordId)
+        .eq('user_id', userId)
+        .select()
+        .single();
 
-        const eventDate = (recordData.date ?? (data as any)?.date) as string | undefined;
+      if (error) throw error;
 
-        await safeLogEvent('training_completed', {
-          date: eventDate,
-          rpe: recordData.rpe,
-          duration_min: recordData.duration_min,
-          arrow_score: recordData.arrow_score,
-          signal_score: recordData.signal_score,
-          overwrite: true,
-        });
+      const eventDate = (recordData.date ?? (data as any)?.date) as string | undefined;
 
-        await fetchAll();
-        return data;
-      } catch (error) {
-        console.error('Error updating training record:', error);
-        throw error;
-      }
-    },
-    [userId, fetchAll, safeLogEvent]
-  );
+      // eventは可能なら送る（undefinedは許容）
+      await safeLogEvent('training_completed', {
+        date: eventDate,
+        rpe: recordData.rpe ?? (data as any)?.rpe,
+        duration_min: recordData.duration_min ?? (data as any)?.duration_min,
+        arrow_score: recordData.arrow_score ?? (data as any)?.arrow_score,
+        signal_score: recordData.signal_score ?? (data as any)?.signal_score,
+        overwrite: true,
+      });
+
+      await fetchAll();
+      return data;
+    } catch (error) {
+      console.error('Error updating training record:', error);
+      throw error;
+    }
+  },
+  [userId, fetchAll, safeLogEvent]
+);
 
   const deleteTrainingRecord = useCallback(
     async (recordId: string) => {

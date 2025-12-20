@@ -23,6 +23,10 @@ type ReflectionRow = {
   updated_at: string;
 };
 
+type DailyReflectionCardProps = {
+  userId: string;
+};
+
 function getTodayJSTString() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -71,25 +75,18 @@ function normalizeActionItems(row?: ReflectionRow | null): ActionItem[] {
 }
 
 const CAUSE_TAG_OPTIONS = [
-  // 身体・生理
   '栄養',
   '睡眠',
   '体調',
   '疲労',
   '痛み',
-
-  // トレーニング・競技
   'トレーニング負荷',
   '試合・連戦',
   '移動',
   '用具',
-
-  // メンタル・認知
   'メンタル',
   '集中',
   'モチベーション',
-
-  // 生活・環境
   '時間管理',
   '学業',
   '人間関係',
@@ -97,14 +94,20 @@ const CAUSE_TAG_OPTIONS = [
   'ルーティン',
 ];
 
-export function DailyReflectionCard() {
+export function DailyReflectionCard({ userId }: DailyReflectionCardProps) {
   const today = useMemo(() => getTodayJSTString(), []);
   const yesterday = useMemo(() => getYesterdayJSTString(), []);
 
   // ✅ 週切り替え（週次集計だけ）
   const [weekOffset, setWeekOffset] = useState(0);
-  const selectedWeekStart = useMemo(() => getStartOfWeekJSTString(weekOffset), [weekOffset]);
-  const selectedWeekEnd = useMemo(() => addDays(selectedWeekStart, 6), [selectedWeekStart]);
+  const selectedWeekStart = useMemo(
+    () => getStartOfWeekJSTString(weekOffset),
+    [weekOffset]
+  );
+  const selectedWeekEnd = useMemo(
+    () => addDays(selectedWeekStart, 6),
+    [selectedWeekStart]
+  );
 
   const [loading, setLoading] = useState(true);
 
@@ -134,15 +137,13 @@ export function DailyReflectionCard() {
   const [savingTodo, setSavingTodo] = useState(false);
   const [savingReflection, setSavingReflection] = useState(false);
 
-  // ✅ 初期ロード：今日・昨日だけ（週は別effectで取る）
+  // ✅ 初期ロード：今日・昨日だけ
   useEffect(() => {
+    if (!userId) return;
+
     const loadDaily = async () => {
       setLoading(true);
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const userId = sessionData.session?.user?.id;
-        if (!userId) return;
-
         const { data, error } = await supabase
           .from('reflections')
           .select('*')
@@ -168,7 +169,6 @@ export function DailyReflectionCard() {
           setCauseTags((t as any).cause_tags ?? []);
           setFreeNote((t as any).free_note ?? '');
 
-          // 今日の reflection に保存されている「明日の行動目標」を編集状態へ
           const items = normalizeActionItems(t as ReflectionRow);
           setTomorrowActions(items.length ? items : [{ text: '', done: false, done_at: null }]);
         } else {
@@ -182,17 +182,15 @@ export function DailyReflectionCard() {
     };
 
     loadDaily();
-  }, [today, yesterday]);
+  }, [userId, today, yesterday]);
 
   // ✅ 週次ロード：選択中の週が変わるたびに再取得
   useEffect(() => {
+    if (!userId) return;
+
     const loadWeek = async () => {
       setWeekLoading(true);
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const userId = sessionData.session?.user?.id;
-        if (!userId) return;
-
         const weekEndExclusive = addDays(selectedWeekStart, 7);
 
         const { data, error } = await supabase
@@ -213,14 +211,13 @@ export function DailyReflectionCard() {
     };
 
     loadWeek();
-  }, [selectedWeekStart]);
+  }, [userId, selectedWeekStart]);
 
   // ✅ 週次サマリー（原因タグ + 行動目標×完了率）
   const weeklySummary = useMemo(() => {
     const didCount = weekRows.filter((r) => (r.did ?? '').trim().length > 0).length;
     const didntCount = weekRows.filter((r) => (r.didnt ?? '').trim().length > 0).length;
 
-    // cause_tags
     const tagCount: Record<string, number> = {};
     weekRows.forEach((r) => {
       (r.cause_tags ?? []).forEach((t) => {
@@ -233,7 +230,6 @@ export function DailyReflectionCard() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    // 行動目標 × 完了率
     let goals = 0;
     let done = 0;
 
@@ -313,7 +309,6 @@ export function DailyReflectionCard() {
         prev ? { ...prev, next_action_items: next, next_action: next[0]?.text ?? null } : prev
       );
 
-      // ✅ もし「昨日」が選択中の週に含まれていれば週次も即反映
       setWeekRows((prev) =>
         prev.map((r) => (r.id === yesterdayRow.id ? ({ ...r, next_action_items: next } as any) : r))
       );
@@ -350,12 +345,10 @@ export function DailyReflectionCard() {
 
   // 今日の振り返り保存（明日の行動目標＝複数化して保存）
   const saveTodayReflection = async () => {
+    if (!userId) return;
+
     setSavingReflection(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user?.id;
-      if (!userId) return;
-
       const cleanedActions = tomorrowActions
         .map((a) => ({ ...a, text: (a.text ?? '').trim() }))
         .filter((a) => a.text.length > 0);
@@ -378,16 +371,20 @@ export function DailyReflectionCard() {
         if (error) throw error;
 
         setTodayRow((prev) => (prev ? ({ ...prev, ...payload } as any) : prev));
-
-        // ✅ 今日が選択中の週に含まれていれば週次も即反映
-        setWeekRows((prev) => prev.map((r) => (r.id === todayRow.id ? ({ ...r, ...payload } as any) : r)));
+        setWeekRows((prev) =>
+          prev.map((r) => (r.id === todayRow.id ? ({ ...r, ...payload } as any) : r))
+        );
       } else {
-        const { data, error } = await supabase.from('reflections').insert(payload).select('*').single();
+        const { data, error } = await supabase
+          .from('reflections')
+          .insert(payload)
+          .select('*')
+          .single();
+
         if (error) throw error;
 
         setTodayRow(data as any);
 
-        // ✅ 今日が選択中の週に含まれていれば週次に追加
         if (today >= selectedWeekStart && today <= selectedWeekEnd) {
           setWeekRows((prev) => {
             const minimal: any = {
@@ -400,7 +397,9 @@ export function DailyReflectionCard() {
               next_action_items: data.next_action_items ?? payload.next_action_items,
             };
             const filtered = prev.filter((r) => r.id !== minimal.id);
-            return [...filtered, minimal].sort((a, b) => a.reflection_date.localeCompare(b.reflection_date));
+            return [...filtered, minimal].sort((a, b) =>
+              a.reflection_date.localeCompare(b.reflection_date)
+            );
           });
         }
       }
@@ -421,12 +420,13 @@ export function DailyReflectionCard() {
 
   return (
     <div className="rounded-xl p-6 shadow-sm space-y-6 bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-
       {/* ✅ 週切り替え付き：週の傾向 */}
-      <div className="rounded-lg border p-4
+      <div
+        className="rounded-lg border p-4
         border-amber-200 bg-amber-50 text-amber-950
         dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100
-      ">
+      "
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold">週の傾向</h3>
@@ -472,9 +472,13 @@ export function DailyReflectionCard() {
         </div>
 
         <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold text-amber-800 dark:text-amber-200/80">原因タグ TOP3</div>
+          <div className="text-xs font-semibold text-amber-800 dark:text-amber-200/80">
+            原因タグ TOP3
+          </div>
           {weeklySummary.topTags.length === 0 ? (
-            <div className="text-sm text-amber-800 dark:text-amber-200/80">まだ原因タグがありません</div>
+            <div className="text-sm text-amber-800 dark:text-amber-200/80">
+              まだ原因タグがありません
+            </div>
           ) : (
             <div className="flex flex-wrap gap-2">
               {weeklySummary.topTags.map(([tag, count]) => (
@@ -511,10 +515,12 @@ export function DailyReflectionCard() {
       </div>
 
       {/* ✅ 今日のやること（昨日の目標） */}
-      <div className="rounded-lg border p-4
+      <div
+        className="rounded-lg border p-4
         border-blue-200 bg-blue-50 text-blue-950
         dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100
-      ">
+      "
+      >
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">今日のやること（昨日の目標）</h3>
           <div className="text-xs text-blue-700 dark:text-blue-200/80">{yesterday} に設定</div>
@@ -543,7 +549,13 @@ export function DailyReflectionCard() {
                   className="h-4 w-4 accent-green-600"
                 />
                 <div className="flex-1">
-                  <div className={`text-sm ${item.done ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                  <div
+                    className={`text-sm ${
+                      item.done
+                        ? 'line-through text-gray-500 dark:text-gray-400'
+                        : 'text-gray-900 dark:text-gray-100'
+                    }`}
+                  >
                     {item.text}
                   </div>
                   {item.done_at && (
