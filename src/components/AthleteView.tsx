@@ -42,6 +42,7 @@ import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
 import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusBotton';
+import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import {
   Activity,
   TrendingUp,
@@ -90,7 +91,7 @@ type AthleteViewProps = {
   onUserUpdated?: () => Promise<void> | void;
 };
 
-export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: AthleteViewProps) {
+export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp,onUserUpdated }: AthleteViewProps) {
   console.log('[AthleteView] User object:', user);
   console.log('[AthleteView] User gender:', user.gender);
 
@@ -266,11 +267,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
   const weeklyAverage = getWeeklyAverage();
 
-  // Calculate days with data and consecutive days for ACWR progress
-  const getDaysWithData = () => {
-    const uniqueDates = new Set(records.map(r => r.date));
-    return uniqueDates.size;
-  };
 
   const getConsecutiveDays = () => {
     if (records.length === 0) return 0;
@@ -295,7 +291,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     return consecutive;
   };
 
-  const daysWithData = getDaysWithData();
+  
   const consecutiveDays = getConsecutiveDays();
 
   const handlePerformanceRecordSubmit = async (recordData: any) => {
@@ -409,6 +405,33 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   };
 
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const derived = useAthleteDerivedValues({
+    trainingRecords: records,
+    sleepRecords,
+    motivationRecords,
+  });
+  
+  //
+  const daysWithData = derived.daysWithTrainingData;
+
+  
+  useEffect(() => {
+    console.log('[derived check]', {
+      lastTraining: derived.lastTrainingRecord?.date,
+      lastSleep: derived.lastSleepRecord?.date,
+      lastMotivation: derived.lastMotivationRecord?.date,
+      days: derived.daysWithTrainingData,
+      consecutive: derived.consecutiveTrainingDays,
+    });
+  }, [
+    derived.lastTrainingRecord?.date,
+    derived.lastSleepRecord?.date,
+    derived.lastMotivationRecord?.date,
+    derived.daysWithTrainingData,
+    derived.consecutiveTrainingDays,
+  ]);
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -776,6 +799,17 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                   </div>
 
+                  <div className="mb-3 rounded-lg bg-gray-50 dark:bg-gray-700/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+                    記録日数: <span className="font-semibold">{daysWithData}</span> ／
+                    連続: <span className="font-semibold">{consecutiveDays}</span>
+                    {weeklyAverage && (
+                      <>
+                        {' '}／ 7日平均RPE: <span className="font-semibold">{weeklyAverage.rpe.toFixed(1)}</span>
+                        {' '}平均時間: <span className="font-semibold">{weeklyAverage.duration.toFixed(0)}分</span>
+                      </>
+                    )}
+                  </div>
+
                   <TrainingForm
                     userId={user.id}
                     onSubmit={addTrainingRecord}
@@ -801,7 +835,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                         {latestACWR.acwr}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                        {getRiskLabel(latestACWR.riskLevel)}
+                        {getRiskLabel(latestACWR.riskLevel ?? 'unknown')}
                       </div>
                       <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
                         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
@@ -1323,9 +1357,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
       {showProfileEdit && (
         <ProfileEditForm
           user={user}
-          onUpdate={() => {
-            setProfileRefreshKey(prev => prev + 1);
-            window.location.reload();
+          onUpdate={async () => {
+            await onUserUpdated?.(); // ✅ これで userProfile が更新される
           }}
           onClose={() => setShowProfileEdit(false)}
         />
