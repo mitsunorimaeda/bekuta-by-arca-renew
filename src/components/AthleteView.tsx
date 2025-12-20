@@ -41,7 +41,7 @@ import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
 import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
 import { DailyReflectionCard } from './DailyReflectionCard';
-import { ShareStatusButton } from './ShareStatusBotton';
+import { ShareStatusButton } from './ShareStatusButton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
 import type { WeightRecord } from '../lib/supabase';

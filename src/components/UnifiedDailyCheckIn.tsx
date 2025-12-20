@@ -29,8 +29,8 @@ interface UnifiedDailyCheckInProps {
     rpe: number;
     duration_min: number;
     date: string;
-    arrow_score: number;
-    signal_score: number;
+    arrow_score?: number;
+    signal_score?: number;
   }) => Promise<void>;
   onTrainingCheckExisting: (date: string) => Promise<TrainingRecord | null>;
   onTrainingUpdate: (
@@ -193,8 +193,8 @@ export function UnifiedDailyCheckIn({
           rpe,
           duration_min: duration,
           date: selectedDate,
-          arrow_score: arrowScore,
-          signal_score: signalScore,
+          arrow_score: arrowScore ?? 50,
+          signal_score: signalScore ?? 50,
         });
 
         setCompletedSections((prev) => new Set(prev).add('training'));
@@ -656,7 +656,7 @@ export function UnifiedDailyCheckIn({
                     <Scale className="w-6 h-6 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text:white">体重記録</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">体重記録</h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">体重を記録</p>
                   </div>
                 </div>

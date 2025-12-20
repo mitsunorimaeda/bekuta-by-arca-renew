@@ -25,7 +25,7 @@ interface TrainingFormProps {
   // ✅ update も arrow_score / signal_score を受け取る形に変更
   onUpdate: (
     recordId: string,
-    data: { rpe: number; duration_min: number; arrow_score: number | null; signal_score: number | null }
+    data: { rpe: number; duration_min: number; arrow_score: number ; signal_score: number }
   ) => Promise<void>;
 
   loading: boolean;
@@ -331,8 +331,113 @@ export function TrainingForm({
           </div>
         )}
 
-        {/* 以下、あなたの元コードのまま */}
-        {/* ... */}
+              {/* 日付 */}
+              <div>
+          <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <Calendar className="w-4 h-4 mr-2" />
+            日付
+          </label>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+          />
+        </div>
+
+        {/* RPE */}
+        <div>
+          <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <Zap className="w-4 h-4 mr-2" />
+            RPE（運動強度）
+          </label>
+
+          <input
+            type="range"
+            min="0"
+            max="10"
+            value={rpe}
+            onChange={handleRpeChange}
+            className="w-full"
+          />
+
+          <div className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+            {rpeLabels[rpe]}
+          </div>
+        </div>
+
+        {/* 時間（分） */}
+        <div>
+          <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <Clock className="w-4 h-4 mr-2" />
+            練習時間（分）
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="480"
+            value={duration}
+            onChange={handleDurationChange}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            style={{ fontSize: '16px' }}
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            ※ 休養日は「RPE=0 / 時間=0」
+          </p>
+        </div>
+
+        {/* 矢印 / 電波 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
+            <VectorArrowPicker value={arrowScore} onChange={setArrowScore} />
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              矢印（成長実感）: {arrowScore}/100
+            </div>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
+            <SignalPicker value={signalScore} onChange={setSignalScore} />
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              電波（意図理解）: {signalScore}/100
+            </div>
+          </div>
+        </div>
+
+        {/* 負荷 */}
+        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-300">今日の負荷</span>
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">
+              {loadValue}
+            </span>
+          </div>
+        </div>
+
+        {/* warning / error */}
+        {warning && (
+          <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-700 dark:text-yellow-300">
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm">{warning}</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300">
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm">{error}</span>
+          </div>
+        )}
+
+        {/* 送信 */}
+        <button
+          type="submit"
+          disabled={loading || submitting}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          {submitting ? '保存中...' : '記録する'}
+        </button>
+
       </form>
     </>
   );
