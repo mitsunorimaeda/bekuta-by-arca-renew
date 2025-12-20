@@ -246,54 +246,54 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         , null as (typeof weightRecords)[number] | null)
       : null;
 
-  // Calculate weekly average for smart input
-  const getWeeklyAverage = () => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  // // Calculate weekly average for smart input
+  // const getWeeklyAverage = () => {
+  //   const oneWeekAgo = new Date();
+  //   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    const recentRecords = records.filter(r => new Date(r.date) >= oneWeekAgo);
+  //   const recentRecords = records.filter(r => new Date(r.date) >= oneWeekAgo);
 
-    if (recentRecords.length === 0) return null;
+  //   if (recentRecords.length === 0) return null;
 
-    const totalRpe = recentRecords.reduce((sum, r) => sum + r.rpe, 0);
-    const totalDuration = recentRecords.reduce((sum, r) => sum + r.duration_min, 0);
-    const totalLoad = recentRecords.reduce((sum, r) => sum + (r.load ?? 0), 0);
+  //   const totalRpe = recentRecords.reduce((sum, r) => sum + r.rpe, 0);
+  //   const totalDuration = recentRecords.reduce((sum, r) => sum + r.duration_min, 0);
+  //   const totalLoad = recentRecords.reduce((sum, r) => sum + (r.load ?? 0), 0);
 
-    return {
-      rpe: totalRpe / recentRecords.length,
-      duration: totalDuration / recentRecords.length,
-      load: totalLoad / recentRecords.length
-    };
-  };
+  //   return {
+  //     rpe: totalRpe / recentRecords.length,
+  //     duration: totalDuration / recentRecords.length,
+  //     load: totalLoad / recentRecords.length
+  //   };
+  // };
 
-  const weeklyAverage = getWeeklyAverage();
+  // const weeklyAverage = getWeeklyAverage();
 
 
-  //const getConsecutiveDays = () => {
-  //  //if (records.length === 0) return 0;
-//
-  //  const sortedDates = [...new Set(records.map(r => r.date))].sort();
-    //const todayDate = new Date();
-    //todayDate.setHours(0, 0, 0, 0);
+//   const getConsecutiveDays = () => {
+//    //if (records.length === 0) return 0;
 
-    //let consecutive = 0;
-    //let currentDate = new Date(todayDate);
+//    const sortedDates = [...new Set(records.map(r => r.date))].sort();
+//     const todayDate = new Date();
+//     todayDate.setHours(0, 0, 0, 0);
+
+//     let consecutive = 0;
+//     let currentDate = new Date(todayDate);
 
 //    for (let i = 0; i < 365; i++) {
-  //    const dateStr = toJSTDateString(currentDate);
-    //  if (sortedDates.includes(dateStr)) {
-      //  consecutive++;
-     //   currentDate.setDate(currentDate.getDate() - 1);
-    //  } else {
-    //    break;
-    //  }
-  //  }
+//      const dateStr = toJSTDateString(currentDate);
+//      if (sortedDates.includes(dateStr)) {
+//        consecutive++;
+//        currentDate.setDate(currentDate.getDate() - 1);
+//      } else {
+//        break;
+//      }
+//    }
 
-  //  return consecutive;
-  //};
+//    return consecutive;
+//   };
 
   
- // const consecutiveDays = getConsecutiveDays();
+//  const consecutiveDays = getConsecutiveDays();
 
   const handlePerformanceRecordSubmit = async (recordData: any) => {
     const result = await addPerformanceRecord(recordData);
@@ -416,7 +416,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   //
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
-  //const weeklyAverage = derived.weeklyAverage;
+  const weeklyAverage = derived.weeklyAverage;
   //const lastTrainingRecord = derived.lastTrainingRecord;
   //const lastSleepRecord = derived.lastSleepRecord;
   //const lastMotivationRecord = derived.lastMotivationRecord;
