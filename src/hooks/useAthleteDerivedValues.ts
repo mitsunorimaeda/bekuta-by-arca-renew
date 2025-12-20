@@ -83,20 +83,25 @@ export function useAthleteDerivedValues(params: {
   }, [trainingRecords]);
 
   const consecutiveTrainingDays = useMemo(() => {
-    if (!trainingRecords.length) return 0;
-
     const dateSet = new Set<string>();
     for (const r of trainingRecords) {
       if (isValidYMD(r?.date)) dateSet.add(r.date);
     }
     if (dateSet.size === 0) return 0;
-
+  
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
+  
+    // ✅ 今日に記録が無ければ「昨日」から連続を数える
+    const start = new Date(today);
+    const todayStr = toJSTDateString(start);
+    if (!dateSet.has(todayStr)) {
+      start.setDate(start.getDate() - 1);
+    }
+  
     let consecutive = 0;
-    const cur = new Date(today);
-
+    const cur = new Date(start);
+  
     for (let i = 0; i < 365; i++) {
       const dateStr = toJSTDateString(cur);
       if (dateSet.has(dateStr)) {
