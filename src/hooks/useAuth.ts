@@ -9,6 +9,45 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
+  // --- ユーザープロフィール読込 (users テーブル) ---
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        setUserProfile(null);
+      } else if (data) {
+        setUserProfile(data as User);
+      } else {
+        setUserProfile(null);
+      }
+    } catch (error) {
+      console.error('Unexpected error fetching user profile:', error);
+      setUserProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ 外から呼べるようにした「再取得」
+  const refreshUserProfile = async () => {
+    // いまのuser stateが取れない瞬間もあるので auth から確実に取る
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      console.error('refreshUserProfile: getUser error:', error);
+      return;
+    }
+    const uid = data.user?.id;
+    if (!uid) return;
+
+    await fetchUserProfile(uid);
+  };
+
   // 初期ロード
   useEffect(() => {
     // 初回セッション取得
@@ -44,31 +83,6 @@ export function useAuth() {
   const checkPasswordChangeRequired = (authUser: AuthUser) => {
     const requiresChange = authUser.user_metadata?.requires_password_change === true;
     setRequiresPasswordChange(requiresChange);
-  };
-
-  // --- ユーザープロフィール読込 (users テーブル) ---
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        setUserProfile(null);
-      } else if (data) {
-        setUserProfile(data as User);
-      } else {
-        setUserProfile(null);
-      }
-    } catch (error) {
-      console.error('Unexpected error fetching user profile:', error);
-      setUserProfile(null);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // --- ログイン ---
@@ -158,5 +172,6 @@ export function useAuth() {
     signOut,
     changePassword,
     acceptTerms, // ← App から使う
+    refreshUserProfile, // ✅ 追加
   };
 }

@@ -87,6 +87,7 @@ type AthleteViewProps = {
   onNavigateToTerms: () => void;
   onNavigateToCommercial: () => void;
   onNavigateToHelp: () => void;
+  onUserUpdated?: () => Promise<void> | void;
 };
 
 export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: AthleteViewProps) {
