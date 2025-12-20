@@ -416,8 +416,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   //
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
-  const weeklyAverage = derived.weeklyAverage;
-
+  //const weeklyAverage = derived.weeklyAverage;
+  //const lastTrainingRecord = derived.lastTrainingRecord;
+  //const lastSleepRecord = derived.lastSleepRecord;
+  //const lastMotivationRecord = derived.lastMotivationRecord;
 
   
   useEffect(() => {
