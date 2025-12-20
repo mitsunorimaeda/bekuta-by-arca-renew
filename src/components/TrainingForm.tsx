@@ -386,6 +386,16 @@ export function TrainingForm({
           </p>
         </div>
 
+        {/* 負荷 */}
+        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-300">今日の負荷</span>
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">
+              {loadValue}
+            </span>
+          </div>
+        </div>
+
         {/* 矢印 / 電波 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
@@ -403,15 +413,7 @@ export function TrainingForm({
           </div>
         </div>
 
-        {/* 負荷 */}
-        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600 dark:text-gray-300">今日の負荷</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
-              {loadValue}
-            </span>
-          </div>
-        </div>
+        
 
         {/* warning / error */}
         {warning && (
