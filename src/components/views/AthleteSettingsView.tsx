@@ -1,8 +1,11 @@
 import React from 'react';
 import { EmailNotificationSettings } from '../EmailNotificationSettings';
+import type { Database } from '../../lib/database.types';
+
+type UserProfile = Database['public']['Tables']['users']['Row'];
 
 type Props = {
-  user: any;
+  user: UserProfile;
   onOpenProfileEdit: () => void;
 };
 
@@ -24,22 +27,26 @@ export function AthleteSettingsView({ user, onOpenProfileEdit }: Props) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">名前</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">{user.name}</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">{user.name ?? '-'}</p>
             </div>
 
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">メールアドレス</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">{user.email}</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">{user.email ?? '-'}</p>
             </div>
 
             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">性別</p>
               <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                {user.gender === 'male' ? '男性' :
-                 user.gender === 'female' ? '女性' :
-                 user.gender === 'other' ? 'その他' :
-                 user.gender === 'prefer_not_to_say' ? '回答しない' :
-                 '未設定'}
+                {user.gender === 'male'
+                  ? '男性'
+                  : user.gender === 'female'
+                  ? '女性'
+                  : user.gender === 'other'
+                  ? 'その他'
+                  : user.gender === 'prefer_not_to_say'
+                  ? '回答しない'
+                  : '未設定'}
               </p>
             </div>
 
@@ -68,7 +75,7 @@ export function AthleteSettingsView({ user, onOpenProfileEdit }: Props) {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-        <EmailNotificationSettings userId={user.id} userEmail={user.email} />
+        <EmailNotificationSettings userId={user.id} userEmail={user.email ?? ''} />
       </div>
     </div>
   );

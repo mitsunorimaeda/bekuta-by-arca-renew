@@ -1,4 +1,4 @@
-// ProfileEditForm.tsx
+// src/components/ProfileEditForm.tsx
 import React, { useState } from 'react';
 import { User as UserIcon, Calendar, Ruler, Users, Save, AlertCircle, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -14,20 +14,32 @@ interface ProfileEditFormProps {
   onClose: () => void;
 }
 
-// 電話番号を「半角数字のみ」に正規化（ハイフン・空白・全角数字などを吸収）
+/**
+ * 電話番号を正規化
+ * - 全角数字→半角
+ * - 数字以外除去（ハイフン/空白/括弧など）
+ * - +81 / 81 始まりを 0 始まりへ寄せる（例: +8190... / 8190... → 090...）
+ */
 function normalizePhoneNumber(input: string) {
   if (!input) return '';
-  // 全角数字 → 半角
   const half = input.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
-  // 数字以外を除去
-  return half.replace(/\D/g, '');
+  let digits = half.replace(/\D/g, '');
+
+  // 81 始まり（日本国番号）を 0 始まりへ
+  if (digits.startsWith('81')) {
+    digits = '0' + digits.slice(2);
+  }
+  return digits;
 }
 
+/**
+ * 日本の携帯番号のみに絞る（070 / 080 / 090）
+ * - 任意入力なので空はOK
+ * - 0[7-9]0 + 8桁 = 合計11桁
+ */
 function isLikelyJpMobile(phoneDigits: string) {
-  // ゆるめ：10〜11桁の数字
-  if (!phoneDigits) return true; // 任意入力なので空はOK
-  if (!/^\d{10,11}$/.test(phoneDigits)) return false;
-  return true;
+  if (!phoneDigits) return true;
+  return /^0[7-9]0\d{8}$/.test(phoneDigits);
 }
 
 export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProps) {
@@ -47,9 +59,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
     return age;
   };
 
@@ -62,9 +72,6 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
     setLoading(true);
 
     try {
-      const normalizedPhone = normalizePhoneNumber(phoneNumber);
-
-      // --- バリデーション ---
       const trimmedName = name.trim();
       if (!trimmedName) throw new Error('名前を入力してください。');
 
@@ -82,24 +89,22 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
         }
       }
 
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      // 携帯番号だけに絞る
       if (!isLikelyJpMobile(normalizedPhone)) {
-        throw new Error('電話番号は10〜11桁の数字で入力してください（ハイフンはOK）。');
+        throw new Error('電話番号は070 / 080 / 090から始まる携帯番号を入力してください（ハイフンOK）。');
       }
 
-      // --- 更新データ ---
       const updateData: UserUpdate = {
         name: trimmedName,
         gender: gender || null,
         height_cm: parsedHeight,
         date_of_birth: dateOfBirth || null,
-        phone_number: normalizedPhone || null, // 保存はハイフンなしに統一
+        phone_number: normalizedPhone || null, // 保存はハイフンなし（携帯のみ）
       };
 
-      const { error: updateError } = await supabase
-        .from('users')
-        .update(updateData)
-        .eq('id', user.id);
-
+      const { error: updateError } = await supabase.from('users').update(updateData).eq('id', user.id);
       if (updateError) throw updateError;
 
       setSuccess(true);
@@ -115,7 +120,6 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
     }
   };
 
-  // 表示用（入力中でも見やすく）
   const normalizedPreview = normalizePhoneNumber(phoneNumber);
 
   return (
@@ -139,9 +143,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* 名前 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                名前
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">名前</label>
               <input
                 type="text"
                 value={name}
@@ -151,11 +153,11 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               />
             </div>
 
-            {/* 電話番号 */}
+            {/* 電話番号（携帯のみ） */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                 <Phone className="w-4 h-4 mr-2" />
-                電話番号（任意）
+                電話番号（携帯のみ・任意）
               </label>
               <input
                 type="tel"
@@ -163,7 +165,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 dark:text-white"
-                placeholder="090-1234-5678"
+                placeholder="090-1234-5678（+81 でもOK）"
               />
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-1">
                 <p>CSVで取り込む InBody データの本人紐付けに使用します。</p>
@@ -232,9 +234,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 dark:text-white"
               />
               {age !== null && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  現在の年齢: {age}歳
-                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">現在の年齢: {age}歳</p>
               )}
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 年齢別の適正体重範囲やパフォーマンス基準値の表示に使用されます
@@ -256,9 +256,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                 <div className="flex items-center">
                   <Save className="w-5 h-5 text-green-600 dark:text-green-400 mr-2" />
-                  <span className="text-sm text-green-700 dark:text-green-300">
-                    プロフィールを更新しました
-                  </span>
+                  <span className="text-sm text-green-700 dark:text-green-300">プロフィールを更新しました</span>
                 </div>
               </div>
             )}
@@ -282,6 +280,7 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
                   </>
                 )}
               </button>
+
               <button
                 type="button"
                 onClick={onClose}

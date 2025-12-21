@@ -47,6 +47,11 @@ import { DerivedStatsBar } from './DerivedStatsBar';
 import type { WeightRecord } from '../lib/supabase';
 import { getRiskLabel,getRiskColor } from '../lib/riskUtils';
 import { useLastRecords } from '../hooks/useLastRecords';
+import type { Database } from '../lib/database.types';
+type UserProfile = Database['public']['Tables']['users']['Row'];
+import { useInbodyData } from '../hooks/useInbodyData';
+import { InBodyLatestCard } from './InBodyLatestCard';
+import { InBodyCharts } from './InBodyCharts';
 import {
   Activity,
   TrendingUp,
@@ -84,10 +89,10 @@ import { supabase } from '../lib/supabase';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 
 type AthleteViewProps = {
-  user: any; // 実際の型があればそれでOK
+  user: UserProfile;
   alerts: any[];
   onLogout: () => void;
-  onHome: () => void; // ← これを追加
+  onHome: () => void;
   onNavigateToPrivacy: () => void;
   onNavigateToTerms: () => void;
   onNavigateToCommercial: () => void;
@@ -144,6 +149,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     getAverageStress,
     getLatestMotivation
   } = useMotivationData(user.id);
+
+  const { records: inbodyRecords, latest: latestInbody, loading: inbodyLoading, error: inbodyError } = useInbodyData(user.id);
 
   const { cycles: menstrualCycles, addCycle: addMenstrualCycle, updateCycle: updateMenstrualCycle } = useMenstrualCycleData(user.id);
 
@@ -1004,9 +1011,24 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               />
             </div>
           </div>
-      
           {/* Right Column - Chart */}
           <div className="lg:col-span-2">
+            {/* ✅ InBody 最新カード */}
+          <InBodyLatestCard
+            latest={latestInbody}
+            loading={inbodyLoading}
+            error={inbodyError}
+          />
+
+          <div className="mt-6">
+            <InBodyCharts
+              records={inbodyRecords}
+              loading={inbodyLoading}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+      
+
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
                 体重推移グラフ
