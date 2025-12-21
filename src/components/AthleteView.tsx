@@ -977,6 +977,32 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 </div>
               </div>
             </div>
+
+            {/* InBody Latest */}
+            {inbodyLoading ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+                <div className="flex items-center justify-center h-24">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              </div>
+            ) : inbodyError ? (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  InBodyデータの取得でエラーが発生しました：{inbodyError}
+                </p>
+              </div>
+            ) : latestInbody ? (
+              <div className="space-y-6">
+                <InBodyLatestCard data={latestInbody} />
+                <InBodyCharts records={inbodyRecords} />
+              </div>
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  InBodyデータはまだ登録されていません
+                </p>
+              </div>
+            )}
       
             {/* BMI Display - Show only if height is set */}
             {user.height_cm && latestWeight && (
@@ -1013,22 +1039,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
           </div>
           {/* Right Column - Chart */}
           <div className="lg:col-span-2">
-            {/* ✅ InBody 最新カード */}
-          <InBodyLatestCard
-            latest={latestInbody}
-            loading={inbodyLoading}
-            error={inbodyError}
-          />
-
-          <div className="mt-6">
-            <InBodyCharts
-              records={inbodyRecords}
-              loading={inbodyLoading}
-              isDarkMode={isDarkMode}
-            />
-          </div>
-      
-
+            {/* Weight Chart */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
                 体重推移グラフ
