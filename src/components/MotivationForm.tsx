@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Zap, AlertCircle } from 'lucide-react';
 import { getTodayJSTString } from '../lib/date';
-import { DuplicateMotivationRecordModal, ExistingMotivationRecord } from './DuplicateMotivationRecordModal';
+import { DuplicateMotivationRecordModal, ExistingMotivationRecord } from './DuplicateRecordModal';
 
 interface LastRecordInfo {
   date: string;
