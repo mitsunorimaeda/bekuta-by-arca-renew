@@ -39,11 +39,8 @@ interface TeamACWRChartProps {
   showAvgLoad?: boolean;
 }
 
-const pickAvgRPE = (d: TeamACWRData) =>
-  d.averageRPE ?? d.avg_rpe ?? d.rpe_avg ?? null;
-
-const pickAvgLoad = (d: TeamACWRData) =>
-  d.averageLoad ?? d.avg_load ?? d.load_avg ?? null;
+const pickAvgRPE = (d: TeamACWRData) => d.averageRPE ?? d.avg_rpe ?? d.rpe_avg ?? null;
+const pickAvgLoad = (d: TeamACWRData) => d.averageLoad ?? d.avg_load ?? d.load_avg ?? null;
 
 export function TeamACWRChart({
   data,
@@ -57,7 +54,7 @@ export function TeamACWRChart({
 
   // ✅ period filter
   const filteredData = useMemo(() => {
-    if (data.length === 0) return [];
+    if (!data || data.length === 0) return [];
 
     const today = new Date();
     let startDate: Date;
@@ -86,31 +83,65 @@ export function TeamACWRChart({
     });
   }, [data, selectedPeriod]);
 
-  // ✅ グラフ用に「平均RPE/Load」を正規化して持たせる（rechartsが参照する dataKey を固定）
+  // ✅ グラフ用に「平均RPE/Load」を正規化（recharts dataKey固定）
   const chartData = useMemo(() => {
-    return filteredData.map((d) => ({
+    return (filteredData || []).map((d) => ({
       ...d,
       avgRPE: pickAvgRPE(d),
       avgLoad: pickAvgLoad(d),
     }));
   }, [filteredData]);
 
-  const hasRPE = useMemo(() => chartData.some((d) => typeof d.avgRPE === 'number'), [chartData]);
+  // ✅ ここが重要：数値が壊れてる行を除外して「落ちないdata」だけにする
+  const safeData = useMemo(() => {
+    return (chartData || [])
+      .filter((d: any) => {
+        if (!d || typeof d.date !== 'string') return false;
+
+        // ACWRは必須：有限数のみ
+        if (typeof d.averageACWR !== 'number' || !Number.isFinite(d.averageACWR)) return false;
+
+        // aux（RPE/Load）はあってもなくてもOK。壊れてたらnull化するためmapで処理
+        return true;
+      })
+      .map((d: any) => ({
+        ...d,
+        averageACWR: Math.max(0, d.averageACWR),
+        avgRPE:
+          typeof d.avgRPE === 'number' && Number.isFinite(d.avgRPE) ? d.avgRPE : null,
+        avgLoad:
+          typeof d.avgLoad === 'number' && Number.isFinite(d.avgLoad) ? d.avgLoad : null,
+      }));
+  }, [chartData]);
+
+  const hasRPE = useMemo(() => safeData.some((d: any) => typeof d.avgRPE === 'number'), [safeData]);
   const hasLoad = useMemo(
-    () => chartData.some((d) => typeof d.avgLoad === 'number'),
-    [chartData]
+    () => safeData.some((d: any) => typeof d.avgLoad === 'number'),
+    [safeData]
   );
 
-  const showRPELine = showAvgRPE && hasRPE;
-  const showLoadLine = showAvgLoad && hasLoad;
+  const showRPELine = !!showAvgRPE && hasRPE;
+  const showLoadLine = !!showAvgLoad && hasLoad;
   const showAuxAxis = showRPELine || showLoadLine;
 
-  if (data.length === 0) {
+  if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 sm:h-96 text-gray-500">
         <div className="text-center px-4">
           <p className="text-base sm:text-lg mb-2">データがありません</p>
           <p className="text-sm">選手の練習記録が蓄積されると平均ACWRが表示されます</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ filteredはあるが、数値不正で全部弾かれた場合
+  if (safeData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 sm:h-96 text-gray-500">
+        <div className="text-center px-4">
+          <p className="text-base sm:text-lg mb-2">有効なACWRデータがありません</p>
+          <p className="text-sm">（不正な数値・欠損データを除外しました）</p>
         </div>
       </div>
     );
@@ -130,7 +161,6 @@ export function TeamACWRChart({
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      // payload は複数Lineになるので、payload[0]に固定しない
       const row = payload?.[0]?.payload;
       const date = new Date(label);
       const isWeekend = date.getDay() === 0 || date.getDay() === 6;
@@ -156,14 +186,16 @@ export function TeamACWRChart({
             <p className="flex justify-between">
               <span>平均ACWR:</span>
               <span className="font-semibold" style={{ color: getRiskColor(row?.riskLevel) }}>
-                {acwr}
+                {typeof acwr === 'number' ? acwr.toFixed(2) : '-'}
               </span>
             </p>
 
             {showRPELine && (
               <p className="flex justify-between">
                 <span>平均RPE:</span>
-                <span className="font-semibold">{typeof rpe === 'number' ? rpe.toFixed(2) : '-'}</span>
+                <span className="font-semibold">
+                  {typeof rpe === 'number' ? rpe.toFixed(2) : '-'}
+                </span>
               </p>
             )}
 
@@ -178,8 +210,9 @@ export function TeamACWRChart({
 
             <p className="flex justify-between">
               <span>対象選手数:</span>
-              <span className="font-semibold">{row?.athleteCount}名</span>
+              <span className="font-semibold">{row?.athleteCount ?? '-'}名</span>
             </p>
+
             <p className="flex justify-between">
               <span>リスクレベル:</span>
               <span className="font-semibold" style={{ color: getRiskColor(row?.riskLevel) }}>
@@ -270,7 +303,7 @@ export function TeamACWRChart({
               </div>
               <div>
                 <span className="text-purple-600 font-medium">データ数:</span>
-                <span className="text-purple-800 ml-1">{chartData.length}日</span>
+                <span className="text-purple-800 ml-1">{safeData.length}日</span>
               </div>
             </div>
             <div className="flex items-center space-x-1">
@@ -280,7 +313,7 @@ export function TeamACWRChart({
           </div>
         </div>
 
-        {/* ✅ 列が無い場合の注意（開発中に便利） */}
+        {/* ✅ 列が無い場合の注意 */}
         {(showAvgRPE && !hasRPE) || (showAvgLoad && !hasLoad) ? (
           <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
             表示ONの指標がデータに含まれていません（平均RPE/平均Loadの列が未取得の可能性）。
@@ -290,7 +323,8 @@ export function TeamACWRChart({
 
       <div className="h-64 sm:h-96">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 20, right: 36, left: 20, bottom: 20 }}>
+          {/* ✅ safeData を渡す */}
+          <LineChart data={safeData} margin={{ top: 20, right: 36, left: 20, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
 
             <XAxis
@@ -304,7 +338,10 @@ export function TeamACWRChart({
             {/* ✅ 左：ACWR */}
             <YAxis
               yAxisId="acwr"
-              domain={[0, 'dataMax + 0.5']}
+              domain={[
+                0,
+                (dataMax: number) => (Number.isFinite(dataMax) ? dataMax + 0.5 : 2),
+              ]}
               stroke="#6b7280"
               fontSize={10}
               width={40}
@@ -314,7 +351,10 @@ export function TeamACWRChart({
             <YAxis
               yAxisId="aux"
               orientation="right"
-              domain={[0, 'auto']}
+              domain={[
+                0,
+                (dataMax: number) => (Number.isFinite(dataMax) ? dataMax : 10),
+              ]}
               stroke="#6b7280"
               fontSize={10}
               width={40}
@@ -342,48 +382,31 @@ export function TeamACWRChart({
               connectNulls
             />
 
-            {/* 平均RPE */}
+            {/* 平均RPE（正規化したavgRPEのみ表示） */}
             {showRPELine && (
               <Line
                 type="monotone"
                 dataKey="avgRPE"
                 name="平均RPE"
                 yAxisId="aux"
+                stroke="#0EA5E9"
                 strokeWidth={2}
                 dot={false}
                 connectNulls
               />
             )}
 
-            {/* 平均Load */}
+            {/* 平均Load（正規化したavgLoadのみ表示） */}
             {showLoadLine && (
               <Line
                 type="monotone"
                 dataKey="avgLoad"
                 name="平均Load"
                 yAxisId="aux"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-              />
-            )}
-            {showAvgRPE && (
-              <Line
-                type="monotone"
-                dataKey="averageRPE"
-                stroke="#0EA5E9"
-                strokeWidth={2}
-                dot={false}
-              />
-            )}
-
-            {showAvgLoad && (
-              <Line
-                type="monotone"
-                dataKey="averageLoad"
                 stroke="#22C55E"
                 strokeWidth={2}
                 dot={false}
+                connectNulls
               />
             )}
           </LineChart>

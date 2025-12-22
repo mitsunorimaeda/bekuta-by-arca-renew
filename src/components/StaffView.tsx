@@ -9,6 +9,7 @@ import { AlertPanel } from './AlertPanel';
 import { TutorialController } from './TutorialController';
 import { useTeamACWR } from '../hooks/useTeamACWR';
 import { useTutorialContext } from '../contexts/TutorialContext';
+import { ChartErrorBoundary } from './ChartErrorBoundary';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import {
   Users,
@@ -1257,14 +1258,16 @@ export function StaffView({
                         <div className="flex items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                         </div>
-                      ) : (
+                     ) : (
+                      <ChartErrorBoundary name="TeamACWRChart">
                         <TeamACWRChart
                           data={teamACWRData}
                           teamName={selectedTeam.name}
                           showAvgRPE={showAvgRPE}
                           showAvgLoad={showAvgLoad}
                         />
-                      )}
+                      </ChartErrorBoundary>
+                    )}
                     </div>
                   ) : activeTab === 'team-analytics' ? (
                     <div className="space-y-6">
