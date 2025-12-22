@@ -133,6 +133,8 @@ const getThisWeekRange = () => {
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
 
+
+
   return { start: toISODate(mon), end: toISODate(sun) };
 };
 
@@ -204,6 +206,10 @@ export function StaffView({
 
   // ✅ athletes が「どのチームの一覧か」を確定するためのref（チーム切替時の2人→57人問題を潰す）
   const athletesTeamIdRef = useRef<string | null>(null);
+
+  // ✅ team-average 追加表示のON/OFF
+  const [showAvgRPE, setShowAvgRPE] = useState(true);
+  const [showAvgLoad, setShowAvgLoad] = useState(false);
 
   useEffect(() => {
     selectedTeamIdRef.current = selectedTeam?.id ?? null;
@@ -1218,14 +1224,46 @@ export function StaffView({
                         />
                       )}
                     </div>
-                  ) : activeTab === 'team-average' ? (
-                    <div>
+                    ) : activeTab === 'team-average' ? (
+                    <div className="space-y-4">
+                      {/* ✅ スイッチ */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300"
+                            checked={showAvgRPE}
+                            onChange={(e) => setShowAvgRPE(e.target.checked)}
+                          />
+                          平均RPE
+                        </label>
+
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300"
+                            checked={showAvgLoad}
+                            onChange={(e) => setShowAvgLoad(e.target.checked)}
+                          />
+                          平均Load
+                        </label>
+
+                        <div className="text-xs text-gray-500">
+                          ※ RPE/Loadの列がデータに無い場合は表示されません
+                        </div>
+                      </div>
+
                       {teamACWRLoading ? (
                         <div className="flex items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                         </div>
                       ) : (
-                        <TeamACWRChart data={teamACWRData} teamName={selectedTeam.name} />
+                        <TeamACWRChart
+                          data={teamACWRData}
+                          teamName={selectedTeam.name}
+                          showAvgRPE={showAvgRPE}
+                          showAvgLoad={showAvgLoad}
+                        />
                       )}
                     </div>
                   ) : activeTab === 'team-analytics' ? (
