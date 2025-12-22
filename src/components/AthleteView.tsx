@@ -1284,9 +1284,11 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                   </div>
                   <MotivationForm
                     onSubmit={addMotivationRecord}
+                    onCheckExisting={checkExistingMotivationRecord}
+                    onUpdate={updateMotivationRecord}
                     loading={motivationLoading}
                     lastRecord={normalizedLastMotivationRecord ?? undefined}
-                  />
+/>
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
