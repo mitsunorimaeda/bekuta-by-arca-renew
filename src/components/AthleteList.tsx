@@ -1,9 +1,17 @@
+// src/components/AthleteList.tsx
 import React, { useState, useMemo } from 'react';
 import { User } from '../lib/supabase';
-import { Activity, AlertTriangle, ChevronRight, Lock, Unlock, CheckCircle2 } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ChevronRight,
+  Lock,
+  Unlock,
+  CheckCircle2,
+} from 'lucide-react';
 
 // ACWR 情報の型（マップの中身）
-type RiskLevel = 'high' | 'caution' | 'good' | 'low';
+type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
 
 interface AthleteACWRInfo {
   currentACWR: number | null;
@@ -51,7 +59,7 @@ interface AthleteListProps {
   onAthleteSelect: (athlete: AthleteWithActivity) => void;
   athleteACWRMap?: Record<string, AthleteACWRInfo>;
 
-  // 🆕 週次カード（今週）: athlete_user_id -> card
+  // 週次カード（今週）: athlete_user_id -> card
   weekCardMap?: Record<string, CoachWeekAthleteCard>;
 }
 
@@ -69,6 +77,8 @@ export function AthleteList({
   const [filterSharing, setFilterSharing] = useState<'all' | 'on'>('all');
 
   const filteredAthletes = useMemo(() => {
+    const s = search.trim().toLowerCase();
+
     return athletes.filter((athlete) => {
       const acwrInfo = athleteACWRMap[athlete.id];
 
@@ -78,31 +88,29 @@ export function AthleteList({
         (typeof athlete.training_days_28d === 'number' ? athlete.training_days_28d : null);
 
       const hasACWR =
-        acwrInfo &&
         daysOfData !== null &&
         daysOfData >= MIN_DAYS_FOR_ACWR &&
-        typeof acwrInfo.currentACWR === 'number' &&
+        typeof acwrInfo?.currentACWR === 'number' &&
+        Number.isFinite(acwrInfo.currentACWR) &&
         acwrInfo.currentACWR > 0;
 
-      const riskLevel = hasACWR ? acwrInfo?.riskLevel : undefined;
+      const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
-      const riskMatch =
-        filterRisk === 'all' ? true : riskLevel === 'high' || riskLevel === 'caution';
+      // ✅ 「高リスクのみ」は high のみ（caution を混ぜない）
+      const riskMatch = filterRisk === 'all' ? true : riskLevel === 'high';
 
       const card = weekCardMap[athlete.id];
       const sharingMatch = filterSharing === 'all' ? true : !!card?.is_sharing_active;
 
-      const s = search.trim().toLowerCase();
       const text =
-        (athlete.name || '') + ' ' + (athlete.email || '') + ' ' + ((athlete as any).nickname || '');
-
-      const searchMatch = s === '' ? true : text.toLowerCase().includes(s);
+        `${athlete.name || ''} ${athlete.email || ''} ${(athlete as any).nickname || ''}`.toLowerCase();
+      const searchMatch = s === '' ? true : text.includes(s);
 
       return riskMatch && sharingMatch && searchMatch;
     });
   }, [athletes, search, filterRisk, filterSharing, athleteACWRMap, weekCardMap]);
 
-  const renderRiskBadge = (riskLevel: RiskLevel | undefined) => {
+  const renderRiskBadge = (riskLevel: RiskLevel) => {
     switch (riskLevel) {
       case 'high':
         return (
@@ -137,8 +145,19 @@ export function AthleteList({
     }
   };
 
+  // ✅ YYYY-MM-DD は Date() に通さずそのまま表示（タイムゾーンでズレるのを防ぐ）
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '記録なし';
+
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const mm = Number(m[2]);
+      const dd = Number(m[3]);
+      if (Number.isFinite(mm) && Number.isFinite(dd)) return `${mm}/${dd}`;
+      return dateStr;
+    }
+
+    // timestamp系は従来通り（安全に）
     try {
       const d = new Date(dateStr);
       if (Number.isNaN(d.getTime())) return dateStr;
@@ -245,23 +264,25 @@ export function AthleteList({
               (typeof athlete.training_days_28d === 'number' ? athlete.training_days_28d : null);
 
             const hasACWR =
-              acwrInfo &&
               daysOfData !== null &&
               daysOfData >= MIN_DAYS_FOR_ACWR &&
-              typeof acwrInfo.currentACWR === 'number' &&
+              typeof acwrInfo?.currentACWR === 'number' &&
+              Number.isFinite(acwrInfo.currentACWR) &&
               acwrInfo.currentACWR > 0;
+
+            const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
             const acwrValue = hasACWR ? acwrInfo!.currentACWR!.toFixed(2) : '準備中';
 
-            const riskLevel: RiskLevel | undefined = hasACWR ? acwrInfo?.riskLevel : undefined;
+            const remainingDays =
+              daysOfData !== null ? Math.max(MIN_DAYS_FOR_ACWR - daysOfData, 0) : null;
 
-            const remainingDays = daysOfData !== null ? Math.max(MIN_DAYS_FOR_ACWR - daysOfData, 0) : null;
-
-            // 🆕 週次カード
+            // 週次カード
             const card = weekCardMap[athlete.id];
             const shareOn = !!card?.is_sharing_active;
 
-            const disabled = !shareOn; // 共有OFFはクリック不可（UXをUI側で担保）
+            // 共有OFFはクリック不可（UI側で担保）
+            const disabled = !shareOn;
 
             return (
               <button
@@ -287,7 +308,7 @@ export function AthleteList({
                       <p className="text-xs text-gray-400 truncate">({athlete.name})</p>
                     )}
 
-                    {/* 🆕 共有バッジ */}
+                    {/* 共有バッジ */}
                     {renderSharingBadge(card)}
                   </div>
 
@@ -300,7 +321,7 @@ export function AthleteList({
                     <span>最終入力： {formatDate(athlete.last_training_date ?? null)}</span>
                   </div>
 
-                  {/* 🆕 今週サマリー（共有ONの時だけ、コンパクトに表示） */}
+                  {/* 今週サマリー（共有ONの時だけ） */}
                   {shareOn && card && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
                       {/* 行動目標 */}
@@ -327,7 +348,7 @@ export function AthleteList({
                     </div>
                   )}
 
-                  {/* 共有OFFの補足（押せない理由を明確に） */}
+                  {/* 共有OFFの補足 */}
                   {!shareOn && (
                     <div className="mt-2 text-[11px] sm:text-xs text-gray-500">
                       🔒 共有がOFFのため、詳細データは表示できません
@@ -353,10 +374,11 @@ export function AthleteList({
                     <ChevronRight className="w-4 h-4 text-gray-300" />
                   </div>
 
-                  {/* 21日未満のときだけ「あと◯日」を表示 */}
-                  {!hasACWR && remainingDays !== null && remainingDays > 0 && (
+                  {/* 21日未満のときだけ「進捗/残日数」を表示 */}
+                  {!hasACWR && (
                     <p className="mt-1 text-[10px] sm:text-xs text-gray-400 text-right">
-                      ACWR分析まで：あと {remainingDays} 日
+                      ACWR準備：{daysOfData ?? 0}/{MIN_DAYS_FOR_ACWR}日
+                      {remainingDays !== null && remainingDays > 0 ? `（あと${remainingDays}日）` : ''}
                     </p>
                   )}
                 </div>

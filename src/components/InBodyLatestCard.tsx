@@ -1,10 +1,9 @@
 // src/components/InBodyLatestCard.tsx
 import React from 'react';
-import { Scale, Ruler, Percent, Calendar } from 'lucide-react';
+import { Scale, Percent, Calendar, Dumbbell, Droplets } from 'lucide-react';
 import type { InbodyRecordLite } from '../hooks/useInbodyData';
 
 function jpDate(d: string) {
-  // d: YYYY-MM-DD
   const dt = new Date(d + 'T00:00:00');
   return Number.isNaN(dt.getTime()) ? d : dt.toLocaleDateString('ja-JP');
 }
@@ -39,7 +38,7 @@ export function InBodyLatestCard({
           InBodyデータがまだありません（CSV取り込み後に表示されます）
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mb-1">
               <Scale className="w-4 h-4 mr-1" /> 体重
@@ -51,19 +50,28 @@ export function InBodyLatestCard({
 
           <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mb-1">
-              <Percent className="w-4 h-4 mr-1" /> 体脂肪率
+              <Dumbbell className="w-4 h-4 mr-1" /> 除脂肪量
             </div>
             <div className="text-lg font-bold text-gray-900 dark:text-white">
-              {latest.body_fat_percent != null ? `${latest.body_fat_percent.toFixed(1)} %` : '—'}
+              {latest.fat_free_mass != null ? `${latest.fat_free_mass.toFixed(1)} kg` : '—'}
             </div>
           </div>
 
           <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mb-1">
-              <Ruler className="w-4 h-4 mr-1" /> 身長
+              <Droplets className="w-4 h-4 mr-1" /> 体脂肪量
             </div>
             <div className="text-lg font-bold text-gray-900 dark:text-white">
-              {latest.height != null ? `${latest.height.toFixed(1)} cm` : '—'}
+              {latest.fat_mass != null ? `${latest.fat_mass.toFixed(1)} kg` : '—'}
+            </div>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mb-1">
+              <Percent className="w-4 h-4 mr-1" /> 体脂肪率
+            </div>
+            <div className="text-lg font-bold text-gray-900 dark:text-white">
+              {latest.body_fat_percent != null ? `${latest.body_fat_percent.toFixed(1)} %` : '—'}
             </div>
           </div>
         </div>

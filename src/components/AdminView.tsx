@@ -8,7 +8,27 @@ import { AlertSummary } from './AlertSummary';
 import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
-import { Settings, Users, UserPlus, AlertTriangle, BarChart3, X, HelpCircle, Building2, CreditCard, Sliders, UserCog, UsersRound, Layout, ShieldCheck, MessageSquare, Menu, Shield, FileText } from 'lucide-react';
+import NutritionDev from "./NutritionDev"; // ✅ 追加
+import {
+  Settings,
+  Users,
+  UserPlus,
+  AlertTriangle,
+  BarChart3,
+  X,
+  HelpCircle,
+  Building2,
+  CreditCard,
+  Sliders,
+  UserCog,
+  UsersRound,
+  Layout,
+  ShieldCheck,
+  MessageSquare,
+  Menu,
+  Shield,
+  FileText
+} from 'lucide-react';
 import { OrganizationManagement } from './OrganizationManagement';
 import { OrganizationOverview } from './OrganizationOverview';
 import { SubscriptionManagement } from './SubscriptionManagement';
@@ -17,6 +37,9 @@ import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 import { useOrganizations } from '../hooks/useOrganizations';
+
+// ✅ 追加：InBody CSV Import
+import AdminInbodyCsvImport from './AdminInbodyCsvImport';
 
 interface AdminViewProps {
   user: User;
@@ -27,19 +50,33 @@ interface AdminViewProps {
   onNavigateToHelp?: () => void;
 }
 
-export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: AdminViewProps) {
+export function AdminView({
+  user,
+  alerts,
+  onNavigateToPrivacy,
+  onNavigateToTerms,
+  onNavigateToCommercial,
+  onNavigateToHelp
+}: AdminViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization'>('system');
-  const [systemSubTab, setSystemSubTab] = useState<'overview'>('overview');
-  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage'>('invite');
-  const [organizationSubTab, setOrganizationSubTab] = useState<'overview' | 'list' | 'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'>('overview');
+  const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
+
+  // ✅ 変更：'inbody' を追加
+  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody'>('invite');
+
+  const [organizationSubTab, setOrganizationSubTab] = useState<
+    'overview' | 'list' | 'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'
+  >('overview');
+
   const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } = useTutorialContext();
+  const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } =
+    useTutorialContext();
   const { organizations, loading: orgsLoading } = useOrganizations(user.id);
 
   useEffect(() => {
@@ -50,7 +87,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
 
   useEffect(() => {
     const savedOrgId = localStorage.getItem('admin_selected_organization');
-    if (savedOrgId && organizations.some(org => org.id === savedOrgId)) {
+    if (savedOrgId && organizations.some((org) => org.id === savedOrgId)) {
       setSelectedOrganizationId(savedOrgId);
     } else if (organizations.length > 0 && !selectedOrganizationId) {
       setSelectedOrganizationId(organizations[0].id);
@@ -63,10 +100,10 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
     localStorage.setItem('admin_selected_organization', orgId);
   };
 
-  const selectedOrganization = organizations.find(org => org.id === selectedOrganizationId);
+  const selectedOrganization = organizations.find((org) => org.id === selectedOrganizationId);
 
-  const highPriorityAlerts = alerts.filter(alert => alert.priority === 'high');
-  const systemAlerts = alerts.filter(alert => alert.type === 'no_data' || alert.type === 'reminder');
+  const highPriorityAlerts = alerts.filter((alert) => alert.priority === 'high');
+  const systemAlerts = alerts.filter((alert) => alert.type === 'no_data' || alert.type === 'reminder');
 
   useEffect(() => {
     const dismissed = localStorage.getItem('criticalAlertDismissed');
@@ -92,11 +129,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
 
   const fetchTeams = async () => {
     try {
-      const { data, error } = await supabase
-        .from('teams')
-        .select('*')
-        .order('name');
-
+      const { data, error } = await supabase.from('teams').select('*').order('name');
       if (error) throw error;
       setTeams(data || []);
     } catch (error) {
@@ -173,9 +206,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                 <AlertTriangle className="w-6 h-6 text-red-600 mr-3 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-red-900">高リスクアラート</h3>
-                  <p className="text-sm text-red-700">
-                    {highPriorityAlerts.length}件の注意が必要です
-                  </p>
+                  <p className="text-sm text-red-700">{highPriorityAlerts.length}件の注意が必要です</p>
                 </div>
                 <button
                   onClick={handleDismissCriticalAlert}
@@ -194,33 +225,25 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
               <BarChart3 className="w-6 h-6 text-blue-600 mr-3" />
               <h2 className="text-xl font-semibold text-gray-900">システム概要</h2>
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-blue-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-blue-600 mb-1">
-                  {alerts.length}
-                </div>
+                <div className="text-2xl font-bold text-blue-600 mb-1">{alerts.length}</div>
                 <div className="text-sm text-blue-700">総アラート数</div>
               </div>
 
               <div className="bg-red-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-red-600 mb-1">
-                  {highPriorityAlerts.length}
-                </div>
+                <div className="text-2xl font-bold text-red-600 mb-1">{highPriorityAlerts.length}</div>
                 <div className="text-sm text-red-700">高優先度</div>
               </div>
 
               <div className="bg-yellow-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-yellow-600 mb-1">
-                  {systemAlerts.length}
-                </div>
+                <div className="text-2xl font-bold text-yellow-600 mb-1">{systemAlerts.length}</div>
                 <div className="text-sm text-yellow-700">システム通知</div>
               </div>
 
               <div className="bg-green-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-green-600 mb-1">
-                  {teams.length}
-                </div>
+                <div className="text-2xl font-bold text-green-600 mb-1">{teams.length}</div>
                 <div className="text-sm text-green-700">登録チーム数</div>
               </div>
             </div>
@@ -242,6 +265,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                   <BarChart3 className="w-4 h-4" />
                   <span>システム</span>
                 </button>
+
                 <button
                   onClick={() => setActiveTab('users')}
                   className={`py-4 px-6 border-b-2 font-medium text-sm flex items-center space-x-2 whitespace-nowrap transition-colors ${
@@ -254,6 +278,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                   <Users className="w-4 h-4" />
                   <span>ユーザー管理</span>
                 </button>
+
                 <button
                   onClick={() => setActiveTab('organization')}
                   className={`py-4 px-6 border-b-2 font-medium text-sm flex items-center space-x-2 whitespace-nowrap transition-colors ${
@@ -269,10 +294,43 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
               </nav>
             </div>
 
+            
+
+
+
+
             {/* Sub-tabs Section */}
-            {(activeTab === 'users' || activeTab === 'organization') && (
+            {(activeTab === 'system' || activeTab === 'users' || activeTab === 'organization') && (
               <div className="border-b border-gray-100 bg-gray-50">
                 <nav className="flex px-6 overflow-x-auto">
+                  {activeTab === 'system' && (
+                    <>
+                      <button
+                        onClick={() => setSystemSubTab('overview')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 whitespace-nowrap ${
+                          systemSubTab === 'overview'
+                            ? 'border-blue-500 text-blue-700'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        <span>概要</span>
+                      </button>
+
+                      <button
+                        onClick={() => setSystemSubTab('nutrition-dev')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
+                          systemSubTab === 'nutrition-dev'
+                            ? 'border-blue-500 text-blue-700'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>栄養Dev</span>
+                      </button>
+                    </>
+                  )}
+
                   {activeTab === 'users' && (
                     <>
                       <button
@@ -286,6 +344,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <UserPlus className="w-3.5 h-3.5" />
                         <span>招待</span>
                       </button>
+
                       <button
                         onClick={() => setUsersSubTab('manage')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -297,8 +356,21 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <UserCog className="w-3.5 h-3.5" />
                         <span>管理</span>
                       </button>
+
+                      <button
+                        onClick={() => setUsersSubTab('inbody')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
+                          usersSubTab === 'inbody'
+                            ? 'border-green-500 text-green-700'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>InBody(CSV)</span>
+                      </button>
                     </>
                   )}
+
                   {activeTab === 'organization' && (
                     <>
                       <button
@@ -312,6 +384,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <Layout className="w-3.5 h-3.5" />
                         <span>概要</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('list')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -323,6 +396,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <Building2 className="w-3.5 h-3.5" />
                         <span>組織一覧</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('members')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -334,6 +408,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <ShieldCheck className="w-3.5 h-3.5" />
                         <span>メンバー</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('settings')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -345,6 +420,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <Sliders className="w-3.5 h-3.5" />
                         <span>設定</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('subscription')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -356,6 +432,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <CreditCard className="w-3.5 h-3.5" />
                         <span>サブスクリプション</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('transfers')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -367,6 +444,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <UserCog className="w-3.5 h-3.5" />
                         <span>選手移籍</span>
                       </button>
+
                       <button
                         onClick={() => setOrganizationSubTab('team-access')}
                         className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
@@ -385,8 +463,9 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
             )}
 
             <div className="p-6">
-              {activeTab === 'system' ? (
-                <div className="space-y-6">
+            {activeTab === 'system' ? (
+              <div className="space-y-6">
+                {systemSubTab === 'overview' ? (
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">システム監視</h3>
                     <div className="bg-gray-50 rounded-lg p-4">
@@ -396,31 +475,20 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                       </p>
                     </div>
                   </div>
-
-                  {alerts.length > 0 && (
+                ) : systemSubTab === 'nutrition-dev' ? (
+                  <div className="space-y-4">
                     <div>
-                      <h4 className="text-md font-medium text-gray-900 mb-3">最近のアラート</h4>
-                      <div className="space-y-2">
-                        {alerts.slice(0, 5).map((alert) => (
-                          <div key={alert.id} className="bg-gray-50 rounded p-3 text-sm">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{alert.title}</span>
-                              <span className={`px-2 py-1 rounded text-xs ${
-                                alert.priority === 'high' ? 'bg-red-100 text-red-700' :
-                                alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-blue-100 text-blue-700'
-                              }`}>
-                                {alert.priority === 'high' ? '高' :
-                                 alert.priority === 'medium' ? '中' : '低'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">栄養サポート（Dev）</h3>
+                      <p className="text-sm text-gray-600">
+                        非公開の開発用画面です（一般ユーザーには見せない想定）。
+                      </p>
                     </div>
-                  )}
-                </div>
-              ) : activeTab === 'users' ? (
+                    <NutritionDev />
+                  </div>
+                ) : null}
+              </div>
+            ) : activeTab === 'users' ? (
+
                 <div>
                   {usersSubTab === 'invite' ? (
                     <div>
@@ -451,21 +519,11 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
 
                       {inviteSubTab === 'single' ? (
                         <div data-tutorial="single-invite">
-                          <UserInvitation
-                            teams={teams}
-                            onUserInvited={() => {
-                              // Refresh data if needed
-                            }}
-                          />
+                          <UserInvitation teams={teams} onUserInvited={() => {}} />
                         </div>
                       ) : (
                         <div data-tutorial="bulk-invite">
-                          <BulkUserInvitation
-                            teams={teams}
-                            onUsersInvited={() => {
-                              // Refresh data if needed
-                            }}
-                          />
+                          <BulkUserInvitation teams={teams} onUsersInvited={() => {}} />
                         </div>
                       )}
                     </div>
@@ -473,21 +531,27 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                     <div data-tutorial="user-list">
                       <UserManagement teams={teams} />
                     </div>
+                  ) : usersSubTab === 'inbody' ? (
+                    // ✅ 追加：ここに差し込み
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">InBody データ取り込み</h3>
+                        <p className="text-sm text-gray-600">
+                          CSVから inbody_records に upsert します（phone_number + measured_at で重複更新）。
+                        </p>
+                      </div>
+                      <AdminInbodyCsvImport />
+                    </div>
                   ) : null}
                 </div>
               ) : activeTab === 'organization' ? (
                 <div>
                   {organizationSubTab === 'overview' ? (
                     selectedOrganizationId && selectedOrganization ? (
-                      <OrganizationOverview
-                        organizationId={selectedOrganizationId}
-                        organizationName={selectedOrganization.name}
-                      />
+                      <OrganizationOverview organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} />
                     ) : (
                       <div className="text-center py-12">
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">
-                          組織を選択してください
-                        </p>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">組織を選択してください</p>
                         <button
                           onClick={() => setOrganizationSubTab('list')}
                           className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -497,21 +561,14 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                       </div>
                     )
                   ) : organizationSubTab === 'list' ? (
-                    <div>
-                      <OrganizationManagement userId={user.id} />
-                    </div>
+                    <OrganizationManagement userId={user.id} />
                   ) : organizationSubTab === 'members' ? (
                     <div>
                       {selectedOrganizationId && selectedOrganization ? (
-                        <OrganizationMembersManagement
-                          organizationId={selectedOrganizationId}
-                          organizationName={selectedOrganization.name}
-                        />
+                        <OrganizationMembersManagement organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            組織メンバーを管理するには、まず組織を選択してください
-                          </p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">組織メンバーを管理するには、まず組織を選択してください</p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -527,9 +584,7 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                         <OrganizationSettings organizationId={selectedOrganizationId} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            設定を表示するには、まず組織を選択してください
-                          </p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">設定を表示するには、まず組織を選択してください</p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -542,15 +597,10 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                   ) : organizationSubTab === 'subscription' ? (
                     <div>
                       {selectedOrganizationId ? (
-                        <SubscriptionManagement
-                          organizationId={selectedOrganizationId}
-                          organizationName="デモ組織"
-                        />
+                        <SubscriptionManagement organizationId={selectedOrganizationId} organizationName="デモ組織" />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            サブスクリプションを表示するには、まず組織を選択してください
-                          </p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">サブスクリプションを表示するには、まず組織を選択してください</p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -563,16 +613,10 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                   ) : organizationSubTab === 'transfers' ? (
                     <div>
                       {selectedOrganizationId ? (
-                        <AthleteTransferManagement
-                          userId={user.id}
-                          organizationId={selectedOrganizationId}
-                          isAdmin={true}
-                        />
+                        <AthleteTransferManagement userId={user.id} organizationId={selectedOrganizationId} isAdmin={true} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            選手移籍管理を表示するには、まず組織を選択してください
-                          </p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">選手移籍管理を表示するには、まず組織を選択してください</p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -585,16 +629,10 @@ export function AdminView({ user, alerts, onNavigateToPrivacy, onNavigateToTerms
                   ) : organizationSubTab === 'team-access' ? (
                     <div>
                       {selectedOrganizationId ? (
-                        <TeamAccessRequestManagement
-                          userId={user.id}
-                          organizationId={selectedOrganizationId}
-                          isAdmin={true}
-                        />
+                        <TeamAccessRequestManagement userId={user.id} organizationId={selectedOrganizationId} isAdmin={true} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            チームアクセスリクエストを表示するには、まず組織を選択してください
-                          </p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">チームアクセスリクエストを表示するには、まず組織を選択してください</p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"

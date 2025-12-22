@@ -1,5 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine
+} from 'recharts';
 import { ACWRData, getRiskColor } from '../lib/acwr';
 import { Calendar, Filter } from 'lucide-react';
 import ACWRProgressIndicator from './ACWRProgressIndicator';
@@ -12,9 +21,18 @@ interface ACWRChartProps {
   showTeamAverage?: boolean;
 }
 
-export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAverageData = [], showTeamAverage = false }: ACWRChartProps) {
+export function ACWRChart({
+  data,
+  daysWithData = 0,
+  isDarkMode = false,
+  teamAverageData = [],
+  showTeamAverage = false
+}: ACWRChartProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter' | 'all'>('month');
   const [isTeamAverageVisible, setIsTeamAverageVisible] = useState(showTeamAverage);
+
+  const MINIMUM_DAYS = 21;
+  const isDataSufficient = daysWithData >= MINIMUM_DAYS;
 
   // データを期間でフィルタリング
   const filteredData = useMemo(() => {
@@ -41,7 +59,7 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
         return data;
     }
 
-    return data.filter(item => {
+    return data.filter((item) => {
       const itemDate = new Date(item.date);
       return itemDate >= startDate && itemDate <= today;
     });
@@ -72,14 +90,11 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
         return teamAverageData;
     }
 
-    return teamAverageData.filter(item => {
+    return teamAverageData.filter((item) => {
       const itemDate = new Date(item.date);
       return itemDate >= startDate && itemDate <= today;
     });
   }, [teamAverageData, selectedPeriod]);
-
-  const MINIMUM_DAYS = 21;
-  const isDataSufficient = daysWithData >= MINIMUM_DAYS;
 
   if (data.length === 0) {
     return (
@@ -112,88 +127,117 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
   }
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return `${date.getMonth() + 1}/${date.getDate()}`;
+    const d = new Date(dateStr);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
   };
 
   const formatDateWithDay = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const d = new Date(dateStr);
     const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-    const dayOfWeek = dayNames[date.getDay()];
-    return `${date.getMonth() + 1}/${date.getDate()}(${dayOfWeek})`;
+    return `${d.getMonth() + 1}/${d.getDate()}(${dayNames[d.getDay()]})`;
   };
 
+  // ✅ Tooltip: payload[0]固定をやめて name で確実に取得する
   const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      const date = new Date(label);
-      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+    if (!active || !payload || payload.length === 0) return null;
 
-      // チーム平均データを探す
-      const teamData = isTeamAverageVisible && filteredTeamData.find(td => td.date === label);
+    // Rechartsのpayloadは順番が保証されないので、系列名で拾う
+    const personalEntry =
+      payload.find((p: any) => p?.name === '個人 ACWR') ||
+      payload.find((p: any) => p?.dataKey === 'acwr'); // 念のため保険
 
-      return (
-        <div className="bg-white p-3 sm:p-4 border border-gray-200 rounded-lg shadow-lg max-w-xs">
-          <div className="flex items-center space-x-2 mb-2">
-            <p className="font-medium text-gray-900 text-sm sm:text-base">
-              {formatDateWithDay(label)}
-            </p>
-            {isWeekend && (
-              <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
-                週末
-              </span>
-            )}
-          </div>
-          <div className="space-y-1 text-xs sm:text-sm">
-            <p className="flex justify-between">
-              <span>個人 ACWR:</span>
-              <span className="font-semibold" style={{ color: getRiskColor(data.riskLevel) }}>
-                {data.acwr}
-              </span>
-            </p>
-            {teamData && (
-              <p className="flex justify-between">
-                <span>チーム平均:</span>
-                <span className="font-semibold text-purple-600">
-                  {teamData.acwr}
-                </span>
-              </p>
-            )}
-            {teamData && (
-              <p className="flex justify-between text-xs">
-                <span>差:</span>
-                <span className={`font-semibold ${(data.acwr - teamData.acwr) > 0.3 ? 'text-red-600' : 'text-gray-600'}`}>
-                  {(data.acwr - teamData.acwr) > 0 ? '+' : ''}{(data.acwr - teamData.acwr).toFixed(2)}
-                </span>
-              </p>
-            )}
-            <p className="flex justify-between">
-              <span>急性負荷:</span>
-              <span className="font-semibold">{data.acuteLoad}</span>
-            </p>
-            <p className="flex justify-between">
-              <span>慢性負荷:</span>
-              <span className="font-semibold">{data.chronicLoad}</span>
-            </p>
-            <p className="flex justify-between">
-              <span>リスク:</span>
-              <span className="font-semibold" style={{ color: getRiskColor(data.riskLevel) }}>
-                {getRiskLabel(data.riskLevel)}
-              </span>
-            </p>
-          </div>
+    const teamEntry =
+      payload.find((p: any) => p?.name === 'チーム平均');
+
+    const personal = personalEntry?.payload; // filteredData側の1行
+    const personalACWR =
+      typeof personalEntry?.value === 'number' && Number.isFinite(personalEntry.value)
+        ? personalEntry.value
+        : (typeof personal?.acwr === 'number' ? personal.acwr : null);
+
+    // labelはX軸キー(date)のはず
+    const date = new Date(label);
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+    // チーム平均は「同日を filteredTeamData からも引く」方が安定
+    const teamRow = isTeamAverageVisible
+      ? filteredTeamData.find((td) => td.date === label)
+      : null;
+
+    const teamACWR =
+      teamRow && typeof teamRow.acwr === 'number' && Number.isFinite(teamRow.acwr)
+        ? teamRow.acwr
+        : (typeof teamEntry?.value === 'number' && Number.isFinite(teamEntry.value) ? teamEntry.value : null);
+
+    if (!personal) return null;
+
+    const diff =
+      typeof personalACWR === 'number' && typeof teamACWR === 'number'
+        ? personalACWR - teamACWR
+        : null;
+
+    return (
+      <div className="bg-white p-3 sm:p-4 border border-gray-200 rounded-lg shadow-lg max-w-xs">
+        <div className="flex items-center space-x-2 mb-2">
+          <p className="font-medium text-gray-900 text-sm sm:text-base">{formatDateWithDay(label)}</p>
+          {isWeekend && (
+            <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
+              週末
+            </span>
+          )}
         </div>
-      );
-    }
-    return null;
+
+        <div className="space-y-1 text-xs sm:text-sm">
+          <p className="flex justify-between">
+            <span>個人 ACWR:</span>
+            <span className="font-semibold" style={{ color: getRiskColor(personal.riskLevel) }}>
+              {typeof personalACWR === 'number' ? personalACWR.toFixed(2) : '-'}
+            </span>
+          </p>
+
+          {isTeamAverageVisible && teamACWR != null && (
+            <p className="flex justify-between">
+              <span>チーム平均:</span>
+              <span className="font-semibold text-purple-600">
+                {teamACWR.toFixed(2)}
+              </span>
+            </p>
+          )}
+
+          {isTeamAverageVisible && diff != null && (
+            <p className="flex justify-between text-xs">
+              <span>差:</span>
+              <span className={`font-semibold ${diff > 0.3 ? 'text-red-600' : 'text-gray-600'}`}>
+                {diff > 0 ? '+' : ''}{diff.toFixed(2)}
+              </span>
+            </p>
+          )}
+
+          <p className="flex justify-between">
+            <span>急性負荷:</span>
+            <span className="font-semibold">{personal.acuteLoad ?? '-'}</span>
+          </p>
+          <p className="flex justify-between">
+            <span>慢性負荷:</span>
+            <span className="font-semibold">{personal.chronicLoad ?? '-'}</span>
+          </p>
+          <p className="flex justify-between">
+            <span>リスク:</span>
+            <span className="font-semibold" style={{ color: getRiskColor(personal.riskLevel) }}>
+              {getRiskLabel(personal.riskLevel)}
+            </span>
+          </p>
+        </div>
+      </div>
+    );
   };
 
   const CustomDot = (props: any) => {
     const { cx, cy, payload } = props;
     if (cx && cy && payload) {
-      const date = new Date(payload.date);
-      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-      
+      const d = new Date(payload.date);
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
       return (
         <circle
           cx={cx}
@@ -201,7 +245,7 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
           r={isWeekend ? 5 : 4}
           fill={getRiskColor(payload.riskLevel)}
           strokeWidth={2}
-          stroke={isWeekend ? "#3B82F6" : "white"}
+          stroke={isWeekend ? '#3B82F6' : 'white'}
           opacity={isWeekend ? 0.9 : 1}
         />
       );
@@ -214,6 +258,7 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
       {daysWithData < 28 && (
         <ACWRProgressIndicator daysWithData={daysWithData} isDarkMode={isDarkMode} />
       )}
+
       {/* 期間選択コントロール */}
       <div className="mb-4 space-y-3">
         <div className="flex items-center space-x-2">
@@ -229,7 +274,7 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
               { value: 'month', label: '1ヶ月' },
               { value: 'quarter', label: '3ヶ月' },
               { value: 'all', label: '全期間' }
-            ].map(period => (
+            ].map((period) => (
               <button
                 key={period.value}
                 onClick={() => setSelectedPeriod(period.value as any)}
@@ -252,8 +297,11 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
               <span className="font-medium">表示中:</span> {filteredData.length}日分のデータ
               {selectedPeriod !== 'all' && (
                 <span className="ml-2">
-                  ({selectedPeriod === 'week' ? '過去7日間' :
-                    selectedPeriod === 'month' ? '過去30日間' : '過去90日間'})
+                  ({selectedPeriod === 'week'
+                    ? '過去7日間'
+                    : selectedPeriod === 'month'
+                      ? '過去30日間'
+                      : '過去90日間'})
                 </span>
               )}
             </div>
@@ -290,36 +338,32 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={filteredData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            
-            <XAxis 
-              dataKey="date" 
+
+            <XAxis
+              dataKey="date"
               tickFormatter={formatDate}
               stroke="#6b7280"
               fontSize={10}
               interval="preserveStartEnd"
             />
-            <YAxis 
-              domain={[0, 'dataMax + 0.5']}
-              stroke="#6b7280"
-              fontSize={10}
-              width={40}
-            />
+            <YAxis domain={[0, 'dataMax + 0.5']} stroke="#6b7280" fontSize={10} width={40} />
             <Tooltip content={<CustomTooltip />} />
-            
-            {/* Reference lines for risk zones */}
+
+            {/* risk zones */}
             <ReferenceLine y={1.5} stroke="#EF4444" strokeDasharray="5 5" />
             <ReferenceLine y={1.3} stroke="#F59E0B" strokeDasharray="5 5" />
             <ReferenceLine y={0.8} stroke="#10B981" strokeDasharray="5 5" />
-            
+
             <Line
               type="monotone"
               dataKey="acwr"
               stroke="#6366f1"
               strokeWidth={2}
               dot={<CustomDot />}
-              activeDot={{ r: 6, stroke: "#6366f1", strokeWidth: 2, fill: "white" }}
+              activeDot={{ r: 6, stroke: '#6366f1', strokeWidth: 2, fill: 'white' }}
               name="個人 ACWR"
             />
+
             {isTeamAverageVisible && filteredTeamData.length > 0 && (
               <Line
                 type="monotone"
@@ -328,16 +372,16 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
                 stroke="#9333ea"
                 strokeWidth={2}
                 strokeDasharray="5 5"
-                dot={{ r: 3, fill: "#9333ea", stroke: "#9333ea" }}
-                activeDot={{ r: 5, stroke: "#9333ea", strokeWidth: 2, fill: "white" }}
+                dot={{ r: 3, fill: '#9333ea', stroke: '#9333ea' }}
+                activeDot={{ r: 5, stroke: '#9333ea', strokeWidth: 2, fill: 'white' }}
                 name="チーム平均"
               />
             )}
           </LineChart>
         </ResponsiveContainer>
       </div>
-      
-      {/* Legend - Centered at bottom */}
+
+      {/* Legend */}
       <div className="mt-4 flex justify-center">
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-4 text-xs">
           <div className="flex items-center">
@@ -364,10 +408,15 @@ export function ACWRChart({ data, daysWithData = 0, isDarkMode = false, teamAver
 
 function getRiskLabel(riskLevel: string): string {
   switch (riskLevel) {
-    case 'high': return '高リスク';
-    case 'caution': return '注意';
-    case 'good': return '良好';
-    case 'low': return '低負荷';
-    default: return '不明';
+    case 'high':
+      return '高リスク';
+    case 'caution':
+      return '注意';
+    case 'good':
+      return '良好';
+    case 'low':
+      return '低負荷';
+    default:
+      return '不明';
   }
 }

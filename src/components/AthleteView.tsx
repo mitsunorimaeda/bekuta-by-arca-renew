@@ -227,11 +227,15 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
   const normalizedGenderBinary: 'female' | 'male' | null =
     user.gender === 'female' || user.gender === 'male' ? user.gender : null;
 
+    console.log('[gender check] raw:', user.gender, 'binary:', normalizedGenderBinary, 'full:', normalizedGenderFull);
+
   // sleep_quality を number に統一（null の場合は 0 とみなす）
   const normalizedSleepRecords = sleepRecords.map(r => ({
     ...r,
     sleep_quality: r.sleep_quality ?? 0
   }));
+
+
 
   // ユーザー固有のアラート
   const userAlerts = alerts.filter(alert => alert.user_id === user.id);
@@ -574,7 +578,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               </button>
 
               {/* 女性のみ：月経周期 */}
-              {user.gender === 'female' && (
+              {normalizedGenderBinary === 'female' && (
                 <button
                   onClick={() => { setActiveTab('cycle'); setMenuOpen(false); }}
                   className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -993,8 +997,13 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               </div>
             ) : latestInbody ? (
               <div className="space-y-6">
-                <InBodyLatestCard data={latestInbody} />
-                <InBodyCharts records={inbodyRecords} />
+                <InBodyLatestCard
+                  latest={latestInbody}
+                  loading={inbodyLoading}
+                  error={inbodyError}
+                />
+
+                <InBodyCharts records={inbodyRecords} gender={normalizedGenderBinary} />
               </div>
             ) : (
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center">
@@ -1316,7 +1325,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             </div>
         ): // Add semicolon to fix the error
         activeTab === 'cycle' ? (
-          user.gender === 'female' ? (
+          normalizedGenderBinary === 'female' ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <MenstrualCycleForm userId={user.id} />
