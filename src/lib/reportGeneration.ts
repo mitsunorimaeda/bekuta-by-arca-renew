@@ -1,11 +1,11 @@
+// src/lib/reportGeneration.ts
 import { supabase } from './supabase';
-import { calculateACWR } from './acwr'; // ACWRData は未使用なので削除
-// import { Alert } from './alerts'; // 使っていないので削除
+import { calculateACWR, RecordLike } from './acwr';
 import { getTodayJST, formatDateJST } from './date';
 
 export interface ReportPeriod {
-  start: string;
-  end: string;
+  start: string; // YYYY-MM-DD
+  end: string;   // YYYY-MM-DD
   type: 'weekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'custom';
 }
 
@@ -14,7 +14,6 @@ export interface AthleteReportData {
   athleteName: string;
   athleteEmail: string;
 
-  // トレーニング負荷データ
   trainingRecords: {
     totalSessions: number;
     totalLoad: number;
@@ -24,7 +23,6 @@ export interface AthleteReportData {
     totalDuration: number;
   };
 
-  // ACWR データ
   acwrData: {
     current: number;
     average: number;
@@ -35,7 +33,6 @@ export interface AthleteReportData {
     trend: 'improving' | 'stable' | 'declining';
   };
 
-  // 体重データ
   weightData: {
     current: number | null;
     average: number | null;
@@ -44,7 +41,6 @@ export interface AthleteReportData {
     trend: 'increasing' | 'stable' | 'decreasing' | 'no_data';
   };
 
-  // 睡眠データ
   sleepData: {
     averageHours: number | null;
     averageQuality: number | null;
@@ -52,7 +48,6 @@ export interface AthleteReportData {
     qualityTrend: 'improving' | 'stable' | 'declining' | 'no_data';
   };
 
-  // モチベーションデータ
   motivationData: {
     averageMotivation: number | null;
     averageEnergy: number | null;
@@ -61,7 +56,6 @@ export interface AthleteReportData {
     motivationTrend: 'improving' | 'stable' | 'declining' | 'no_data';
   };
 
-  // パフォーマンスデータ
   performanceData: {
     totalTests: number;
     personalBests: number;
@@ -69,7 +63,6 @@ export interface AthleteReportData {
     declines: number;
   };
 
-  // アラート
   alerts: {
     total: number;
     high: number;
@@ -85,49 +78,80 @@ export interface TeamReportSummary {
   period: ReportPeriod;
   generatedAt: string;
 
-  // チーム統計
   totalAthletes: number;
   activeAthletes: number;
 
-  // トレーニング統計
   teamAverageLoad: number;
   teamAverageACWR: number;
 
-  // リスク統計
   highRiskCount: number;
   mediumRiskCount: number;
   lowRiskCount: number;
 
-  // アラート統計
   totalAlerts: number;
   newAlerts: number;
   criticalAlerts: number;
 
-  // 個別選手データ
   athletes: AthleteReportData[];
 
-  // インサイトと推奨事項
   insights: string[];
   recommendations: string[];
 }
+
+// ========= helpers =========
+
+function toNumber(v: any): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toYMD(input: any): string | null {
+  if (!input) return null;
+  if (typeof input === 'string') {
+    const m = input.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : null;
+  }
+  try {
+    const d = new Date(input);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
+function calcLoad(row: any): number {
+  const loadRaw = toNumber(row?.load);
+  if (loadRaw != null) return loadRaw;
+  const rpe = toNumber(row?.rpe);
+  const dur = toNumber(row?.duration_min);
+  if (rpe != null && dur != null) return rpe * dur;
+  return 0;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+// ========= main =========
 
 export async function generateAthleteReport(
   athleteId: string,
   period: ReportPeriod
 ): Promise<AthleteReportData> {
   // 選手情報取得
-  const { data: athlete } = await supabase
+  const { data: athlete, error: athleteErr } = await supabase
     .from('users')
     .select('*')
     .eq('id', athleteId)
     .single();
 
-  if (!athlete) {
-    throw new Error('Athlete not found');
-  }
+  if (athleteErr) throw athleteErr;
+  if (!athlete) throw new Error('Athlete not found');
 
-  // トレーニングデータ取得
-  const { data: trainingRecords } = await supabase
+  // トレーニングデータ取得（dateはYYYY-MM-DD運用前提）
+  const { data: trainingRecords, error: trErr } = await supabase
     .from('training_records')
     .select('*')
     .eq('user_id', athleteId)
@@ -135,36 +159,60 @@ export async function generateAthleteReport(
     .lte('date', period.end)
     .order('date', { ascending: true });
 
+  if (trErr) throw trErr;
+
   const totalSessions = trainingRecords?.length || 0;
-  const totalLoad = trainingRecords?.reduce((sum, r) => sum + (r.load ?? 0), 0) || 0;
-  const totalDuration = trainingRecords?.reduce((sum, r) => sum + r.duration_min, 0) || 0;
+
+  const totalLoad =
+    trainingRecords?.reduce((sum, r: any) => sum + calcLoad(r), 0) || 0;
+
+  const totalDuration =
+    trainingRecords?.reduce((sum, r: any) => sum + (toNumber(r.duration_min) ?? 0), 0) || 0;
+
   const averageLoad = totalSessions > 0 ? totalLoad / totalSessions : 0;
-  const maxLoad = trainingRecords?.reduce((max, r) => Math.max(max, r.load ?? 0), 0) || 0;
+
+  const maxLoad =
+    trainingRecords?.reduce((max, r: any) => Math.max(max, calcLoad(r)), 0) || 0;
+
   const averageRPE =
     totalSessions > 0
-      ? trainingRecords!.reduce((sum, r) => sum + r.rpe, 0) / totalSessions
+      ? (trainingRecords || []).reduce((sum: number, r: any) => sum + (toNumber(r.rpe) ?? 0), 0) /
+        totalSessions
       : 0;
 
-  // ACWR計算
-  const acwrResults =
-    trainingRecords && trainingRecords.length > 0 ? calculateACWR(trainingRecords) : [];
+  // ✅ ACWR：RecordLike[] に正規化してから計算（ここが超重要）
+  const recordLikes: RecordLike[] =
+    (trainingRecords || [])
+      .map((r: any) => {
+        const date = toYMD(r?.date);
+        if (!date) return null;
+        return { date, load: calcLoad(r) };
+      })
+      .filter(Boolean) as RecordLike[];
 
-  const acwrValues = acwrResults.map(r => r.acwr).filter(v => v !== null) as number[];
+  const acwrResults = recordLikes.length > 0 ? calculateACWR(recordLikes) : [];
+
+  const acwrValues = acwrResults
+    .map(r => r.acwr)
+    .filter(v => typeof v === 'number' && Number.isFinite(v)) as number[];
+
+  // null期間があるので「最後の有効値」を採用
   const currentACWR = acwrValues.length > 0 ? acwrValues[acwrValues.length - 1] : 0;
+
   const averageACWR =
-    acwrValues.length > 0
-      ? acwrValues.reduce((sum, v) => sum + v, 0) / acwrValues.length
-      : 0;
+    acwrValues.length > 0 ? acwrValues.reduce((sum, v) => sum + v, 0) / acwrValues.length : 0;
+
   const maxACWR = acwrValues.length > 0 ? Math.max(...acwrValues) : 0;
   const minACWR = acwrValues.length > 0 ? Math.min(...acwrValues) : 0;
 
   const daysInDangerZone = acwrValues.filter(v => v < 0.8 || v > 1.3).length;
+
+  // AthleteList/Chart基準に寄せる（high=1.5+, caution=1.3+）
   const riskLevel: 'low' | 'medium' | 'high' =
-    currentACWR > 1.5 || currentACWR < 0.7
-      ? 'high'
-      : currentACWR > 1.3 || currentACWR < 0.8
-      ? 'medium'
-      : 'low';
+    currentACWR >= 1.5 ? 'high'
+    : currentACWR >= 1.3 ? 'medium'
+    : currentACWR >= 0.8 ? 'low'
+    : 'medium'; // 低すぎも注意扱いに寄せる（必要ならlowに変えてOK）
 
   const acwrTrend =
     acwrValues.length >= 3
@@ -175,7 +223,7 @@ export async function generateAthleteReport(
       : 'stable';
 
   // 体重データ取得
-  const { data: weightRecords } = await supabase
+  const { data: weightRecords, error: wErr } = await supabase
     .from('weight_records')
     .select('*')
     .eq('user_id', athleteId)
@@ -183,19 +231,28 @@ export async function generateAthleteReport(
     .lte('date', period.end)
     .order('date', { ascending: true });
 
-  const weights = weightRecords?.map(r => r.weight_kg) || [];
+  if (wErr) throw wErr;
+
+  const weights = (weightRecords || [])
+    .map((r: any) => toNumber(r.weight_kg))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+
   const currentWeight = weights.length > 0 ? weights[weights.length - 1] : null;
   const firstWeight = weights.length > 0 ? weights[0] : null;
+
   const averageWeight =
     weights.length > 0 ? weights.reduce((sum, w) => sum + w, 0) / weights.length : null;
+
   const weightChange =
-    currentWeight && firstWeight ? currentWeight - firstWeight : null;
+    currentWeight != null && firstWeight != null ? currentWeight - firstWeight : null;
+
   const weightChangePercent =
-    currentWeight && firstWeight && firstWeight > 0
+    currentWeight != null && firstWeight != null && firstWeight > 0
       ? ((currentWeight - firstWeight) / firstWeight) * 100
       : null;
+
   const weightTrend: 'increasing' | 'stable' | 'decreasing' | 'no_data' =
-    !weightChange
+    weightChange == null
       ? 'no_data'
       : Math.abs(weightChange) < 0.5
       ? 'stable'
@@ -204,22 +261,26 @@ export async function generateAthleteReport(
       : 'decreasing';
 
   // 睡眠データ取得
-  const { data: sleepRecords } = await supabase
+  const { data: sleepRecords, error: sErr } = await supabase
     .from('sleep_records')
     .select('*')
     .eq('user_id', athleteId)
     .gte('date', period.start)
     .lte('date', period.end);
 
-  const sleepHours = sleepRecords?.map(r => r.sleep_hours) || [];
-  const sleepQualities =
-    sleepRecords
-      ?.filter(r => r.sleep_quality !== null)
-      .map(r => r.sleep_quality!) || [];
+  if (sErr) throw sErr;
+
+  const sleepHours = (sleepRecords || [])
+    .map((r: any) => toNumber(r.sleep_hours))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+
+  const sleepQualities = (sleepRecords || [])
+    .map((r: any) => toNumber(r.sleep_quality))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+
   const averageSleepHours =
-    sleepHours.length > 0
-      ? sleepHours.reduce((sum, h) => sum + h, 0) / sleepHours.length
-      : null;
+    sleepHours.length > 0 ? sleepHours.reduce((sum, h) => sum + h, 0) / sleepHours.length : null;
+
   const averageSleepQuality =
     sleepQualities.length > 0
       ? sleepQualities.reduce((sum, q) => sum + q, 0) / sleepQualities.length
@@ -237,27 +298,35 @@ export async function generateAthleteReport(
       : 'stable';
 
   // モチベーションデータ取得
-  const { data: motivationRecords } = await supabase
+  const { data: motivationRecords, error: mErr } = await supabase
     .from('motivation_records')
     .select('*')
     .eq('user_id', athleteId)
     .gte('date', period.start)
     .lte('date', period.end);
 
-  const motivations = motivationRecords?.map(r => r.motivation_level) || [];
-  const energies = motivationRecords?.map(r => r.energy_level) || [];
-  const stresses = motivationRecords?.map(r => r.stress_level) || [];
+  if (mErr) throw mErr;
+
+  const motivations = (motivationRecords || [])
+    .map((r: any) => toNumber(r.motivation_level))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+
+  const energies = (motivationRecords || [])
+    .map((r: any) => toNumber(r.energy_level))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+
+  const stresses = (motivationRecords || [])
+    .map((r: any) => toNumber(r.stress_level))
+    .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
 
   const averageMotivation =
-    motivations.length > 0
-      ? motivations.reduce((sum, m) => sum + m, 0) / motivations.length
-      : null;
+    motivations.length > 0 ? motivations.reduce((sum, m) => sum + m, 0) / motivations.length : null;
+
   const averageEnergy =
     energies.length > 0 ? energies.reduce((sum, e) => sum + e, 0) / energies.length : null;
+
   const averageStress =
-    stresses.length > 0
-      ? stresses.reduce((sum, s) => sum + s, 0) / stresses.length
-      : null;
+    stresses.length > 0 ? stresses.reduce((sum, s) => sum + s, 0) / stresses.length : null;
 
   const motivationTrend: 'improving' | 'stable' | 'declining' | 'no_data' =
     motivations.length < 3
@@ -271,12 +340,14 @@ export async function generateAthleteReport(
       : 'stable';
 
   // パフォーマンスデータ取得
-  const { data: performanceRecords } = await supabase
+  const { data: performanceRecords, error: pErr } = await supabase
     .from('performance_records')
     .select('*, performance_test_types(*)')
     .eq('user_id', athleteId)
     .gte('date', period.start)
     .lte('date', period.end);
+
+  if (pErr) throw pErr;
 
   const totalTests = performanceRecords?.length || 0;
 
@@ -284,14 +355,11 @@ export async function generateAthleteReport(
   let improvements = 0;
   let declines = 0;
 
-  // パフォーマンスの改善・低下を計算（簡易版）
   if (performanceRecords && performanceRecords.length > 0) {
     const testTypeGroups = new Map<string, any[]>();
-    performanceRecords.forEach(record => {
+    performanceRecords.forEach((record: any) => {
       const typeId = record.test_type_id;
-      if (!testTypeGroups.has(typeId)) {
-        testTypeGroups.set(typeId, []);
-      }
+      if (!testTypeGroups.has(typeId)) testTypeGroups.set(typeId, []);
       testTypeGroups.get(typeId)!.push(record);
     });
 
@@ -303,10 +371,10 @@ export async function generateAthleteReport(
         const first = sorted[0];
         const last = sorted[sorted.length - 1];
 
-        const firstValue = first.values.result;
-        const lastValue = last.values.result;
+        const firstValue = first?.values?.result;
+        const lastValue = last?.values?.result;
 
-        if (firstValue && lastValue) {
+        if (firstValue != null && lastValue != null) {
           if (lastValue > firstValue) improvements++;
           else if (lastValue < firstValue) declines++;
         }
@@ -314,7 +382,7 @@ export async function generateAthleteReport(
     });
   }
 
-  // アラート取得（ここを any キャスト & 独自型で吸収）
+  // アラート
   type AlertRow = {
     priority?: string | null;
     metadata?: { priority?: string | null } | null;
@@ -340,56 +408,63 @@ export async function generateAthleteReport(
     athleteId: athlete.id,
     athleteName: athlete.name,
     athleteEmail: athlete.email,
+
     trainingRecords: {
       totalSessions,
-      totalLoad,
-      averageLoad,
-      maxLoad,
-      averageRPE,
-      totalDuration
+      totalLoad: round2(totalLoad),
+      averageLoad: round2(averageLoad),
+      maxLoad: round2(maxLoad),
+      averageRPE: round2(averageRPE),
+      totalDuration: Math.round(totalDuration),
     },
+
     acwrData: {
-      current: currentACWR,
-      average: averageACWR,
-      max: maxACWR,
-      min: minACWR,
+      current: round2(currentACWR),
+      average: round2(averageACWR),
+      max: round2(maxACWR),
+      min: round2(minACWR),
       riskLevel,
       daysInDangerZone,
-      trend: acwrTrend
+      trend: acwrTrend,
     },
+
     weightData: {
       current: currentWeight,
-      average: averageWeight,
-      change: weightChange,
-      changePercent: weightChangePercent,
-      trend: weightTrend
+      average: averageWeight != null ? round2(averageWeight) : null,
+      change: weightChange != null ? round2(weightChange) : null,
+      changePercent: weightChangePercent != null ? round2(weightChangePercent) : null,
+      trend: weightTrend,
     },
+
     sleepData: {
-      averageHours: averageSleepHours,
-      averageQuality: averageSleepQuality,
+      averageHours: averageSleepHours != null ? round2(averageSleepHours) : null,
+      averageQuality: averageSleepQuality != null ? round2(averageSleepQuality) : null,
       totalRecords: sleepRecords?.length || 0,
-      qualityTrend: sleepQualityTrend
+      qualityTrend: sleepQualityTrend,
     },
+
     motivationData: {
-      averageMotivation,
-      averageEnergy,
-      averageStress,
+      averageMotivation: averageMotivation != null ? round2(averageMotivation) : null,
+      averageEnergy: averageEnergy != null ? round2(averageEnergy) : null,
+      averageStress: averageStress != null ? round2(averageStress) : null,
       totalRecords: motivationRecords?.length || 0,
-      motivationTrend
+      motivationTrend,
     },
+
     performanceData: {
       totalTests,
       personalBests,
       improvements,
-      declines
+      declines,
     },
+
     alerts: {
       total: totalAlerts,
       high: highAlerts,
       medium: mediumAlerts,
       low: lowAlerts,
-      resolved: resolvedAlerts
-    }
+      resolved: resolvedAlerts,
+    },
   };
 }
 
@@ -397,29 +472,26 @@ export async function generateTeamReport(
   teamId: string,
   period: ReportPeriod
 ): Promise<TeamReportSummary> {
-  // チーム情報取得
-  const { data: team } = await supabase
+  const { data: team, error: teamErr } = await supabase
     .from('teams')
     .select('*')
     .eq('id', teamId)
     .single();
 
-  if (!team) {
-    throw new Error('Team not found');
-  }
+  if (teamErr) throw teamErr;
+  if (!team) throw new Error('Team not found');
 
-  // チームの選手取得
-  const { data: athletes } = await supabase
+  const { data: athletes, error: athErr } = await supabase
     .from('users')
     .select('*')
     .eq('team_id', teamId)
     .eq('role', 'athlete');
 
+  if (athErr) throw athErr;
+
   const totalAthletes = athletes?.length || 0;
 
-  // 各選手のレポート生成
   const athleteReports: AthleteReportData[] = [];
-
   if (athletes) {
     for (const athlete of athletes) {
       try {
@@ -431,65 +503,41 @@ export async function generateTeamReport(
     }
   }
 
-  const activeAthletes = athleteReports.filter(
-    r => r.trainingRecords.totalSessions > 0
-  ).length;
+  const activeAthletes = athleteReports.filter(r => r.trainingRecords.totalSessions > 0).length;
 
-  // チーム統計計算
   const teamAverageLoad =
     activeAthletes > 0
-      ? athleteReports.reduce((sum, r) => sum + r.trainingRecords.averageLoad, 0) /
-        activeAthletes
+      ? athleteReports.reduce((sum, r) => sum + r.trainingRecords.averageLoad, 0) / activeAthletes
       : 0;
 
   const athletesWithACWR = athleteReports.filter(r => r.acwrData.current > 0);
   const teamAverageACWR =
     athletesWithACWR.length > 0
-      ? athletesWithACWR.reduce((sum, r) => sum + r.acwrData.current, 0) /
-        athletesWithACWR.length
+      ? athletesWithACWR.reduce((sum, r) => sum + r.acwrData.current, 0) / athletesWithACWR.length
       : 0;
 
-  const highRiskCount = athleteReports.filter(
-    r => r.acwrData.riskLevel === 'high'
-  ).length;
-  const mediumRiskCount = athleteReports.filter(
-    r => r.acwrData.riskLevel === 'medium'
-  ).length;
-  const lowRiskCount = athleteReports.filter(
-    r => r.acwrData.riskLevel === 'low'
-  ).length;
+  const highRiskCount = athleteReports.filter(r => r.acwrData.riskLevel === 'high').length;
+  const mediumRiskCount = athleteReports.filter(r => r.acwrData.riskLevel === 'medium').length;
+  const lowRiskCount = athleteReports.filter(r => r.acwrData.riskLevel === 'low').length;
 
   const totalAlerts = athleteReports.reduce((sum, r) => sum + r.alerts.total, 0);
   const criticalAlerts = athleteReports.reduce((sum, r) => sum + r.alerts.high, 0);
 
-  // インサイト生成
   const insights: string[] = [];
   const recommendations: string[] = [];
 
   if (teamAverageACWR > 1.3) {
     insights.push(
-      `チーム平均ACWR（${teamAverageACWR.toFixed(
-        2
-      )}）が推奨範囲を超えています。全体的にトレーニング負荷が高い状態です。`
+      `チーム平均ACWR（${teamAverageACWR.toFixed(2)}）が推奨範囲を超えています。全体的にトレーニング負荷が高い状態です。`
     );
-    recommendations.push(
-      'チーム全体のトレーニング強度を見直し、適切な休息日を設けることを推奨します。'
-    );
-  } else if (teamAverageACWR < 0.8) {
+    recommendations.push('チーム全体のトレーニング強度を見直し、適切な休息日を設けることを推奨します。');
+  } else if (teamAverageACWR < 0.8 && teamAverageACWR > 0) {
     insights.push(
-      `チーム平均ACWR（${teamAverageACWR.toFixed(
-        2
-      )}）が推奨範囲を下回っています。トレーニング負荷が不足している可能性があります。`
+      `チーム平均ACWR（${teamAverageACWR.toFixed(2)}）が推奨範囲を下回っています。トレーニング負荷が不足している可能性があります。`
     );
-    recommendations.push(
-      '選手のコンディションを確認しながら、段階的にトレーニング負荷を増やすことを検討してください。'
-    );
+    recommendations.push('選手のコンディションを確認しながら、段階的にトレーニング負荷を増やすことを検討してください。');
   } else {
-    insights.push(
-      `チーム平均ACWR（${teamAverageACWR.toFixed(
-        2
-      )}）は適切な範囲内です。`
-    );
+    insights.push(`チーム平均ACWR（${teamAverageACWR.toFixed(2)}）は適切な範囲内です。`);
   }
 
   if (highRiskCount > 0) {
@@ -511,29 +559,19 @@ export async function generateTeamReport(
     r => r.sleepData.averageHours !== null && r.sleepData.averageHours < 7
   );
   if (lowSleepAthletes.length > 0) {
-    insights.push(
-      `${lowSleepAthletes.length}名の選手の平均睡眠時間が7時間未満です。`
-    );
+    insights.push(`${lowSleepAthletes.length}名の選手の平均睡眠時間が7時間未満です。`);
     recommendations.push(
-      `睡眠不足の選手（${lowSleepAthletes
-        .map(r => r.athleteName)
-        .join('、')}）に対して、睡眠習慣の改善を指導してください。`
+      `睡眠不足の選手（${lowSleepAthletes.map(r => r.athleteName).join('、')}）に対して、睡眠習慣の改善を指導してください。`
     );
   }
 
   const lowMotivationAthletes = athleteReports.filter(
-    r =>
-      r.motivationData.averageMotivation !== null &&
-      r.motivationData.averageMotivation < 3
+    r => r.motivationData.averageMotivation !== null && r.motivationData.averageMotivation < 3
   );
   if (lowMotivationAthletes.length > 0) {
-    insights.push(
-      `${lowMotivationAthletes.length}名の選手のモチベーションが低下しています。`
-    );
+    insights.push(`${lowMotivationAthletes.length}名の選手のモチベーションが低下しています。`);
     recommendations.push(
-      `モチベーション低下が見られる選手（${lowMotivationAthletes
-        .map(r => r.athleteName)
-        .join('、')}）と個別面談を行うことを推奨します。`
+      `モチベーション低下が見られる選手（${lowMotivationAthletes.map(r => r.athleteName).join('、')}）と個別面談を行うことを推奨します。`
     );
   }
 
@@ -544,8 +582,8 @@ export async function generateTeamReport(
     generatedAt: new Date().toISOString(),
     totalAthletes,
     activeAthletes,
-    teamAverageLoad,
-    teamAverageACWR,
+    teamAverageLoad: round2(teamAverageLoad),
+    teamAverageACWR: round2(teamAverageACWR),
     highRiskCount,
     mediumRiskCount,
     lowRiskCount,
@@ -554,7 +592,7 @@ export async function generateTeamReport(
     criticalAlerts,
     athletes: athleteReports,
     insights,
-    recommendations
+    recommendations,
   };
 }
 
@@ -563,49 +601,37 @@ export function getPeriodDates(
   customStart?: string,
   customEnd?: string
 ): ReportPeriod {
-  // ベースは「JST の今日」
   const todayJST = getTodayJST();
-  const end = new Date(todayJST.getTime()); // コピー
+  const end = new Date(todayJST.getTime());
   let start = new Date(end.getTime());
 
   switch (periodType) {
-    case 'weekly': {
+    case 'weekly':
       start.setDate(end.getDate() - 7);
       break;
-    }
-    case 'monthly': {
+    case 'monthly':
       start.setMonth(end.getMonth() - 1);
       break;
-    }
-    case 'quarterly': {
+    case 'quarterly':
       start.setMonth(end.getMonth() - 3);
       break;
-    }
-    case 'semi_annual': {
+    case 'semi_annual':
       start.setMonth(end.getMonth() - 6);
       break;
-    }
-    case 'annual': {
+    case 'annual':
       start.setFullYear(end.getFullYear() - 1);
       break;
-    }
-    case 'custom': {
+    case 'custom':
       if (customStart && customEnd) {
-        // ユーザーが date input で選んだ YYYY-MM-DD をそのまま使う
-        return {
-          start: customStart,
-          end: customEnd,
-          type: 'custom'
-        };
+        return { start: customStart, end: customEnd, type: 'custom' };
       }
       break;
-    }
   }
 
   return {
     start: formatDateJST(start),
     end: formatDateJST(end),
-    type: periodType
+    type: periodType,
   };
 }
 
