@@ -209,8 +209,10 @@ export function TeamACWRChart({
             )}
 
             <p className="flex justify-between">
-              <span>対象選手数:</span>
-              <span className="font-semibold">{row?.athleteCount ?? '-'}名</span>
+              <span>平均に使用:</span>
+              <span className="font-semibold">
+                {row?.athleteCount} / {row?.rosterCount}名
+              </span>
             </p>
 
             <p className="flex justify-between">

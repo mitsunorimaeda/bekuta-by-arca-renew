@@ -1,206 +1,121 @@
 // src/hooks/useTeamACWR.ts
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getRiskLevelFromACWR } from '../lib/acwr'; // ←あなたの関数名に合わせてOK
 
-export interface TeamACWRData {
-  date: string; // YYYY-MM-DD
-  averageACWR: number;
-  athleteCount: number;
-  riskLevel: string;
-
-  // ✅ 追加：チーム平均RPE/Load（viewから）
-  averageRPE?: number | null;
-  averageLoad?: number | null;
-}
-
-export type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
-
-export interface AthleteACWRInfo {
-  currentACWR: number | null;
-  riskLevel: RiskLevel;
-  daysOfData?: number | null;
-}
-
-export type AthleteACWRMap = Record<string, AthleteACWRInfo>;
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-const evalRisk = (acwr: number | null): RiskLevel => {
-  if (acwr === null || acwr === undefined) return 'unknown';
-  if (!Number.isFinite(acwr) || acwr <= 0) return 'unknown';
-  if (acwr >= 1.5) return 'high';
-  if (acwr >= 1.3) return 'caution';
-  if (acwr >= 0.8) return 'good';
-  return 'low';
-};
-
-// ✅ JSTのYYYY-MM-DD（DBの日付と合わせる）
-const getJSTDateKey = (d: Date) => {
-  const jst = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-  return jst.toISOString().slice(0, 10);
-};
-
-type AthleteACWRDailyRow = {
+type AthleteACWRRow = {
   user_id: string;
-  date: string; // YYYY-MM-DD
-  acwr: number | null;
-};
-
-type TeamTrainingDailyRow = {
   team_id: string;
   date: string; // YYYY-MM-DD
-  average_rpe: number | null;
-  average_load: number | null;
-  athlete_count: number | null;
+  daily_load: number | string;
+  acute_7d: number | string | null;
+  chronic_28d: number | string | null;
+  acwr: number | string | null;
+  is_valid: boolean;
+  updated_at: string;
 };
 
-const chunk = <T,>(arr: T[], size: number) => {
-  const res: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
-  return res;
+export type TeamACWRData = {
+  date: string;
+  averageACWR: number | null;
+  athleteCount: number;     // ←平均に使った人数（valid）
+  rosterCount: number;      // ←在籍人数（users.team_id）
+  riskLevel: string;
 };
 
-export function useTeamACWR(teamId: string | null) {
-  const [teamACWRData, setTeamACWRData] = useState<TeamACWRData[]>([]);
-  const [athleteACWRMap, setAthleteACWRMap] = useState<AthleteACWRMap>({});
+function toNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function useTeamACWR(teamId?: string | null) {
+  const [data, setData] = useState<TeamACWRData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<any>(null);
 
   useEffect(() => {
     if (!teamId) {
-      setTeamACWRData([]);
-      setAthleteACWRMap({});
+      setData([]);
       return;
     }
-    fetchTeamACWR(teamId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId]);
 
-  const fetchTeamACWR = async (teamIdStr: string) => {
-    setLoading(true);
+    const run = async () => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      // 1) チームのアスリート取得
-      const { data: athletes, error: athletesError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('role', 'athlete')
-        .eq('team_id', teamIdStr);
+      try {
+        // ① チーム在籍人数（母数表示用）※まずは users.team_id が一番安定
+        const { count: rosterCount, error: rosterErr } = await supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', teamId);
 
-      if (athletesError) throw athletesError;
+        if (rosterErr) throw rosterErr;
 
-      const athleteIds = (athletes || []).map((a: any) => a.id);
-      if (athleteIds.length === 0) {
-        setTeamACWRData([]);
-        setAthleteACWRMap({});
-        return;
-      }
-
-      // 2) athlete_acwr_daily から直近90日分
-      const today = new Date();
-      const from = new Date(today);
-      from.setDate(from.getDate() - 90);
-
-      const fromKey = getJSTDateKey(from);
-      const toKey = getJSTDateKey(today);
-
-      const idChunks = chunk(athleteIds, 50);
-      const allRows: AthleteACWRDailyRow[] = [];
-
-      for (const ids of idChunks) {
-        const { data, error } = await supabase
+        // ② athlete_acwr_daily を広めに取得（必要期間だけに絞ってもOK）
+        const { data: rows, error: acwrErr } = await supabase
           .from('athlete_acwr_daily')
-          .select('user_id,date,acwr')
-          .in('user_id', ids)
-          .gte('date', fromKey)
-          .lte('date', toKey)
+          .select('user_id, team_id, date, acwr, is_valid')
+          .eq('team_id', teamId)
           .order('date', { ascending: true });
 
-        if (error) throw error;
-        allRows.push(...((data || []) as AthleteACWRDailyRow[]));
-      }
+        if (acwrErr) throw acwrErr;
 
-      // 3) 日付ごとに平均ACWR
-      const byDate = new Map<string, { sum: number; cnt: number }>();
+        const safeRows = (rows ?? []) as AthleteACWRRow[];
 
-      for (const r of allRows) {
-        const v = r.acwr;
-        if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) continue;
+        // ③ フロントで「validのみ」を平均に採用
+        const byDate = new Map<
+          string,
+          { sum: number; cnt: number; rosterCount: number }
+        >();
 
-        const key = r.date;
-        const cur = byDate.get(key) ?? { sum: 0, cnt: 0 };
-        cur.sum += v;
-        cur.cnt += 1;
-        byDate.set(key, cur);
-      }
+        for (const r of safeRows) {
+          const acwr = toNum(r.acwr);
 
-      const dates = Array.from(byDate.keys()).sort();
-      const teamAveragesBase: TeamACWRData[] = dates.map((d) => {
-        const x = byDate.get(d)!;
-        const avg = x.sum / x.cnt;
-        return {
-          date: d,
-          averageACWR: round2(avg),
-          athleteCount: x.cnt,
-          riskLevel: evalRisk(avg),
-          averageRPE: null,
-          averageLoad: null,
-        };
-      });
+          // ✅ 平均に使う条件（ここがキモ）
+          const isValidForAvg = r.is_valid === true && acwr !== null;
 
-      // 4) ✅ team_training_daily（view）から平均RPE/Loadを取得してマージ
-      const { data: dailyRows, error: dailyErr } = await supabase
-        .from('team_training_daily')
-        .select('team_id,date,average_rpe,average_load,athlete_count')
-        .eq('team_id', teamIdStr)
-        .gte('date', fromKey)
-        .lte('date', toKey)
-        .order('date', { ascending: true });
+          // date のバケツは作っておく（表示のため）
+          if (!byDate.has(r.date)) {
+            byDate.set(r.date, { sum: 0, cnt: 0, rosterCount: rosterCount ?? 0 });
+          }
 
-      if (dailyErr) throw dailyErr;
-
-      const mapDaily = new Map<string, TeamTrainingDailyRow>();
-      (dailyRows || []).forEach((r: any) => {
-        mapDaily.set(r.date, r as TeamTrainingDailyRow);
-      });
-
-      const merged: TeamACWRData[] = teamAveragesBase.map((row) => {
-        const add = mapDaily.get(row.date);
-        return {
-          ...row,
-          averageRPE: add?.average_rpe ?? null,
-          averageLoad: add?.average_load ?? null,
-          // athleteCount はACWR有効者数を保持（そのまま）
-        };
-      });
-
-      setTeamACWRData(merged);
-
-      // 5) 選手ごとの「最新ACWR」
-      const latestMap: AthleteACWRMap = {};
-      for (const id of athleteIds) {
-        latestMap[id] = { currentACWR: null, riskLevel: 'unknown', daysOfData: null };
-      }
-
-      for (const r of allRows) {
-        const v = typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
-        if (v != null && v > 0) {
-          latestMap[r.user_id] = {
-            currentACWR: round2(v),
-            riskLevel: evalRisk(v),
-            daysOfData: 28,
-          };
+          if (isValidForAvg) {
+            const bucket = byDate.get(r.date)!;
+            bucket.sum += acwr!;
+            bucket.cnt += 1;
+          }
         }
+
+        // ④ Chart 用配列に変換
+        const next: TeamACWRData[] = Array.from(byDate.entries()).map(
+          ([date, v]) => {
+            const average =
+              v.cnt > 0 ? Number((v.sum / v.cnt).toFixed(3)) : null;
+
+            return {
+              date,
+              averageACWR: average,
+              athleteCount: v.cnt,          // ✅平均に使った人数
+              rosterCount: v.rosterCount,   // ✅在籍母数
+              riskLevel: average !== null ? getRiskLevelFromACWR(average) : 'unknown',
+            };
+          }
+        );
+
+        setData(next);
+      } catch (e) {
+        console.error('[useTeamACWR] error', e);
+        setError(e);
+        setData([]);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setAthleteACWRMap(latestMap);
-    } catch (error) {
-      console.error('Error fetching team ACWR data:', error);
-      setTeamACWRData([]);
-      setAthleteACWRMap({});
-    } finally {
-      setLoading(false);
-    }
-  };
+    run();
+  }, [teamId]);
 
-  return { teamACWRData, athleteACWRMap, loading };
+  return { data, loading, error };
 }
