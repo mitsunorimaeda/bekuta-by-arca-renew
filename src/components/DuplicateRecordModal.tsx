@@ -25,20 +25,19 @@ type Props = {
   };
 };
 
-export function DuplicateMotivationRecordModal({
+export function DuplicateRecordModal({
   isOpen,
   onClose,
   onOverwrite,
   onCancel,
   existingRecord,
-  newValue
+  newValue,
 }: Props) {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
@@ -57,7 +56,6 @@ export function DuplicateMotivationRecordModal({
           </button>
         </div>
 
-        {/* Body (scrollable) */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           <p className="text-gray-600 dark:text-gray-300 mb-4">
             この日付には既に記録があります。上書きしますか？
@@ -107,7 +105,6 @@ export function DuplicateMotivationRecordModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
           <button
             onClick={onCancel}

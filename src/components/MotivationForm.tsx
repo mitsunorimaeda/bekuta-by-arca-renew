@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Zap, AlertCircle } from 'lucide-react';
 import { getTodayJSTString } from '../lib/date';
-import { DuplicateMotivationRecordModal, ExistingMotivationRecord } from './DuplicateRecordModal';
+import { DuplicateRecordModal, ExistingMotivationRecord } from "./DuplicateRecordModal";
 
 interface LastRecordInfo {
   date: string;
@@ -272,7 +272,7 @@ export function MotivationForm({
 
       {/* ✅ 上書きモーダル */}
       {existingRecord && pendingData && (
-        <DuplicateMotivationRecordModal
+        <DuplicateRecordModal
           isOpen={showDuplicateModal}
           onClose={() => setShowDuplicateModal(false)}
           onCancel={() => {
