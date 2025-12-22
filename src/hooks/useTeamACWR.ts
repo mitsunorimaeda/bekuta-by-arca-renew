@@ -1,7 +1,6 @@
 // src/hooks/useTeamACWR.ts
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { getRiskLevelFromACWR } from '../lib/acwr'; // ←あなたの関数名に合わせてOK
 
 type AthleteACWRRow = {
   user_id: string;
@@ -22,6 +21,14 @@ export type TeamACWRData = {
   rosterCount: number;      // ←在籍人数（users.team_id）
   riskLevel: string;
 };
+
+function getRiskLevelFromACWR(acwr: number): 'high' | 'caution' | 'good' | 'low' | 'unknown' {
+  if (!Number.isFinite(acwr)) return 'unknown';
+  if (acwr > 1.5) return 'high';
+  if (acwr >= 1.3) return 'caution';
+  if (acwr >= 0.8) return 'good';
+  return 'low';
+
 
 function toNum(v: any): number | null {
   if (v === null || v === undefined) return null;
