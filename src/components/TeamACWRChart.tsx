@@ -1,3 +1,4 @@
+// src/components/TeamACWRChart.tsx
 import React, { useState, useMemo } from 'react';
 import {
   LineChart,
@@ -28,6 +29,9 @@ interface TeamACWRData {
   averageLoad?: number | null;
   avg_load?: number | null;
   load_avg?: number | null;
+
+  // 任意：ツールチップ表示用（無くてもOK）
+  rosterCount?: number | null;
 }
 
 interface TeamACWRChartProps {
@@ -42,15 +46,98 @@ interface TeamACWRChartProps {
 const pickAvgRPE = (d: TeamACWRData) => d.averageRPE ?? d.avg_rpe ?? d.rpe_avg ?? null;
 const pickAvgLoad = (d: TeamACWRData) => d.averageLoad ?? d.avg_load ?? d.load_avg ?? null;
 
+/** ✅ 認知しやすい右上トグル（ON/OFF感強め） */
+function MetricTogglePills({
+  showRPE,
+  showLoad,
+  onToggle,
+}: {
+  showRPE: boolean;
+  showLoad: boolean;
+  onToggle: (key: 'rpe' | 'load') => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="hidden sm:inline text-xs text-gray-500 mr-1">右軸の表示</span>
+
+      {/* 平均RPE */}
+      <button
+        type="button"
+        onClick={() => onToggle('rpe')}
+        className={[
+          'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold',
+          'shadow-sm transition',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+          showRPE
+            ? 'bg-white border-blue-200 text-blue-700'
+            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-white',
+        ].join(' ')}
+        aria-pressed={showRPE}
+      >
+        <span
+          className={[
+            'inline-flex h-5 w-9 items-center rounded-full p-0.5 transition',
+            showRPE ? 'bg-blue-600' : 'bg-gray-300',
+          ].join(' ')}
+        >
+          <span
+            className={[
+              'h-4 w-4 rounded-full bg-white shadow transition',
+              showRPE ? 'translate-x-4' : 'translate-x-0',
+            ].join(' ')}
+          />
+        </span>
+        平均RPE
+      </button>
+
+      {/* 平均Load */}
+      <button
+        type="button"
+        onClick={() => onToggle('load')}
+        className={[
+          'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold',
+          'shadow-sm transition',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+          showLoad
+            ? 'bg-white border-emerald-200 text-emerald-700'
+            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-white',
+        ].join(' ')}
+        aria-pressed={showLoad}
+      >
+        <span
+          className={[
+            'inline-flex h-5 w-9 items-center rounded-full p-0.5 transition',
+            showLoad ? 'bg-emerald-600' : 'bg-gray-300',
+          ].join(' ')}
+        >
+          <span
+            className={[
+              'h-4 w-4 rounded-full bg-white shadow transition',
+              showLoad ? 'translate-x-4' : 'translate-x-0',
+            ].join(' ')}
+          />
+        </span>
+        平均Load
+      </button>
+    </div>
+  );
+}
+
 export function TeamACWRChart({
   data,
   teamName,
   showAvgRPE = true,
   showAvgLoad = false,
 }: TeamACWRChartProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter' | 'all'>(
-    'month'
-  );
+  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter' | 'all'>('month');
+
+  // ✅ 「StaffViewからの表示指定」 + 「ユーザーがグラフ内でON/OFFできる」両対応
+  const [showRPEUI, setShowRPEUI] = useState<boolean>(showAvgRPE);
+  const [showLoadUI, setShowLoadUI] = useState<boolean>(showAvgLoad);
+
+  // 親から値が変わったときに同期したい場合は useEffect を入れる（必要なら）
+  // React.useEffect(() => setShowRPEUI(showAvgRPE), [showAvgRPE]);
+  // React.useEffect(() => setShowLoadUI(showAvgLoad), [showAvgLoad]);
 
   // ✅ period filter
   const filteredData = useMemo(() => {
@@ -107,21 +194,16 @@ export function TeamACWRChart({
       .map((d: any) => ({
         ...d,
         averageACWR: Math.max(0, d.averageACWR),
-        avgRPE:
-          typeof d.avgRPE === 'number' && Number.isFinite(d.avgRPE) ? d.avgRPE : null,
-        avgLoad:
-          typeof d.avgLoad === 'number' && Number.isFinite(d.avgLoad) ? d.avgLoad : null,
+        avgRPE: typeof d.avgRPE === 'number' && Number.isFinite(d.avgRPE) ? d.avgRPE : null,
+        avgLoad: typeof d.avgLoad === 'number' && Number.isFinite(d.avgLoad) ? d.avgLoad : null,
       }));
   }, [chartData]);
 
   const hasRPE = useMemo(() => safeData.some((d: any) => typeof d.avgRPE === 'number'), [safeData]);
-  const hasLoad = useMemo(
-    () => safeData.some((d: any) => typeof d.avgLoad === 'number'),
-    [safeData]
-  );
+  const hasLoad = useMemo(() => safeData.some((d: any) => typeof d.avgLoad === 'number'), [safeData]);
 
-  const showRPELine = !!showAvgRPE && hasRPE;
-  const showLoadLine = !!showAvgLoad && hasLoad;
+  const showRPELine = !!showRPEUI && hasRPE;
+  const showLoadLine = !!showLoadUI && hasLoad;
   const showAuxAxis = showRPELine || showLoadLine;
 
   if (!data || data.length === 0) {
@@ -172,9 +254,7 @@ export function TeamACWRChart({
       return (
         <div className="bg-white p-3 sm:p-4 border border-gray-200 rounded-lg shadow-lg max-w-xs">
           <div className="flex items-center space-x-2 mb-2">
-            <p className="font-medium text-gray-900 text-sm sm:text-base">
-              {formatDateWithDay(label)}
-            </p>
+            <p className="font-medium text-gray-900 text-sm sm:text-base">{formatDateWithDay(label)}</p>
             {isWeekend && (
               <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
                 週末
@@ -193,25 +273,21 @@ export function TeamACWRChart({
             {showRPELine && (
               <p className="flex justify-between">
                 <span>平均RPE:</span>
-                <span className="font-semibold">
-                  {typeof rpe === 'number' ? rpe.toFixed(2) : '-'}
-                </span>
+                <span className="font-semibold">{typeof rpe === 'number' ? rpe.toFixed(2) : '-'}</span>
               </p>
             )}
 
             {showLoadLine && (
               <p className="flex justify-between">
                 <span>平均Load:</span>
-                <span className="font-semibold">
-                  {typeof load === 'number' ? Math.round(load) : '-'}
-                </span>
+                <span className="font-semibold">{typeof load === 'number' ? Math.round(load) : '-'}</span>
               </p>
             )}
 
             <p className="flex justify-between">
               <span>平均に使用:</span>
               <span className="font-semibold">
-                {row?.athleteCount} / {row?.rosterCount}名
+                {row?.athleteCount} / {row?.rosterCount ?? '-'}名
               </span>
             </p>
 
@@ -253,13 +329,25 @@ export function TeamACWRChart({
     <div className="w-full">
       {/* ヘッダーと期間選択 */}
       <div className="mb-4 space-y-4">
-        <div>
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
-            <span className="hidden sm:inline">{teamName} - </span>チーム平均ACWR推移
-          </h3>
-          <p className="text-xs sm:text-sm text-gray-600">
-            左軸：ACWR{showAuxAxis ? ' / 右軸：RPE・Load' : ''}
-          </p>
+        {/* ✅ タイトル左 / トグル右（認知しやすい位置） */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
+              <span className="hidden sm:inline">{teamName} - </span>チーム平均ACWR推移
+            </h3>
+            <p className="text-xs sm:text-sm text-gray-600">
+              左軸：ACWR{showAuxAxis ? ' / 右軸：RPE・Load' : ''}
+            </p>
+          </div>
+
+          <MetricTogglePills
+            showRPE={showRPEUI}
+            showLoad={showLoadUI}
+            onToggle={(key) => {
+              if (key === 'rpe') setShowRPEUI((v) => !v);
+              if (key === 'load') setShowLoadUI((v) => !v);
+            }}
+          />
         </div>
 
         {/* 期間選択ボタン */}
@@ -316,7 +404,7 @@ export function TeamACWRChart({
         </div>
 
         {/* ✅ 列が無い場合の注意 */}
-        {(showAvgRPE && !hasRPE) || (showAvgLoad && !hasLoad) ? (
+        {(showRPEUI && !hasRPE) || (showLoadUI && !hasLoad) ? (
           <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
             表示ONの指標がデータに含まれていません（平均RPE/平均Loadの列が未取得の可能性）。
           </div>
@@ -340,10 +428,7 @@ export function TeamACWRChart({
             {/* ✅ 左：ACWR */}
             <YAxis
               yAxisId="acwr"
-              domain={[
-                0,
-                (dataMax: number) => (Number.isFinite(dataMax) ? dataMax + 0.5 : 2),
-              ]}
+              domain={[0, (dataMax: number) => (Number.isFinite(dataMax) ? dataMax + 0.5 : 2)]}
               stroke="#6b7280"
               fontSize={10}
               width={40}
@@ -353,10 +438,7 @@ export function TeamACWRChart({
             <YAxis
               yAxisId="aux"
               orientation="right"
-              domain={[
-                0,
-                (dataMax: number) => (Number.isFinite(dataMax) ? dataMax : 10),
-              ]}
+              domain={[0, (dataMax: number) => (Number.isFinite(dataMax) ? dataMax : 10)]}
               stroke="#6b7280"
               fontSize={10}
               width={40}

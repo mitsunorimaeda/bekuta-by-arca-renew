@@ -14,6 +14,8 @@ import { useTeamACWR } from '../hooks/useTeamACWR';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import { useOrganizations } from '../hooks/useOrganizations';
+import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/riskUtils';
+
 
 import {
   Users,
@@ -30,9 +32,9 @@ import {
   Lock,
 } from 'lucide-react';
 
-import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
-import { TeamPerformanceComparison } from './TeamPerformanceComparison';
-import { TeamTrendAnalysis } from './TeamTrendAnalysis';
+// import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
+// import { TeamPerformanceComparison } from './TeamPerformanceComparison';
+// import { TeamTrendAnalysis } from './TeamTrendAnalysis';
 
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
@@ -40,19 +42,19 @@ const TeamExportPanel = lazy(() =>
 const ReportView = lazy(() =>
   import('./ReportView').then((m) => ({ default: m.ReportView }))
 );
-const TeamAccessRequestManagement = lazy(() =>
-  import('./TeamAccessRequestManagement').then((m) => ({
-    default: m.TeamAccessRequestManagement,
-  }))
-);
-const AthleteTransferManagement = lazy(() =>
-  import('./AthleteTransferManagement').then((m) => ({
-    default: m.AthleteTransferManagement,
-  }))
-);
-const MessagingPanel = lazy(() =>
-  import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
-);
+// const TeamAccessRequestManagement = lazy(() =>
+//   import('./TeamAccessRequestManagement').then((m) => ({
+//     default: m.TeamAccessRequestManagement,
+//   }))
+// );
+// const AthleteTransferManagement = lazy(() =>
+//   import('./AthleteTransferManagement').then((m) => ({
+//     default: m.AthleteTransferManagement,
+//   }))
+// );
+// const MessagingPanel = lazy(() =>
+//   import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
+// );
 
 interface StaffViewProps {
   user: User;
@@ -253,8 +255,8 @@ export function StaffView({
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState<
-    'athletes' | 'team-average' | 'team-analytics' | 'reports' | 'team-access' | 'transfers' | 'messages'
-  >('athletes');
+  'athletes' | 'team-average' | 'reports'
+>('athletes');
 
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -303,7 +305,8 @@ export function StaffView({
     setCurrentStepIndex,
   } = useTutorialContext();
 
-  const { organizations } = useOrganizations(user.id);
+  const orgHook = useOrganizations(user.id);
+  const organizations = Array.isArray(orgHook?.organizations) ? orgHook.organizations : [];
 
   // ✅ ここが白画面の最大原因になりがち：一瞬 undefined でも絶対落ちないようにする
   const safeOrganizations = Array.isArray(organizations) ? organizations : [];
@@ -477,6 +480,14 @@ export function StaffView({
   // ✅ ACWR（DB: athlete_acwr_daily）から「直近90日」取得し、各選手の最新のみ採用
   // =========================
   const fetchAthleteACWRFromDaily = async (teamId: string, athleteIds: string[]) => {
+    if (!athleteIds || athleteIds.length === 0) {
+      if (selectedTeamIdRef.current === teamId) {
+        setAthleteACWRMap({});
+        setAcwrLoading(false);
+      }
+      return;
+    }
+
     const reqSeq = ++acwrRequestSeqRef.current;
     const reqIdsKey = athleteIds.slice().sort().join(',');
 
@@ -577,6 +588,8 @@ export function StaffView({
       .filter((x) => x.daysSinceLast >= NO_DATA_DAYS_THRESHOLD)
       .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
   }, [safeAthletes]);
+
+
 
   const latestTeamAvg = latestTeamACWR?.averageACWR ?? null;
   const latestValid = latestTeamACWR?.athleteCount ?? 0;
@@ -706,15 +719,70 @@ export function StaffView({
     return map;
   }, [safeWeekCards]);
 
-  // 週切替
-  const goPrevWeek = () => {
-    const start = new Date(weekRange.start);
-    const end = new Date(weekRange.end);
-    start.setDate(start.getDate() - 7);
-    end.setDate(end.getDate() - 7);
-    setWeekRange({ start: toISODate(start), end: toISODate(end) });
-  };
-  const goThisWeek = () => setWeekRange(getThisWeekRange());
+  const noDataMap = useMemo(() => {
+    const map: Record<string, { daysSinceLast: number }> = {};
+    for (const x of noDataAthletes) {
+      map[x.athlete.id] = { daysSinceLast: x.daysSinceLast };
+    }
+    return map;
+  }, [noDataAthletes]);
+
+  const athleteRiskMap = useMemo(() => {
+    const map: Record<string, AthleteRisk> = {}; // ←型を厳密にするなら AthleteRisk
+  
+    for (const a of safeAthletes) {
+      map[a.id] = calcRiskForAthlete({
+        id: a.id,
+        name: a.name || a.email || 'unknown',
+        acwrInfo: athleteACWRMap?.[a.id] ?? null, // currentACWR
+        weekCard: weekCardMap?.[a.id] ?? null,    // is_sharing_active / sleep_hours_avg
+        noData: noDataMap?.[a.id] ?? null,        // daysSinceLast
+      });
+    }
+  
+    return map;
+  }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap]);
+
+  const sortedAthletes = useMemo(() => {
+    return sortAthletesByRisk({
+      athletes: safeAthletes,
+      riskMap: athleteRiskMap,
+      weekCardMap,
+    });
+  }, [safeAthletes, athleteRiskMap, weekCardMap]);
+
+  useEffect(() => {
+    if (!sortedAthletes || sortedAthletes.length === 0) return;
+  
+    // riskLevel が入ってる人数
+    const withRisk = sortedAthletes.filter(a => athleteRiskMap?.[a.id]?.riskLevel).length;
+  
+    // 70% 以上揃ったらログ
+    if (withRisk >= Math.floor(sortedAthletes.length * 0.7)) {
+      console.log(
+        '[sortedAthletes]',
+        sortedAthletes.map(a => ({
+          name: a.name,
+          risk: athleteRiskMap[a.id]?.riskLevel,
+          sharing: weekCardMap[a.id]?.is_sharing_active,
+          acwr: athleteACWRMap[a.id]?.currentACWR,
+          reasons: athleteRiskMap[a.id]?.reasons?.length ?? 0,
+        }))
+      );
+    } else {
+      console.log(`[sortedAthletes] risk not ready: ${withRisk}/${sortedAthletes.length}`);
+    }
+  }, [sortedAthletes, athleteRiskMap, weekCardMap, athleteACWRMap]);
+
+  // // 週切替
+  // const goPrevWeek = () => {
+  //   const start = new Date(weekRange.start);
+  //   const end = new Date(weekRange.end);
+  //   start.setDate(start.getDate() - 7);
+  //   end.setDate(end.getDate() - 7);
+  //   setWeekRange({ start: toISODate(start), end: toISODate(end) });
+  // };
+  // const goThisWeek = () => setWeekRange(getThisWeekRange());
 
   // ✅ 選手クリック：共有🔓以外はモーダルを開かない
   const handleAthleteSelect = (athlete: User) => {
@@ -1037,7 +1105,7 @@ export function StaffView({
                       </div>
                     </button>
 
-                    <button
+                    {/* <button
                       onClick={() => setActiveTab('team-analytics')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
                         activeTab === 'team-analytics'
@@ -1049,7 +1117,7 @@ export function StaffView({
                         <PieChart className="w-4 h-4 mr-2" />
                         チーム分析
                       </div>
-                    </button>
+                    </button> */}
 
                     <button
                       onClick={() => setActiveTab('reports')}
@@ -1065,7 +1133,7 @@ export function StaffView({
                       </div>
                     </button>
 
-                    <button
+                    {/* <button
                       onClick={() => setActiveTab('team-access')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
                         activeTab === 'team-access'
@@ -1077,9 +1145,9 @@ export function StaffView({
                         <UsersRound className="w-4 h-4 mr-2" />
                         チームアクセス
                       </div>
-                    </button>
+                    </button> */}
 
-                    <button
+                    {/* <button
                       onClick={() => setActiveTab('transfers')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
                         activeTab === 'transfers'
@@ -1105,7 +1173,7 @@ export function StaffView({
                         <MessageSquare className="w-4 h-4 mr-2" />
                         メッセージ
                       </div>
-                    </button>
+                    </button> */}
                   </nav>
 
                   {/* Mobile dropdown */}
@@ -1117,11 +1185,11 @@ export function StaffView({
                     >
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
-                      <option value="team-analytics">チーム分析</option>
+                      {/* <option value="team-analytics">チーム分析</option> */}
                       <option value="reports">レポート</option>
-                      <option value="team-access">チームアクセス</option>
+                      {/* <option value="team-access">チームアクセス</option>
                       <option value="transfers">選手移籍</option>
-                      <option value="messages">メッセージ</option>
+                      <option value="messages">メッセージ</option> */}
                     </select>
                   </div>
                 </div>
@@ -1159,10 +1227,11 @@ export function StaffView({
                         </div>
                       ) : (
                         <AthleteList
-                          athletes={safeAthletes}
+                          athletes={sortedAthletes}
                           onAthleteSelect={handleAthleteSelect}
                           athleteACWRMap={athleteACWRMap}
                           weekCardMap={weekCardMap}
+                          athleteRiskMap={athleteRiskMap} //
                         />
                       )}
                     </div>
@@ -1170,32 +1239,6 @@ export function StaffView({
 
                   {activeTab === 'team-average' && (
                     <div className="space-y-4">
-                      {/* ✅ スイッチ */}
-                      <div className="flex flex-wrap items-center gap-3">
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300"
-                            checked={showAvgRPE}
-                            onChange={(e) => setShowAvgRPE(e.target.checked)}
-                          />
-                          平均RPE
-                        </label>
-
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300"
-                            checked={showAvgLoad}
-                            onChange={(e) => setShowAvgLoad(e.target.checked)}
-                          />
-                          平均Load
-                        </label>
-
-                        <div className="text-xs text-gray-500">
-                          ※ RPE/Loadの列がデータに無い場合は表示されません
-                        </div>
-                      </div>
 
                       {teamACWRLoading ? (
                         <div className="flex items-center justify-center py-12">
@@ -1214,13 +1257,13 @@ export function StaffView({
                     </div>
                   )}
 
-                  {activeTab === 'team-analytics' && (
+                  {/* {activeTab === 'team-analytics' && (
                     <div className="space-y-6">
                       <TeamInjuryRiskHeatmap teamId={selectedTeam!.id} />
                       <TeamPerformanceComparison teamId={selectedTeam!.id} />
                       <TeamTrendAnalysis teamId={selectedTeam!.id} />
                     </div>
-                  )}
+                  )} */}
 
                   {activeTab === 'reports' && (
                     <Suspense
@@ -1234,7 +1277,7 @@ export function StaffView({
                     </Suspense>
                   )}
 
-                  {activeTab === 'team-access' &&
+                  {/* {activeTab === 'team-access' &&
                     (currentOrganizationId ? (
                       <Suspense
                         fallback={
@@ -1253,9 +1296,9 @@ export function StaffView({
                       <div className="text-center py-12 text-gray-500">
                         組織に所属していないため、チームアクセスリクエストを利用できません。
                       </div>
-                    ))}
+                    ))} */}
 
-                  {activeTab === 'transfers' &&
+                  {/* {activeTab === 'transfers' &&
                     (currentOrganizationId ? (
                       <Suspense
                         fallback={
@@ -1286,7 +1329,7 @@ export function StaffView({
                     >
                       <MessagingPanel userId={user.id} userName={user.name} onClose={() => setActiveTab('athletes')} />
                     </Suspense>
-                  )}
+                  )} */}
                 </div>
               </div>
             )}
@@ -1296,7 +1339,12 @@ export function StaffView({
 
       {/* Athlete Detail Modal */}
       {selectedAthlete && (
-        <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
+        <AthleteDetailModal
+          athlete={selectedAthlete}
+          onClose={() => setSelectedAthlete(null)}
+          risk={athleteRiskMap[selectedAthlete.id]}
+          weekCard={weekCardMap[selectedAthlete.id]}
+        />
       )}
 
       {/* Alert Panel */}

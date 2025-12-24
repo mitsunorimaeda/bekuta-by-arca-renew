@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { X, Activity, Scale, BarChart2 } from 'lucide-react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
+import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
 import {
   ResponsiveContainer,
   Line,
@@ -18,9 +19,43 @@ import {
 interface AthleteDetailModalProps {
   athlete: User;
   onClose: () => void;
+  risk?: AthleteRisk;
+  weekCard?: { is_sharing_active?: boolean; sleep_hours_avg?: number | null } | undefined;
 }
 
+
 type TabKey = 'overview' | 'weight' | 'rpe';
+
+function getNextActions(risk: { riskLevel: 'high' | 'caution' | 'low'; reasons: string[]; acwr?: number | null }) {
+  const reasons = risk.reasons || [];
+  const hasNoInput = reasons.includes('未入力');
+  const hasLoad = reasons.includes('負荷急増') || reasons.includes('負荷やや高');
+  const hasSleep = reasons.includes('睡眠↓');
+
+  if (risk.riskLevel === 'high') {
+    return [
+      hasNoInput ? '入力が止まっている理由を確認（体調/忙しさ/入力導線）' : '主観疲労・痛み・違和感の有無を確認',
+      hasLoad ? '練習後RPEの確認＋次回は強度or量を一段落とす検討' : '今日〜明日の回復指標（睡眠/食欲/気分）を確認',
+      hasSleep ? '今夜の睡眠確保（就寝時刻の提案・スマホ/カフェイン）' : '48時間の経過観察（症状があれば練習内容調整）',
+    ];
+  }
+
+  if (risk.riskLevel === 'caution') {
+    return [
+      hasLoad ? '次回の負荷を微調整（量/強度のどちらかを軽く）' : '回復状況を一言ヒアリング',
+      hasSleep ? '睡眠の確保（最低6h目標、就寝前ルーティン）' : '練習後のリカバリー（補食/入浴/ストレッチ）を促す',
+      hasNoInput ? '入力の習慣づけ（タイミング固定：練習後/就寝前など）' : '状態が上向けば通常運用へ',
+    ];
+  }
+
+  return [
+    '状態は安定。良い習慣を継続',
+    '良かった点を一言フィードバック（継続の強化）',
+    '今週の目標を再確認して進める',
+  ];
+}
+
+
 
 // ✅ YYYY-MM-DD を安全に取り出す（JSTズレ回避のため Date に通さない）
 function toYMD(v: any): string {
@@ -45,12 +80,44 @@ function formatMD(ymd: string): string {
   return `${mm}/${dd}`;
 }
 
-export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps) {
+function trend(delta: number | null) {
+  if (delta == null || !Number.isFinite(delta)) {
+    return { arrow: '–', tone: 'text-gray-500' };
+  }
+  if (delta > 0) {
+    return { arrow: '↑', tone: 'text-red-600' };     // 悪化寄り
+  }
+  if (delta < 0) {
+    return { arrow: '↓', tone: 'text-emerald-600' }; // 改善寄り
+  }
+  return { arrow: '→', tone: 'text-gray-600' };
+}
+
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, }: AthleteDetailModalProps) {
   const { records, weightRecords, acwrData, loading } = useTrainingData(athlete.id);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
   const recentRecords = records.slice(-7);
+  // ===== ACWR 前回比 =====
+const prevACWR = acwrData.length >= 2 ? acwrData[acwrData.length - 2] : null;
+
+const latestACWRValue =
+  latestACWR?.acwr != null && Number.isFinite(Number(latestACWR.acwr))
+    ? Number(latestACWR.acwr)
+    : null;
+
+const prevACWRValue =
+  prevACWR?.acwr != null && Number.isFinite(Number(prevACWR.acwr))
+    ? Number(prevACWR.acwr)
+    : null;
+
+const acwrDelta =
+  latestACWRValue != null && prevACWRValue != null
+    ? latestACWRValue - prevACWRValue
+    : null;
+
+const acwrTrend = trend(acwrDelta);
 
   // ===== 体重データ =====
   const weightChartData = useMemo(() => {
@@ -73,6 +140,53 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
       })
       .filter(Boolean) as { rawDate: string; date: string; weight: number }[];
   }, [weightRecords]);
+
+    // ===== 体重 前回比 =====
+  const latestWeight = weightChartData.length > 0
+  ? weightChartData[weightChartData.length - 1]
+  : null;
+
+  const prevWeight = weightChartData.length >= 2
+  ? weightChartData[weightChartData.length - 2]
+  : null;
+
+  const latestWeightValue =
+  latestWeight?.weight != null && Number.isFinite(latestWeight.weight)
+    ? latestWeight.weight
+    : null;
+
+  const prevWeightValue =
+  prevWeight?.weight != null && Number.isFinite(prevWeight.weight)
+    ? prevWeight.weight
+    : null;
+
+  const weightDelta =
+  latestWeightValue != null && prevWeightValue != null
+    ? latestWeightValue - prevWeightValue
+    : null;
+
+  const weightTrend = trend(weightDelta);
+
+  // ===== LOAD（RPE×時間）集計 =====
+const recent7Days = records.slice(-7);
+const prev7Days = records.slice(-14, -7);
+
+const sumLoad = (recs: any[]) =>
+  recs.reduce((sum, r) => {
+    const rpe = Number(r.rpe ?? r.session_rpe);
+    const dur = Number(r.duration_min ?? r.duration_minutes ?? r.duration);
+    if (!Number.isFinite(rpe) || !Number.isFinite(dur)) return sum;
+    return sum + rpe * dur;
+  }, 0);
+
+const load7 = recent7Days.length > 0 ? sumLoad(recent7Days) : null;
+const loadPrev7 = prev7Days.length > 0 ? sumLoad(prev7Days) : null;
+
+const loadDelta =
+  load7 != null && loadPrev7 != null ? load7 - loadPrev7 : null;
+
+const loadTrend = trend(loadDelta);
+
 
   // ===== RPE / Load / ACWR（training_records + acwrData） =====
   const rpeLoadAcwrChartData = useMemo(() => {
@@ -183,6 +297,54 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
             <X className="w-5 h-5" />
           </button>
         </div>
+          {/* ✅ 状態 → 原因 → 次の一手 */}
+          {risk && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+              {/* 状態 */}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-1 rounded-full border ${getRiskColor(risk.riskLevel)}`}>
+                      {getRiskLabel(risk.riskLevel)}
+                    </span>
+
+                    {typeof risk.acwr === 'number' && (
+                      <span className="text-xs text-gray-600">
+                        ACWR <b>{risk.acwr.toFixed(2)}</b>
+                      </span>
+                    )}
+
+                    {weekCard?.is_sharing_active === false && (
+                      <span className="text-xs px-2 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
+                        🔒 共有OFF
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 原因 */}
+                  {risk.reasons?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {risk.reasons.slice(0, 2).map((r) => (
+                        <span key={r} className="text-[11px] px-2 py-1 rounded-full border bg-gray-50 text-gray-700 border-gray-200">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 次の一手 */}
+              <div className="mt-3 text-sm text-gray-800">
+                <div className="font-semibold mb-1">次の一手</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  {getNextActions(risk).map((t) => (
+                    <li key={t}>{t}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
 
         {/* タブ */}
         <div className="border-b border-gray-200 px-6 pt-3">
@@ -227,12 +389,25 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
           {/* --- 概要タブ --- */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
                 <div className="bg-blue-50 rounded-xl p-4">
                   <p className="text-xs text-blue-700 mb-1">最新 ACWR</p>
                   <p className="text-2xl font-bold text-blue-900">
                     {latestACWR?.acwr != null ? Number(latestACWR.acwr).toFixed(2) : '--'}
                   </p>
+                  <div className="mt-1 text-xs flex items-center gap-2">
+                    <span className={`${acwrTrend.tone} font-semibold`}>
+                      {acwrTrend.arrow}
+                    </span>
+                    <span className="text-gray-600">
+                      前回比：
+                      <b className="ml-1">
+                        {acwrDelta != null
+                          ? `${acwrDelta >= 0 ? '+' : ''}${acwrDelta.toFixed(2)}`
+                          : '--'}
+                      </b>
+                    </span>
+                  </div>
                   {latestACWR && (
                     <p className="text-xs text-blue-700 mt-1">{latestACWRDateLabel}</p>
                   )}
@@ -246,6 +421,49 @@ export function AthleteDetailModal({ athlete, onClose }: AthleteDetailModalProps
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-xs text-gray-700 mb-1">総セッション数</p>
                   <p className="text-2xl font-bold text-gray-900">{records.length}</p>
+                </div>
+                  {/* ⭐ ここに入れる：最新体重 */}
+                <div className="bg-green-50 rounded-xl p-4">
+                  <p className="text-xs text-green-700 mb-1">最新 体重</p>
+                  <p className="text-2xl font-bold text-green-900">
+                    {latestWeightValue != null ? latestWeightValue.toFixed(1) : '--'}
+                  </p>
+
+                  <div className="mt-1 text-xs flex items-center gap-2">
+                    <span className={`${weightTrend.tone} font-semibold`}>
+                      {weightTrend.arrow}
+                    </span>
+                    <span className="text-gray-600">
+                      前回比：
+                      <b className="ml-1">
+                        {weightDelta != null
+                          ? `${weightDelta >= 0 ? '+' : ''}${weightDelta.toFixed(1)}kg`
+                          : '--'}
+                      </b>
+                    </span>
+                  </div>
+                </div>
+                {/* RPE LOAD */}
+                <div className="bg-purple-50 rounded-xl p-4">
+                  <p className="text-xs text-purple-700 mb-1">直近7日 Load</p>
+
+                  <p className="text-2xl font-bold text-purple-900">
+                    {load7 != null ? Math.round(load7) : '--'}
+                  </p>
+
+                  <div className="mt-1 text-xs flex items-center gap-2">
+                    <span className={`${loadTrend.tone} font-semibold`}>
+                      {loadTrend.arrow}
+                    </span>
+                    <span className="text-gray-600">
+                      前週比：
+                      <b className="ml-1">
+                        {loadDelta != null
+                          ? `${loadDelta >= 0 ? '+' : ''}${Math.round(loadDelta)}`
+                          : '--'}
+                      </b>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
