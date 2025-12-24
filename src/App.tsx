@@ -15,6 +15,8 @@ import { BadgeModalController } from './components/BadgeModalController';
 import { useRealtimeHub } from './hooks/useRealtimeHub';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import InviteExpired from './pages/InviteExpired';
+import { GlobalHeader } from './components/GlobalHeader';
+
 
 const OrganizationAdminView = lazy(() =>
   import('./components/OrganizationAdminView').then((m) => ({
@@ -27,7 +29,7 @@ const AlertPanel = lazy(() =>
   import('./components/AlertPanel').then((m) => ({ default: m.AlertPanel })),
 );
 
-import { Building2, Users, Menu, X, LogOut } from 'lucide-react';
+import { Building2, Users } from 'lucide-react';
 import { ConsentModal } from './components/ConsentModal';
 import { ToastContainer } from './components/ToastContainer';
 import { Footer } from './components/Footer';
@@ -83,7 +85,6 @@ function App() {
     React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome'>('app');
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
-  const [showMobileMenu, setShowMobileMenu] = React.useState(false);
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
 
   React.useEffect(() => {
@@ -236,118 +237,25 @@ function App() {
   return (
     <TutorialProvider userId={userProfile.id} role={effectiveRole}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-        {/* Navigation Bar - Hidden for athletes as they have their own header */}
-        {effectiveRole !== 'athlete' && (
-          <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 relative z-20 transition-colors">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="flex justify-between items-center h-16">
-                <div className="flex items-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      console.log('🏠 Bekuta logo clicked');
-
-                      // ① アプリの内部状態を「ホーム」に寄せる
-                      setCurrentPage('app');
-                      setDashboardMode('staff');
-                      setShowMobileMenu(false);
-                      setShowAlertPanel(false);
-
-                      // ② window.location.reload() は一旦やめる
-                    }}
-                    className="flex items-baseline space-x-2 transition-colors active:opacity-70 cursor-pointer"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    <span
-                      className="text-xl font-bold tracking-tight text-gray-900 dark:text-white"
-                      style={{
-                        fontFamily:
-                          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                        letterSpacing: '-0.02em',
-                      }}
-                    >
-                      Bekuta
-                    </span>
-                    <span
-                      className="text-xs font-medium text-gray-500 dark:text-gray-400 hidden sm:inline"
-                      style={{ letterSpacing: '0.05em' }}
-                    >
-                      by ARCA
-                    </span>
-                  </button>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  {/* デスクトップ: ユーザー名 + アラート + ログアウト */}
-                  <span className="text-sm text-gray-600 dark:text-gray-300 hidden md:block transition-colors">
-                    {userProfile.name}さん
-                  </span>
-
-                  {!alertsLoading && (
-                    <AlertBadge
-                      count={unreadCount}
-                      hasHighPriority={hasHighPriorityAlerts}
-                      onClick={() => setShowAlertPanel(true)}
-                      className="touch-target"
-                    />
-                  )}
-
-                  {/* デスクトップ: ログアウトボタン */}
-                  <button
-                    onClick={handleLogout}
-                    className="hidden md:flex bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600
-                      text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg
-                      border border-gray-300 dark:border-gray-600
-                      transition-colors items-center space-x-2 text-sm"
-                    type="button"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>ログアウト</span>
-                  </button>
-
-                  {/* モバイル: ハンバーガーメニュー */}
-                  <button
-                    onClick={() => setShowMobileMenu(!showMobileMenu)}
-                    className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    type="button"
-                  >
-                    {showMobileMenu ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </nav>
-        )}
-
-        {/* Mobile Menu - Only for non-athletes */}
-        {effectiveRole !== 'athlete' && showMobileMenu && (
-          <div className="md:hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg transition-colors">
-            <div className="px-4 py-3 space-y-3">
-              <div className="flex items-center space-x-3 pb-3 border-b border-gray-200 dark:border-gray-700">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 dark:text-blue-400 font-semibold text-sm">
-                    {userProfile.name.charAt(0)}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text:white">{userProfile.name}さん</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{userProfile.email}</p>
-                </div>
-              </div>
-              <button
-                onClick={(e) => {
-                  setShowMobileMenu(false);
-                  handleLogout(e);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                type="button"
-              >
-                <LogOut className="w-5 h-5" />
-                <span>ログアウト</span>
-              </button>
-            </div>
-          </div>
-        )}
+      <GlobalHeader
+        effectiveRole={effectiveRole}
+        userProfile={{ id: userProfile.id, name: userProfile.name, email: userProfile.email }}
+        alertsLoading={alertsLoading}
+        unreadCount={unreadCount}
+        hasHighPriorityAlerts={hasHighPriorityAlerts}
+        onOpenAlertPanel={() => setShowAlertPanel(true)}
+        onLogout={handleLogout}
+        onHome={() => {
+          console.log('🏠 Bekuta logo clicked');
+          setCurrentPage('app');
+          setDashboardMode('staff');
+          setShowAlertPanel(false);
+        }}
+        onNavigateToPrivacy={() => setCurrentPage('privacy')}
+        onNavigateToTerms={() => setCurrentPage('terms')}
+        onNavigateToCommercial={() => setCurrentPage('commercial')}
+        onNavigateToHelp={() => setCurrentPage('help')}
+      />
 
         {/* Main Content */}
         <div className="relative">
