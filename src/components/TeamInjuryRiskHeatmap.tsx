@@ -1,11 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Activity, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getTodayJSTString } from '../lib/date';
-import { getDaysAgoJSTString } from '../lib/date';
-
-
-
+import { getTodayJSTString, getDaysAgoJSTString } from '../lib/date';
 
 interface TeamMember {
   userId: string;
@@ -21,6 +17,12 @@ interface TeamInjuryRiskHeatmapProps {
   teamId: string;
 }
 
+type TeamMemberAssignmentRow = {
+  user_id: string;
+  // FK名を明示した埋め込みの戻り
+  users: { id: string; name: string | null } | null;
+};
+
 export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,7 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
 
   useEffect(() => {
     fetchTeamRiskData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   const fetchTeamRiskData = async () => {
@@ -36,10 +39,15 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
 
       const { data: members, error: membersError } = await supabase
         .from('team_member_assignments')
-        .select(`
-          user_id,
-          users!inner(id, name)
-        `)
+        .select(
+          `
+            user_id,
+            users:users!team_member_assignments_user_id_fkey (
+              id,
+              name
+            )
+          `
+        )
         .eq('team_id', teamId);
 
       if (membersError) throw membersError;
@@ -47,9 +55,13 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
       const today = getTodayJSTString();
       const memberRisks: TeamMember[] = [];
 
-      for (const member of members || []) {
+      for (const member of (members || []) as TeamMemberAssignmentRow[]) {
         const userId = member.user_id;
-        const userName = (member.users as any).name;
+
+        // nameが無い/取れないケースの保険
+        const userName =
+          member.users?.name ||
+          'unknown';
 
         const { data: riskData } = await supabase.rpc('calculate_injury_risk', {
           p_user_id: userId,
@@ -67,12 +79,19 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
           .from('injury_records')
           .select('id')
           .eq('user_id', userId)
-          .gte('occurred_date', getDaysAgoJSTString(90))
+          .gte('occurred_date', getDaysAgoJSTString(90));
 
         let currentACWR: number | null = null;
         if (trainingData && trainingData.length > 0) {
-          const acute = trainingData.slice(0, 7).reduce((sum, r) => sum + (r.load ?? 0), 0);
-          const chronic = trainingData.slice(7, 28).reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
+          const acute = trainingData
+            .slice(0, 7)
+            .reduce((sum, r) => sum + (r.load ?? 0), 0);
+
+          const chronic =
+            trainingData
+              .slice(7, 28)
+              .reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
+
           currentACWR = chronic > 0 ? acute / chronic : null;
         }
 
@@ -90,6 +109,7 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
       setTeamMembers(memberRisks);
     } catch (error) {
       console.error('Error fetching team risk data:', error);
+      setTeamMembers([]);
     } finally {
       setLoading(false);
     }
@@ -115,9 +135,10 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
   });
 
   const highRiskCount = teamMembers.filter((m) => m.riskScore >= 50).length;
-  const avgRisk = teamMembers.length > 0
-    ? teamMembers.reduce((sum, m) => sum + m.riskScore, 0) / teamMembers.length
-    : 0;
+  const avgRisk =
+    teamMembers.length > 0
+      ? teamMembers.reduce((sum, m) => sum + m.riskScore, 0) / teamMembers.length
+      : 0;
 
   if (loading) {
     return (
@@ -166,9 +187,7 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
             <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
             <p className="text-sm text-red-800 dark:text-red-200 font-medium">高リスク選手</p>
           </div>
-          <p className="text-3xl font-bold text-red-600 dark:text-red-400">
-            {highRiskCount}
-          </p>
+          <p className="text-3xl font-bold text-red-600 dark:text-red-400">{highRiskCount}</p>
         </div>
 
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
@@ -201,9 +220,7 @@ export function TeamInjuryRiskHeatmap({ teamId }: TeamInjuryRiskHeatmapProps) {
             <div className="flex-1">
               <h4 className="font-semibold text-gray-900 dark:text-white">{member.name}</h4>
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {member.currentACWR !== null && (
-                  <span>ACWR: {member.currentACWR.toFixed(2)}</span>
-                )}
+                {member.currentACWR !== null && <span>ACWR: {member.currentACWR.toFixed(2)}</span>}
                 {member.recentInjuries > 0 && (
                   <span className="text-red-600 dark:text-red-400">
                     最近{member.recentInjuries}件の傷害

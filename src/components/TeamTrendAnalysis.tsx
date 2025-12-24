@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -7,7 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from 'recharts';
 import { TrendingUp, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -18,7 +18,7 @@ interface TeamTrendAnalysisProps {
 }
 
 interface TrendData {
-  date: string;
+  date: string; // YYYY-MM-DD
   avgLoad: number;
   avgACWR: number;
   activeAthletes: number;
@@ -29,6 +29,21 @@ interface Insight {
   type: 'success' | 'warning' | 'info';
   message: string;
 }
+
+type MemberRow = { user_id: string };
+
+type TrainingRow = {
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  load: number | null;
+};
+
+type ACWRDailyRow = {
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  acwr: number | null;
+  is_valid?: boolean | null;
+};
 
 export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
   const [trendData, setTrendData] = useState<TrendData[]>([]);
@@ -44,7 +59,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
     try {
       setLoading(true);
 
-      // チームのメンバー取得
+      // ① チームのメンバー取得
       const { data: members, error: membersError } = await supabase
         .from('team_member_assignments')
         .select('user_id')
@@ -52,90 +67,111 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
 
       if (membersError) throw membersError;
 
-      const userIds = members?.map((m) => m.user_id) || [];
+      const userIds = (members as MemberRow[] | null)?.map((m) => m.user_id) || [];
       if (userIds.length === 0) {
         setTrendData([]);
         setInsights([]);
-        setLoading(false);
         return;
       }
 
-      // 直近30日分をローカル時間（日付のみ）ベースでループ
+      // ② 直近30日の日付レンジ
       const today = new Date();
-      const thirtyDaysAgo = getDateNDaysAgo(today, 29); // 今日を含めて30日分
+      const fromDate = getDateNDaysAgo(today, 29);
+      const fromKey = formatDateToJST(fromDate); // YYYY-MM-DD
+      const toKey = formatDateToJST(today);
 
-      const trends: TrendData[] = [];
+      // ③ 直近30日分の training_records を一括取得（load / active 計算用）
+      const { data: trainings, error: trainErr } = await supabase
+        .from('training_records')
+        .select('user_id, date, load')
+        .in('user_id', userIds)
+        .gte('date', fromKey)
+        .lte('date', toKey);
 
+      if (trainErr) throw trainErr;
+
+      // ④ 直近30日分の athlete_acwr_daily を一括取得（avgACWR / highRiskCount 用）
+      // ※ team_id で絞れるなら .eq('team_id', teamId) を追加してOK（列がある場合）
+      const { data: acwrDaily, error: acwrErr } = await supabase
+        .from('athlete_acwr_daily')
+        .select('user_id, date, acwr, is_valid')
+        .in('user_id', userIds)
+        .gte('date', fromKey)
+        .lte('date', toKey);
+
+      if (acwrErr) throw acwrErr;
+
+      // ⑤ 日付バケツを先に30日分作る（欠損日も表示するため）
+      const days: string[] = [];
       for (let i = 0; i < 30; i++) {
-        const date = new Date(thirtyDaysAgo);
-        date.setDate(date.getDate() + i);
+        const d = new Date(fromDate);
+        d.setDate(d.getDate() + i);
+        days.push(formatDateToJST(d));
+      }
 
-        const dateStr = formatDateToJST(date); // YYYY-MM-DD（ローカル/JST想定）
+      // --- training_records 集計：日別 avgLoad / activeAthletes ---
+      const byDayTrain = new Map<
+        string,
+        { totalLoad: number; activeSet: Set<string> }
+      >();
 
-        // その日のトレーニングを取得
-        const { data: dayTraining } = await supabase
-          .from('training_records')
-          .select('user_id, load')
-          .in('user_id', userIds)
-          .eq('date', dateStr);
+      for (const day of days) {
+        byDayTrain.set(day, { totalLoad: 0, activeSet: new Set() });
+      }
 
-        const activeAthletes = new Set(dayTraining?.map((r) => r.user_id) || []).size;
+      for (const r of (trainings || []) as TrainingRow[]) {
+        if (!byDayTrain.has(r.date)) continue;
+        const bucket = byDayTrain.get(r.date)!;
+        bucket.activeSet.add(r.user_id);
+        bucket.totalLoad += r.load ?? 0;
+      }
 
-        // ✅ load が null のときは 0 として扱う
-        const totalLoad =
-          dayTraining?.reduce((sum, r) => sum + (r.load ?? 0), 0) ?? 0;
+      // --- athlete_acwr_daily 集計：日別 avgACWR / highRiskCount ---
+      const byDayACWR = new Map<
+        string,
+        { sum: number; cnt: number; highRisk: number }
+      >();
 
-        const avgLoad = activeAthletes > 0 ? totalLoad / activeAthletes : 0;
+      for (const day of days) {
+        byDayACWR.set(day, { sum: 0, cnt: 0, highRisk: 0 });
+      }
 
-        // 各選手ごとの ACWR を計算
-        const acwrValues: number[] = [];
+      for (const r of (acwrDaily || []) as ACWRDailyRow[]) {
+        if (!byDayACWR.has(r.date)) continue;
 
-        // date（当日）から 27日前までを ACWR 用の期間とする（28日分）
-        const startDate = getDateNDaysAgo(date, 27);
-        const startDateStr = formatDateToJST(startDate);
+        // ✅ validだけ平均に採用（列がない場合は acwr!=null だけでもOK）
+        const acwr =
+          typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
+        const isValid = r.is_valid === true; // ←テーブルに合わせて
 
-        for (const userId of userIds) {
-          const { data: userData } = await supabase
-            .from('training_records')
-            .select('load')
-            .eq('user_id', userId)
-            .gte('date', startDateStr)
-            .lte('date', dateStr);
+        if (acwr === null) continue;
+        if (!isValid) continue;
 
-          if (userData && userData.length >= 7) {
-            // ★元の数式ロジックはそのまま維持
-            // ✅ 直近7日の acute load (null に対して ?? 0)
-            const acute = userData
-              .slice(-7)
-              .reduce((sum, r) => sum + (r.load ?? 0), 0);
+        const bucket = byDayACWR.get(r.date)!;
+        bucket.sum += acwr;
+        bucket.cnt += 1;
 
-            // ✅ それ以前21日の chronic load / 3 (null に対して ?? 0)
-            const chronic =
-              userData
-                .slice(0, -7)
-                .reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
+        // high risk 定義： >1.5 or <0.8（今のロジックを踏襲）
+        if (acwr > 1.5 || acwr < 0.8) bucket.highRisk += 1;
+      }
 
-            if (chronic > 0) {
-              acwrValues.push(acute / chronic);
-            }
-          }
-        }
+      // ⑥ TrendData を日付でマージ
+      const trends: TrendData[] = days.map((day) => {
+        const t = byDayTrain.get(day)!;
+        const active = t.activeSet.size;
+        const avgLoad = active > 0 ? t.totalLoad / active : 0;
 
-        const avgACWR =
-          acwrValues.length > 0
-            ? acwrValues.reduce((sum, v) => sum + v, 0) / acwrValues.length
-            : 0;
+        const a = byDayACWR.get(day)!;
+        const avgACWR = a.cnt > 0 ? a.sum / a.cnt : 0;
 
-        const highRiskCount = acwrValues.filter((v) => v > 1.5 || v < 0.8).length;
-
-        trends.push({
-          date: dateStr,
+        return {
+          date: day,
           avgLoad,
           avgACWR,
-          activeAthletes,
-          highRiskCount
-        });
-      }
+          activeAthletes: active,
+          highRiskCount: a.highRisk,
+        };
+      });
 
       setTrendData(trends);
       generateInsights(trends, userIds.length);
@@ -162,8 +198,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
     const avgRecentACWR =
       recentWeek.reduce((sum, d) => sum + d.avgACWR, 0) / Math.max(recentWeek.length, 1);
     const avgRecentActive =
-      recentWeek.reduce((sum, d) => sum + d.activeAthletes, 0) /
-      Math.max(recentWeek.length, 1);
+      recentWeek.reduce((sum, d) => sum + d.activeAthletes, 0) / Math.max(recentWeek.length, 1);
 
     const previousWeek = trends.slice(-14, -7);
     const avgPreviousLoad =
@@ -178,7 +213,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
           message: `チームのトレーニング負荷が今週${(
             ((avgRecentLoad - avgPreviousLoad) / avgPreviousLoad) *
             100
-          ).toFixed(1)}%増加しました。オーバートレーニングに注意してください。`
+          ).toFixed(1)}%増加しました。オーバートレーニングに注意してください。`,
         });
       }
     }
@@ -188,14 +223,14 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
         type: 'warning',
         message: `チーム平均ACWRが${avgRecentACWR.toFixed(
           2
-        )}で、傷害リスクが高まっています。強度を減らすことを検討してください。`
+        )}で、傷害リスクが高まっています。強度を減らすことを検討してください。`,
       });
     } else if (avgRecentACWR >= 0.8 && avgRecentACWR <= 1.3) {
       newInsights.push({
         type: 'success',
         message: `チームACWRが最適範囲内です（${avgRecentACWR.toFixed(
           2
-        )}）。トレーニング負荷が適切に管理されています。`
+        )}）。トレーニング負荷が適切に管理されています。`,
       });
     }
 
@@ -206,14 +241,14 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
           type: 'info',
           message: `アクティブにトレーニングしている選手は${participationRate.toFixed(
             1
-          )}%のみです。欠席や傷害を確認してください。`
+          )}%のみです。欠席や傷害を確認してください。`,
         });
       } else if (participationRate > 90) {
         newInsights.push({
           type: 'success',
           message: `素晴らしい参加率です：${participationRate.toFixed(
             1
-          )}%の選手がアクティブにトレーニングしています。`
+          )}%の選手がアクティブにトレーニングしています。`,
         });
       }
     }
@@ -227,7 +262,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
         type: 'warning',
         message: `平均${recentHighRisk.toFixed(
           0
-        )}名の選手が傷害リスクが高い状態です。個別のワークロードを見直してください。`
+        )}名の選手が傷害リスクが高い状態です。個別のワークロードを見直してください。`,
       });
     }
 
@@ -284,7 +319,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
     date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     load: Number(d.avgLoad.toFixed(1)),
     acwr: Number(d.avgACWR.toFixed(2)),
-    active: d.activeAthletes
+    active: d.activeAthletes,
   }));
 
   return (
@@ -301,37 +336,18 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
           <XAxis dataKey="date" stroke="#6B7280" style={{ fontSize: '12px' }} />
           <YAxis yAxisId="left" stroke="#6B7280" style={{ fontSize: '12px' }} />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            stroke="#6B7280"
-            style={{ fontSize: '12px' }}
-          />
+          <YAxis yAxisId="right" orientation="right" stroke="#6B7280" style={{ fontSize: '12px' }} />
           <Tooltip
             contentStyle={{
               backgroundColor: '#1F2937',
               border: 'none',
               borderRadius: '8px',
-              color: '#F3F4F6'
+              color: '#F3F4F6',
             }}
           />
           <Legend />
-          <Line
-            yAxisId="left"
-            type="monotone"
-            dataKey="load"
-            stroke="#3B82F6"
-            strokeWidth={2}
-            name="平均負荷"
-          />
-          <Line
-            yAxisId="right"
-            type="monotone"
-            dataKey="acwr"
-            stroke="#10B981"
-            strokeWidth={2}
-            name="平均ACWR"
-          />
+          <Line yAxisId="left" type="monotone" dataKey="load" stroke="#3B82F6" strokeWidth={2} name="平均負荷" />
+          <Line yAxisId="right" type="monotone" dataKey="acwr" stroke="#10B981" strokeWidth={2} name="平均ACWR" />
         </LineChart>
       </ResponsiveContainer>
 
@@ -341,9 +357,7 @@ export function TeamTrendAnalysis({ teamId }: TeamTrendAnalysisProps) {
           {insights.map((insight, index) => (
             <div
               key={index}
-              className={`flex items-start gap-3 p-4 rounded-lg ${getInsightBgColor(
-                insight.type
-              )}`}
+              className={`flex items-start gap-3 p-4 rounded-lg ${getInsightBgColor(insight.type)}`}
             >
               {getInsightIcon(insight.type)}
               <p className="text-sm text-gray-800 dark:text-gray-200">{insight.message}</p>

@@ -1,5 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getDaysAgoJSTString } from '../lib/date';
@@ -7,8 +16,8 @@ import { getDaysAgoJSTString } from '../lib/date';
 interface AthletePerformance {
   userId: string;
   name: string;
-  avgLoad: number;
-  avgACWR: number;
+  avgLoad: number; // 30日平均（日別じゃなく「レコード平均」）
+  avgACWR: number; // 30日平均（athlete_acwr_daily の valid だけ）
   totalSessions: number;
   performanceTests: number;
   trend: 'improving' | 'stable' | 'declining';
@@ -18,6 +27,30 @@ interface TeamPerformanceComparisonProps {
   teamId: string;
 }
 
+type MemberRow = {
+  user_id: string;
+  users?: { id: string; name: string | null } | null;
+};
+
+type TrainingRow = {
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  load: number | null;
+};
+
+type ACWRDailyRow = {
+  user_id: string;
+  date: string;
+  acwr: number | null;
+  is_valid?: boolean | null;
+};
+
+type PerfRow = {
+  user_id: string;
+  id: string;
+  date: string;
+};
+
 export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonProps) {
   const [athleteData, setAthleteData] = useState<AthletePerformance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,116 +58,166 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
 
   useEffect(() => {
     fetchTeamPerformance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   const fetchTeamPerformance = async () => {
     try {
       setLoading(true);
 
+      // ① メンバー取得（名前もここで取る）
       const { data: members, error: membersError } = await supabase
         .from('team_member_assignments')
-        .select(`
-          user_id,
-          users!inner(id, name)
-        `)
+        .select('user_id, users!inner(id, name)')
         .eq('team_id', teamId);
 
       if (membersError) throw membersError;
 
+      const memberRows = (members || []) as MemberRow[];
+      const userIds = memberRows.map((m) => m.user_id);
+
+      if (userIds.length === 0) {
+        setAthleteData([]);
+        return;
+      }
+
       const thirtyDaysAgo = getDaysAgoJSTString(30);
-      const performances: AthletePerformance[] = [];
+      const today = getDaysAgoJSTString(0);
 
-      for (const member of members || []) {
-        const userId = member.user_id;
-        const userName = (member.users as any).name;
-
-        const { data: trainingData } = await supabase
+      // ② まとめて取得（training / acwr / performance）
+      const [trainRes, acwrRes, perfRes] = await Promise.all([
+        supabase
           .from('training_records')
-          .select('date, load')
-          .eq('user_id', userId)
+          .select('user_id, date, load')
+          .in('user_id', userIds)
           .gte('date', thirtyDaysAgo)
-          .order('date', { ascending: true });
+          .lte('date', today)
+          .order('date', { ascending: true }),
 
-        const { data: performanceTests } = await supabase
+        supabase
+          .from('athlete_acwr_daily')
+          .select('user_id, date, acwr, is_valid')
+          .in('user_id', userIds)
+          .gte('date', thirtyDaysAgo)
+          .lte('date', today),
+
+        supabase
           .from('performance_records')
-          .select('id')
-          .eq('user_id', userId)
-          .gte('date', thirtyDaysAgo);
+          .select('id, user_id, date')
+          .in('user_id', userIds)
+          .gte('date', thirtyDaysAgo)
+          .lte('date', today),
+      ]);
 
-        // ✅ ① null を 0 として扱う
-        const totalLoad =
-          trainingData?.reduce((sum, r) => sum + (r.load ?? 0), 0) ?? 0;
+      if (trainRes.error) throw trainRes.error;
+      if (acwrRes.error) throw acwrRes.error;
+      if (perfRes.error) throw perfRes.error;
 
-        const avgLoad =
-          trainingData && trainingData.length > 0
-            ? totalLoad / trainingData.length
+      const trainings = (trainRes.data || []) as TrainingRow[];
+      const acwrs = (acwrRes.data || []) as ACWRDailyRow[];
+      const perf = (perfRes.data || []) as PerfRow[];
+
+      // ③ index: userId -> data
+      const nameById = new Map<string, string>();
+      for (const m of memberRows) {
+        const n = (m.users as any)?.name ?? null;
+        nameById.set(m.user_id, n || 'unknown');
+      }
+
+      const trainingByUser = new Map<string, TrainingRow[]>();
+      for (const r of trainings) {
+        const arr = trainingByUser.get(r.user_id) ?? [];
+        arr.push(r);
+        trainingByUser.set(r.user_id, arr);
+      }
+
+      const acwrByUser = new Map<string, ACWRDailyRow[]>();
+      for (const r of acwrs) {
+        const arr = acwrByUser.get(r.user_id) ?? [];
+        arr.push(r);
+        acwrByUser.set(r.user_id, arr);
+      }
+
+      const perfCountByUser = new Map<string, number>();
+      for (const r of perf) {
+        perfCountByUser.set(r.user_id, (perfCountByUser.get(r.user_id) ?? 0) + 1);
+      }
+
+      // ④ 集計（userごと）
+      const performances: AthletePerformance[] = userIds.map((userId) => {
+        const userName = nameById.get(userId) ?? 'unknown';
+
+        const userTraining = trainingByUser.get(userId) ?? [];
+
+        // avgLoad（training_records のレコード平均）
+        const totalLoad = userTraining.reduce((sum, r) => sum + (r.load ?? 0), 0);
+        const avgLoad = userTraining.length > 0 ? totalLoad / userTraining.length : 0;
+
+        // avgACWR（athlete_acwr_daily の valid のみ平均）
+        const userAcwrRows = acwrByUser.get(userId) ?? [];
+        const validAcwr = userAcwrRows
+          .map((r) => ({
+            acwr:
+              typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null,
+            valid: r.is_valid === true,
+          }))
+          .filter((x) => x.acwr != null && x.valid)
+          .map((x) => x.acwr as number);
+
+        const avgACWR =
+          validAcwr.length > 0
+            ? validAcwr.reduce((sum, v) => sum + v, 0) / validAcwr.length
             : 0;
 
-        let avgACWR = 0;
-        if (trainingData && trainingData.length >= 28) {
-          const recentWeek = trainingData.slice(-7);
-          const previousWeeks = trainingData.slice(-28, -7);
-
-          // ✅ ② acuteLoad も null を 0 扱い
-          const acuteLoad = recentWeek.reduce(
-            (sum, r) => sum + (r.load ?? 0),
-            0
-          );
-
-          // ✅ ③ chronicLoad も null を 0 扱い
-          const chronicLoad =
-            previousWeeks.reduce((sum, r) => sum + (r.load ?? 0), 0) / 3;
-
-          avgACWR = chronicLoad > 0 ? acuteLoad / chronicLoad : 0;
-        }
-
+        // trend（loadの前半/後半平均で判定：元ロジック踏襲）
         let trend: 'improving' | 'stable' | 'declining' = 'stable';
-        if (trainingData && trainingData.length >= 14) {
-          const firstHalf = trainingData.slice(
-            0,
-            Math.floor(trainingData.length / 2)
-          );
-          const secondHalf = trainingData.slice(
-            Math.floor(trainingData.length / 2)
-          );
+        if (userTraining.length >= 14) {
+          const mid = Math.floor(userTraining.length / 2);
+          const firstHalf = userTraining.slice(0, mid);
+          const secondHalf = userTraining.slice(mid);
 
-          // ✅ ④ トレンド計算も null を 0 扱い
           const firstAvg =
             firstHalf.reduce((sum, r) => sum + (r.load ?? 0), 0) /
-            firstHalf.length;
+            Math.max(firstHalf.length, 1);
           const secondAvg =
             secondHalf.reduce((sum, r) => sum + (r.load ?? 0), 0) /
-            secondHalf.length;
+            Math.max(secondHalf.length, 1);
 
           if (secondAvg > firstAvg * 1.1) trend = 'improving';
           else if (secondAvg < firstAvg * 0.9) trend = 'declining';
         }
 
-        performances.push({
+        return {
           userId,
           name: userName,
           avgLoad,
           avgACWR,
-          totalSessions: trainingData?.length || 0,
-          performanceTests: performanceTests?.length || 0,
+          totalSessions: userTraining.length,
+          performanceTests: perfCountByUser.get(userId) ?? 0,
           trend,
-        });
-      }
+        };
+      });
 
+      // デフォは負荷で並べ替え（今のUIと同じ）
       setAthleteData(performances.sort((a, b) => b.avgLoad - a.avgLoad));
     } catch (error) {
       console.error('Error fetching team performance:', error);
+      setAthleteData([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const chartData = athleteData.map((athlete) => ({
-    name: athlete.name.split(' ')[0],
-    load: athlete.avgLoad.toFixed(1),
-    acwr: athlete.avgACWR.toFixed(2),
-    sessions: athlete.totalSessions,
-  }));
+  const chartData = useMemo(
+    () =>
+      athleteData.map((athlete) => ({
+        name: athlete.name.split(' ')[0],
+        load: Number(athlete.avgLoad.toFixed(1)),
+        acwr: Number(athlete.avgACWR.toFixed(2)),
+        sessions: athlete.totalSessions,
+      })),
+    [athleteData]
+  );
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -202,11 +285,7 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
-          <XAxis
-            dataKey="name"
-            stroke="#6B7280"
-            style={{ fontSize: '12px' }}
-          />
+          <XAxis dataKey="name" stroke="#6B7280" style={{ fontSize: '12px' }} />
           <YAxis stroke="#6B7280" style={{ fontSize: '12px' }} />
           <Tooltip
             contentStyle={{
@@ -227,14 +306,9 @@ export function TeamPerformanceComparison({ teamId }: TeamPerformanceComparisonP
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {athleteData.map((athlete) => (
-          <div
-            key={athlete.userId}
-            className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg"
-          >
+          <div key={athlete.userId} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold text-gray-900 dark:text-white">
-                {athlete.name}
-              </h4>
+              <h4 className="font-semibold text-gray-900 dark:text-white">{athlete.name}</h4>
               <span className={`text-xl ${getTrendColor(athlete.trend)}`}>
                 {getTrendIcon(athlete.trend)}
               </span>

@@ -4,7 +4,7 @@ import confetti from 'canvas-confetti';
 import { getDataEntryFeedback, ProgressFeedback } from '../lib/acwrProgressFeedback';
 import { TrainingRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
-import { VectorArrowPicker } from './VectorArrowPicker';
+import { VectorArrowPicker } from '../components/VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
 import type { TrainingRecordForm } from '../lib/normalizeRecords';
 
