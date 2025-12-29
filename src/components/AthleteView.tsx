@@ -515,21 +515,17 @@ export function AthleteView({
 
   const recordDate = today; // ✅ subtitle用（recordDate未定義エラー回避）
 
-  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
+
 
   // 📷 ファイル選択用（撮影 / ライブラリ）
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
   // 📷 iOS対応：hidden を使わない file input 用クラス
   const fileInputClass =
   "absolute -left-[9999px] top-0 w-px h-px opacity-0";
-
   const handlePickPhoto = useCallback(
     (file: File) => {
       // ここで “栄養詳細へ” へ遷移（まずは確実に動く挙動）
-      setShowPhotoSheet(false);
       setActiveTab("nutrition");
-
       // 必要なら後で Nutrition 側にファイルを渡す設計に拡張できる
       // 例：window.dispatchEvent(new CustomEvent("nutrition:photo", { detail: { file, date: today } }));
     },
@@ -1664,32 +1660,6 @@ export function AthleteView({
                 キャンセル
               </button>
             </div>
-
-            {/* hidden inputs */}
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className={fileInputClass}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) handlePickPhoto(file);
-              }}
-            />
-
-            <input
-              ref={libraryInputRef}
-              type="file"
-              accept="image/*"
-              className={fileInputClass}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) handlePickPhoto(file);
-              }}
-            />
           </div>
         </div>
       )}
