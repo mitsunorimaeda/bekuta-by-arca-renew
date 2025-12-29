@@ -52,7 +52,7 @@ import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
 import NutritionOverview from "../components/NutritionOverview";
 import { buildDailyTargets } from "../lib/nutritionCalc";
-import { useState } from "react";
+
 
 
 import {
@@ -520,6 +520,9 @@ export function AthleteView({
   // 📷 ファイル選択用（撮影 / ライブラリ）
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
+  // 📷 iOS対応：hidden を使わない file input 用クラス
+  const fileInputClass =
+  "absolute -left-[9999px] top-0 w-px h-px opacity-0";
 
   const handlePickPhoto = useCallback(
     (file: File) => {
@@ -1668,7 +1671,7 @@ export function AthleteView({
               type="file"
               accept="image/*"
               capture="environment"
-              className="hidden"
+              className={fileInputClass}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
@@ -1680,7 +1683,7 @@ export function AthleteView({
               ref={libraryInputRef}
               type="file"
               accept="image/*"
-              className="hidden"
+              className={fileInputClass}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
