@@ -1616,53 +1616,29 @@ export function AthleteView({
         />
       )}
 
-      {activeTab === 'unified' && (
-        <FloatingActionButton
-        onClick={() => setShowUnifiedCheckIn(true)}
-        onCameraClick={canUseNutrition ? () => setShowPhotoSheet(true) : undefined}
-        />
-      )}
-            {/* 📷 Photo Sheet */}
-            {showPhotoSheet && (
-        <div className="fixed inset-0 z-50" onClick={() => setShowPhotoSheet(false)}>
-          <div className="absolute inset-0 bg-black/40" />
+            {activeTab === 'unified' && (
+              <FloatingActionButton
+                onClick={() => setShowUnifiedCheckIn(true)}
+                onCameraClick={
+                  canUseNutrition
+                    ? () => libraryInputRef.current?.click()
+                    : undefined
+                }
+              />
+            )}
 
-          <div
-            className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-2xl p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-              写真を追加
-            </p>
-
-            <div className="grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium active:opacity-90"
-                onClick={() => cameraInputRef.current?.click()}
-              >
-                撮影する
-              </button>
-
-              <button
-                type="button"
-                className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium active:opacity-90"
-                onClick={() => libraryInputRef.current?.click()}
-              >
-                写真を選ぶ
-              </button>
-
-              <button
-                type="button"
-                className="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium active:opacity-90"
-                onClick={() => setShowPhotoSheet(false)}
-              >
-                キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {/* hidden input: photo picker */}
+              <input
+                ref={libraryInputRef}
+                type="file"
+                accept="image/*"
+                className={fileInputClass}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) handlePickPhoto(file);
+                }}
+              />
     </div>
   );
 }
