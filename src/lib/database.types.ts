@@ -4410,6 +4410,7 @@ export type Database = {
       }
       users: {
         Row: {
+          weight_kg: unknown
           created_at: string | null
           date_of_birth: string | null
           email: string

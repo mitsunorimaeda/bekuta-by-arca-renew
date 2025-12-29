@@ -388,7 +388,9 @@ export function NutritionCard({
       const parsed = parseGeminiResultStrict(geminiJson);
 
       // 4) UPDATE nutrition_logs（success）
-      const { data: updated, error: updErr } = await supabase
+   
+      const meta = geminiJson?.meta ?? null;
+        const { data: updated, error: updErr } = await supabase
         .from("nutrition_logs")
         .update({
           total_calories: parsed.total_calories,
@@ -397,9 +399,14 @@ export function NutritionCard({
           c: parsed.c,
           menu_items: parsed.menu_items,
           advice_markdown: parsed.advice_markdown,
-
+      
           analysis_status: "success",
           analysis_error: null,
+      
+          // ★★★ ここを追加 ★★★
+          analysis_meta: meta ?? {},
+          analysis_model: meta?.used_model ?? null,
+          analysis_reason: meta?.reason ?? null,
         })
         .eq("id", inserted.id)
         .select("*")

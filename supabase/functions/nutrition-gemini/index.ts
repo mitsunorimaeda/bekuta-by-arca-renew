@@ -11,15 +11,10 @@ const corsHeaders: Record<string, string> = {
 
 type DailySummaryRequest = {
   type: "daily_summary";
-  // JSTのYYYY-MM-DD（フロントで作る想定）
-  date: string;
-  // buildDailyTargetsのtargetをそのまま
+  date: string; // JST YYYY-MM-DD
   target: { cal: number; p: number; f: number; c: number };
-  // useTodayNutritionTotalsの合計
   totals: { cal: number; p: number; f: number; c: number };
-  // calcGapsの結果
   gaps: { cal: number; p: number; f: number; c: number };
-  // 任意：補足（短く）
   note?: string;
 };
 
@@ -46,22 +41,6 @@ function json(data: unknown, status = 200) {
   });
 }
 
-// Geminiが返した text からJSONだけ抜き出してparse（混在対策）
-function safeParseJsonFromText(text: string) {
-  const cleaned = String(text).replace(/```json/gi, "").replace(/```/g, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      const slice = cleaned.slice(start, end + 1);
-      return JSON.parse(slice);
-    }
-    throw new Error(`JSON parse failed: ${cleaned.slice(0, 200)}...`);
-  }
-}
-
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
@@ -85,7 +64,83 @@ function safeDateYYYYMMDD(s: string) {
 }
 
 /**
- * analyze_meal の出力を「必ず同じ形」に正規化する
+ * Geminiが返した text からJSONだけ抜き出してparse（混在・前置き対策）
+ * - ```json ...``` を除去
+ * - 先頭〜末尾の最初の { ... } を抽出
+ * - それでもダメなら、{} の候補を複数探索して最初にparseできたものを採用
+ */
+function safeParseJsonFromText(text: string) {
+  const cleaned = String(text ?? "")
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  // ① まず全文JSONでいけるか
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // noop
+  }
+
+  // ② 最初の { から最後の } の範囲
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const slice = cleaned.slice(start, end + 1);
+    try {
+      return JSON.parse(slice);
+    } catch {
+      // noop
+    }
+  }
+
+  // ③ さらにしぶとく：複数候補を走査（壊れた前置き/後置き/2個目が正解など）
+  const candidates: string[] = [];
+  const idxs: number[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    if (cleaned[i] === "{") idxs.push(i);
+  }
+  for (const s of idxs) {
+    for (let e = cleaned.length - 1; e > s; e--) {
+      if (cleaned[e] === "}") {
+        const cand = cleaned.slice(s, e + 1);
+        // 過度に短いものは除外
+        if (cand.length > 20) candidates.push(cand);
+        break;
+      }
+    }
+  }
+  for (const cand of candidates) {
+    try {
+      return JSON.parse(cand);
+    } catch {
+      // continue
+    }
+  }
+
+  throw new Error(`JSON parse failed: ${cleaned.slice(0, 240)}...`);
+}
+
+/**
+ * candidates.parts から text を全部連結（parts[0]だけだと取りこぼしがあるため）
+ */
+function extractGeminiText(raw: any): string {
+  const parts = raw?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    const texts = parts
+      .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+      .filter((t: string) => t.length > 0);
+    if (texts.length > 0) return texts.join("\n").trim();
+  }
+  const t1 =
+    raw?.candidates?.[0]?.content?.parts?.[0]?.text ??
+    raw?.candidates?.[0]?.content?.text ??
+    "";
+  return String(t1 ?? "").trim();
+}
+
+/**
+ * analyze_meal の出力を「必ず同じ形」に正規化
  */
 function normalizeAnalyzeMealResult(raw: any) {
   const calories = toNum(raw?.calories, null);
@@ -106,7 +161,7 @@ function normalizeAnalyzeMealResult(raw: any) {
     (isNonEmptyString(raw?.advice) && raw.advice) ||
     "";
 
-  const comment = truncateByChars(commentSource, 100);
+  const comment = truncateByChars(commentSource, 110);
 
   return {
     calories: calories === null ? null : clamp(calories, 0, 5000),
@@ -119,7 +174,7 @@ function normalizeAnalyzeMealResult(raw: any) {
 }
 
 /**
- * generate_plan の出力を正規化する
+ * generate_plan の出力を正規化
  */
 function normalizeGeneratePlanResult(raw: any) {
   const bmr = toNum(raw?.bmr, null);
@@ -148,7 +203,7 @@ function normalizeGeneratePlanResult(raw: any) {
 }
 
 /**
- * daily_summary の出力を正規化（短文化・壊れない）
+ * daily_summary の出力を正規化
  */
 function normalizeDailySummaryResult(raw: any) {
   const headlineSource =
@@ -156,7 +211,6 @@ function normalizeDailySummaryResult(raw: any) {
     (isNonEmptyString(raw?.title) && raw.title) ||
     (isNonEmptyString(raw?.summary) && raw.summary) ||
     "";
-
   const headline = truncateByChars(headlineSource, 28);
 
   const wRaw = Array.isArray(raw?.what_went_well)
@@ -175,7 +229,6 @@ function normalizeDailySummaryResult(raw: any) {
     (isNonEmptyString(raw?.next_action) && raw.next_action) ||
     (isNonEmptyString(raw?.action_for_tomorrow) && raw.action_for_tomorrow) ||
     "";
-
   const one_next_action = truncateByChars(oneNextSource, 24);
 
   return { headline, what_went_well, one_next_action };
@@ -190,77 +243,148 @@ function buildCompactSummaryText(s: { headline: string; what_went_well: string[]
   return truncateByChars(lines.join("\n"), 140);
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
+/**
+ * liteが「感想だけ」や「空っぽ」に寄った/数値が入らない など、品質が悪いかを判定
+ * → これに引っかかったらFlashにリトライして品質を担保する
+ */
+function looksBadAnalyzeMeal(result: {
+  calories: number | null;
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+  menu_items: Array<{ name: string; estimated_amount: string; note: string }>;
+  comment: string;
+}) {
+  const calBad = result.calories === null || result.calories === 0;
+  const pBad = result.protein === null || result.protein === 0;
+  const cBad = result.carbs === null || result.carbs === 0;
 
-  const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-  if (!GEMINI_API_KEY) return json({ error: "Gemini config missing: GEMINI_API_KEY" }, 500);
+  const hasItemName = result.menu_items?.some((it) => (it?.name ?? "").trim().length >= 2);
+  const hasAmount = result.menu_items?.some((it) => (it?.estimated_amount ?? "").trim().length >= 2);
 
-  // ✅ 役割ごとのモデルを分ける（envで上書き可能）
-  const GEMINI_MODEL_LITE =
-    Deno.env.get("GEMINI_MODEL_LITE") ?? "gemini-2.5-flash-lite";
-  const GEMINI_MODEL_FLASH =
-    Deno.env.get("GEMINI_MODEL_FLASH") ?? "gemini-2.5-flash";
+  const comment = (result.comment ?? "").trim();
+  const tooCompliment = /(美味しそう|いいですね|いかがでしょうか|元気な一日)/.test(comment);
+  const hasNutritionWords = /(タンパク|たんぱく|炭水化物|脂質|PFC|kcal|g|不足|追加|改善)/.test(comment);
 
-  // ✅ Supabase（RLSを効かせて「本人として」upsertするため anon + JWT）
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return json({ error: "Supabase config missing: SUPABASE_URL / SUPABASE_ANON_KEY" }, 500);
-  }
+  // 数値/中身が薄い or 感想寄り
+  if ((calBad && pBad && cBad) && (!hasItemName || !hasAmount)) return true;
+  if (tooCompliment && !hasNutritionWords) return true;
 
-  let body: NutritionRequest;
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid JSON body" }, 400);
-  }
+  return false;
+}
 
-  // Authorization（daily_summaryでDB保存するため必須）
-  const authHeader = req.headers.get("authorization") ?? "";
-  const jwt = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7)
-    : "";
+/**
+ * Gemini呼び出し（共通）
+ * - 失敗時はエラー内容を返す
+ */
+async function callGemini(params: {
+  apiKey: string;
+  model: string;
+  parts: any[];
+  temperature: number;
+  maxOutputTokens: number;
+  // analyze_meal の 422対策で、より厳しいJSON生成を促したい時に true
+  strictJson?: boolean;
+}) {
+  const { apiKey, model, parts, temperature, maxOutputTokens } = params;
 
-  if (body.type === "daily_summary" && !jwt) {
-    return json({ error: "Authorization Bearer token is required for daily_summary" }, 401);
-  }
+  const body = {
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature,
+      maxOutputTokens,
+      // strictJson フラグがある時は “なるべく余計な出力をさせない”
+      // （Gemini側が完全遵守しないケースがあるため、ここは控えめに）
+    },
+  };
 
-  const supabase =
-    jwt
-      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          global: { headers: { Authorization: `Bearer ${jwt}` } },
-          auth: { persistSession: false },
-        })
-      : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: { persistSession: false },
-        });
-
-  // daily_summaryのユーザー識別
-  let authedUserId: string | null = null;
-  if (body.type === "daily_summary") {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user?.id) {
-      return json({ error: "Failed to identify user", detail: String(error?.message ?? error) }, 401);
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     }
-    authedUserId = data.user.id;
+  );
+
+  if (!res.ok) {
+    const t = await res.text();
+    return { ok: false as const, status: res.status, detail: t.slice(0, 1200), raw: null };
   }
 
-  // Gemini入力
-  let prompt = "";
-  let parts: any[] = [];
-  let modelToUse = GEMINI_MODEL_LITE;
-  let maxOutputTokens = 220;
+  const raw = await res.json();
+  const text = extractGeminiText(raw);
 
-  if (body.type === "analyze_meal") {
-    if (!body.imageBase64) return json({ error: "imageBase64 is required" }, 400);
+  return { ok: true as const, status: 200, detail: null, raw, text };
+}
 
-    modelToUse = GEMINI_MODEL_LITE;
-    maxOutputTokens = 220;
+serve(async (req) => {
+  try {
+    if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+    if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
 
-    prompt = `
-必ずJSONのみで返す。
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) return json({ error: "Gemini config missing: GEMINI_API_KEY" }, 500);
+
+    const GEMINI_MODEL_LITE =
+      Deno.env.get("GEMINI_MODEL_LITE") ?? "gemini-2.5-flash-lite";
+    const GEMINI_MODEL_FLASH =
+      Deno.env.get("GEMINI_MODEL_FLASH") ?? "gemini-2.5-flash";
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return json({ error: "Supabase config missing: SUPABASE_URL / SUPABASE_ANON_KEY" }, 500);
+    }
+
+    let body: NutritionRequest;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+
+    // Authorization（daily_summaryでDB保存するため必須）
+    const authHeader = req.headers.get("authorization") ?? "";
+    const jwt = authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7)
+      : "";
+
+    if (body.type === "daily_summary" && !jwt) {
+      return json({ error: "Authorization Bearer token is required for daily_summary" }, 401);
+    }
+
+    const supabase =
+      jwt
+        ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { headers: { Authorization: `Bearer ${jwt}` } },
+            auth: { persistSession: false },
+          })
+        : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { persistSession: false },
+          });
+
+    // daily_summaryのユーザー識別
+    let authedUserId: string | null = null;
+    if (body.type === "daily_summary") {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user?.id) {
+        return json({ error: "Failed to identify user", detail: String(error?.message ?? error) }, 401);
+      }
+      authedUserId = data.user.id;
+    }
+
+    // ======= analyze_meal =======
+    if (body.type === "analyze_meal") {
+      if (!body.imageBase64) return json({ error: "imageBase64 is required" }, 400);
+
+      const prompt = `
+あなたはスポーツ栄養士AI。画像の食事を見て「料理名・構成・量」を推定し、P/F/Cとkcalを推定する。
+雑談・感想は禁止。必ず推定値を出す（不明でも合理的に推定して埋める）。
+JSON以外の文字を1文字でも出したら失格。
+
+必ずJSONのみで返す（説明文/コードブロック禁止）。
 {
  "calories": number|null,
  "protein": number|null,
@@ -269,201 +393,397 @@ serve(async (req) => {
  "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
  "comment": string
 }
-制約:
-- commentは日本語100文字以内
-- menu_items最大6
-- 不明はnull（数値）/空文字（文字列）
+
+推定ルール:
+- menu_itemsは主食/主菜/副菜/汁/飲料を意識して最大6つ
+- estimated_amountは必ず入れる（例: "ご飯200g", "ルー180g", "肉50g", "1皿"）
+- calories/protein/fat/carbs は1食合計の推定値（数字で）
+- commentは日本語110字以内で3行:
+  1) 良い点 2) 不足しやすい点 3) 次の一手
+- 「美味しそう」等の感想だけは不可。栄養と改善を必ず含める
 `.trim();
 
-    parts = [
-      { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
-      {
-        text:
-          prompt +
-          (body.context && body.context.trim()
-            ? `\n補足:${truncateByChars(body.context.trim(), 200)}`
-            : ""),
-      },
-    ];
-  } else if (body.type === "generate_plan") {
-    modelToUse = GEMINI_MODEL_LITE;
-    maxOutputTokens = 380;
-
-    const p = body.profile ?? {};
-    prompt = `
-必ずJSONのみで返す。
-出力:
-{
- "bmr": number|null,
- "tdee": number|null,
- "target": {"protein": number|null, "fat": number|null, "carbs": number|null},
- "advice": string
-}
-プロフィール:${JSON.stringify(p)}
-`.trim();
-
-    parts = [{ text: prompt }];
-  } else if (body.type === "daily_summary") {
-    if (!safeDateYYYYMMDD(body.date)) {
-      return json({ error: "Invalid date format. Use YYYY-MM-DD" }, 400);
-    }
-    if (!body.target || !body.totals || !body.gaps) {
-      return json({ error: "target/totals/gaps are required" }, 400);
-    }
-
-    // ✅ 空送信ガード（誤押し／空データ）
-    const cal = toNum(body.totals.cal, 0) ?? 0;
-    const p = toNum(body.totals.p, 0) ?? 0;
-    const f = toNum(body.totals.f, 0) ?? 0;
-    const c = toNum(body.totals.c, 0) ?? 0;
-    if (Math.abs(cal) < 1 && Math.abs(p) < 0.1 && Math.abs(f) < 0.1 && Math.abs(c) < 0.1) {
-      return json({ error: "totals are empty. Please log at least one meal before daily_summary." }, 400);
-    }
-
-    modelToUse = GEMINI_MODEL_FLASH;
-    maxOutputTokens = 220;
-
-    prompt = `
-必ずJSONのみで返す。説明文は禁止。
-出力:
-{
- "headline": string,
- "what_went_well": [string,string],
- "one_next_action": string
-}
-制約:
-- headline最大28文字
-- what_went_well最大2つ（各最大32文字）
-- one_next_action最大24文字
-入力:
-target=${JSON.stringify(body.target)}
-totals=${JSON.stringify(body.totals)}
-gaps=${JSON.stringify(body.gaps)}
-`.trim();
-
-    if (body.note && body.note.trim()) {
-      prompt += `\n補足:${truncateByChars(body.note.trim(), 160)}`;
-    }
-
-    parts = [{ text: prompt }];
-  } else {
-    return json({ error: "Unknown type" }, 400);
-  }
-
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.2,
-          maxOutputTokens,
-        },
-      }),
-    }
-  );
-
-  if (!geminiRes.ok) {
-    const t = await geminiRes.text();
-    return json({ error: `Gemini error ${geminiRes.status}`, detail: t.slice(0, 1000) }, 502);
-  }
-
-  const raw = await geminiRes.json();
-
-  const text =
-    raw?.candidates?.[0]?.content?.parts?.[0]?.text ??
-    raw?.candidates?.[0]?.content?.text ??
-    "";
-
-  let parsed: any = null;
-  try {
-    parsed = safeParseJsonFromText(text);
-  } catch (e) {
-    return json(
-      {
-        error: "Failed to parse Gemini JSON",
-        detail: String((e as Error)?.message ?? e),
-        textPreview: String(text).slice(0, 500),
-        raw,
-      },
-      422
-    );
-  }
-
-  if (body.type === "analyze_meal") {
-    const result = normalizeAnalyzeMealResult(parsed);
-    return json({ ok: true, result, raw });
-  }
-
-  if (body.type === "generate_plan") {
-    const result = normalizeGeneratePlanResult(parsed);
-    return json({ ok: true, result, raw });
-  }
-
-  if (body.type === "daily_summary") {
-    const normalized = normalizeDailySummaryResult(parsed);
-
-    const summaryText = buildCompactSummaryText({
-      headline: normalized.headline,
-      what_went_well: normalized.what_went_well,
-    });
-
-    const actionForTomorrow = truncateByChars(normalized.one_next_action, 24);
-
-    const totalCalories = Math.round(toNum(body.totals.cal, 0) ?? 0);
-    const p1 = Math.round((toNum(body.totals.p, 0) ?? 0) * 10) / 10;
-    const f1 = Math.round((toNum(body.totals.f, 0) ?? 0) * 10) / 10;
-    const c1 = Math.round((toNum(body.totals.c, 0) ?? 0) * 10) / 10;
-
-    const upsertPayload = {
-      user_id: authedUserId,
-      report_date: body.date,
-      total_calories: totalCalories,
-      p: p1,
-      f: f1,
-      c: c1,
-      score: null,
-      summary: summaryText,
-      action_for_tomorrow: actionForTomorrow,
-    };
-
-    const { data, error } = await supabase
-      .from("nutrition_daily_reports")
-      .upsert(upsertPayload, { onConflict: "user_id,report_date" })
-      .select()
-      .single();
-
-    if (error) {
-      return json(
+      const parts = [
+        { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
         {
-          error: "Failed to upsert nutrition_daily_reports",
-          detail: String(error.message ?? error),
+          text:
+            prompt +
+            (body.context && body.context.trim()
+              ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+              : ""),
         },
-        500
-      );
+      ];
+
+      // ① まず lite
+      const first = await callGemini({
+        apiKey: GEMINI_API_KEY,
+        model: GEMINI_MODEL_LITE,
+        parts,
+        temperature: 0.2,
+        maxOutputTokens: 320, // ← JSON破損しやすいので少し増やす
+      });
+
+      if (!first.ok) {
+        console.error("[nutrition-gemini] Gemini lite error", {
+          status: first.status,
+          detail: first.detail,
+        });
+        return json({ error: `Gemini error ${first.status}`, detail: first.detail }, 502);
+      }
+
+      // ② パース
+      let parsed: any = null;
+      try {
+        parsed = safeParseJsonFromText(first.text);
+      } catch (e) {
+        // liteが壊した → flashにリトライ
+        console.error("[nutrition-gemini] JSON parse failed (lite) -> retry flash", {
+          model: GEMINI_MODEL_LITE,
+          textPreview: String(first.text).slice(0, 600),
+          err: String((e as Error)?.message ?? e),
+        });
+
+        const retryPrompt = `
+あなたは「JSON生成器」。必ず有効なJSONのみを返す。前置き/説明/謝罪は禁止。
+次のスキーマを厳守し、数値はできるだけ推定して埋める（不明でも合理的推定）。
+{
+ "calories": number|null,
+ "protein": number|null,
+ "fat": number|null,
+ "carbs": number|null,
+ "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
+ "comment": string
+}
+commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6。
+`.trim();
+
+        const retryParts = [
+          { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
+          {
+            text:
+              retryPrompt +
+              (body.context && body.context.trim()
+                ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+                : ""),
+          },
+        ];
+
+        const second = await callGemini({
+          apiKey: GEMINI_API_KEY,
+          model: GEMINI_MODEL_FLASH,
+          parts: retryParts,
+          temperature: 0.1,
+          maxOutputTokens: 360,
+          strictJson: true,
+        });
+
+        if (!second.ok) {
+          console.error("[nutrition-gemini] Gemini flash retry error", {
+            status: second.status,
+            detail: second.detail,
+          });
+          return json({ error: `Gemini error ${second.status}`, detail: second.detail }, 502);
+        }
+
+        try {
+          parsed = safeParseJsonFromText(second.text);
+        } catch (e2) {
+          console.error("[nutrition-gemini] JSON parse failed (flash retry)", {
+            model: GEMINI_MODEL_FLASH,
+            textPreview: String(second.text).slice(0, 800),
+            err: String((e2 as Error)?.message ?? e2),
+          });
+
+          // ここで 422 を返す（今まで通り）
+          return json(
+            {
+              error: "Failed to parse Gemini JSON",
+              detail: String((e2 as Error)?.message ?? e2),
+              textPreview: String(second.text).slice(0, 800),
+            },
+            422
+          );
+        }
+
+        const result2 = normalizeAnalyzeMealResult(parsed);
+
+        // ③ flashでも薄いなら（念のため）返すが、rawを返してデバッグ可能にする
+        return json({
+          ok: true,
+          result: result2,
+          meta: { used_model: GEMINI_MODEL_FLASH, reason: "retry_after_parse_fail" },
+        });
+      }
+
+      const result1 = normalizeAnalyzeMealResult(parsed);
+
+      // ④ liteの品質が薄い場合もflashへリトライ（感想だけ防止）
+      if (looksBadAnalyzeMeal(result1)) {
+        console.warn("[nutrition-gemini] lite result looks bad -> retry flash", {
+          litePreview: result1,
+          textPreview: String(first.text).slice(0, 600),
+        });
+
+        const retryPrompt2 = `
+あなたはスポーツ栄養士AI。画像から料理と量を推定し、P/F/Cとkcalを推定する。
+必ずJSONのみ。感想禁止。推定で埋める。
+{
+ "calories": number|null,
+ "protein": number|null,
+ "fat": number|null,
+ "carbs": number|null,
+ "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
+ "comment": string
+}
+commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6。
+`.trim();
+
+        const retryParts2 = [
+          { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
+          {
+            text:
+              retryPrompt2 +
+              (body.context && body.context.trim()
+                ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+                : ""),
+          },
+        ];
+
+        const second2 = await callGemini({
+          apiKey: GEMINI_API_KEY,
+          model: GEMINI_MODEL_FLASH,
+          parts: retryParts2,
+          temperature: 0.1,
+          maxOutputTokens: 360,
+          strictJson: true,
+        });
+
+        if (!second2.ok) {
+          console.error("[nutrition-gemini] Gemini flash retry error (bad quality)", {
+            status: second2.status,
+            detail: second2.detail,
+          });
+          // liteの結果は返せるので、502で落とさず lite結果を返すか選べるが
+          // 今回は “解析失敗扱いを減らす” より “品質担保” を優先するためエラー返す
+          return json({ error: `Gemini error ${second2.status}`, detail: second2.detail }, 502);
+        }
+
+        let parsed2: any = null;
+        try {
+          parsed2 = safeParseJsonFromText(second2.text);
+        } catch (e2) {
+          console.error("[nutrition-gemini] JSON parse failed (flash retry bad quality)", {
+            model: GEMINI_MODEL_FLASH,
+            textPreview: String(second2.text).slice(0, 800),
+            err: String((e2 as Error)?.message ?? e2),
+          });
+          return json(
+            {
+              error: "Failed to parse Gemini JSON",
+              detail: String((e2 as Error)?.message ?? e2),
+              textPreview: String(second2.text).slice(0, 800),
+            },
+            422
+          );
+        }
+
+        const result2 = normalizeAnalyzeMealResult(parsed2);
+        return json({
+          ok: true,
+          result: result2,
+          meta: { used_model: GEMINI_MODEL_FLASH, reason: "retry_after_bad_quality" },
+        });
+      }
+
+      // liteで十分
+      return json({
+        ok: true,
+        result: result1,
+        meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_ok" },
+      });
     }
 
-    return json({
-      ok: true,
-      result: {
-        normalized,
-        saved: {
-          report_date: body.date,
-          total_calories: totalCalories,
-          p: p1,
-          f: f1,
-          c: c1,
-          summary: summaryText,
-          action_for_tomorrow: actionForTomorrow,
-        },
-        row: data,
-      },
-      raw,
-    });
-  }
+    // ======= generate_plan =======
+    if (body.type === "generate_plan") {
+      const p = body.profile ?? {};
+      const prompt = `
+      必ずJSONのみで返す。説明文は禁止。
+      {
+      "bmr": number|null,
+      "tdee": number|null,
+      "target": {"protein": number|null, "fat": number|null, "carbs": number|null},
+      "advice": string
+      }
+      プロフィール:${JSON.stringify(p)}
+`.trim();
 
-  return json({ error: "Unhandled type" }, 400);
+      const parts = [{ text: prompt }];
+
+      const res = await callGemini({
+        apiKey: GEMINI_API_KEY,
+        model: (Deno.env.get("GEMINI_MODEL_PLAN") ?? GEMINI_MODEL_LITE),
+        parts,
+        temperature: 0.2,
+        maxOutputTokens: 420,
+      });
+
+      if (!res.ok) {
+        console.error("[nutrition-gemini] Gemini plan error", { status: res.status, detail: res.detail });
+        return json({ error: `Gemini error ${res.status}`, detail: res.detail }, 502);
+      }
+
+      let parsed: any = null;
+      try {
+        parsed = safeParseJsonFromText(res.text);
+      } catch (e) {
+        console.error("[nutrition-gemini] plan JSON parse failed", {
+          textPreview: String(res.text).slice(0, 800),
+          err: String((e as Error)?.message ?? e),
+        });
+        return json(
+          { error: "Failed to parse Gemini JSON", detail: String((e as Error)?.message ?? e), textPreview: String(res.text).slice(0, 800) },
+          422
+        );
+      }
+
+      const result = normalizeGeneratePlanResult(parsed);
+      return json({ ok: true, result });
+    }
+
+    // ======= daily_summary =======
+    if (body.type === "daily_summary") {
+      if (!safeDateYYYYMMDD(body.date)) {
+        return json({ error: "Invalid date format. Use YYYY-MM-DD" }, 400);
+      }
+      if (!body.target || !body.totals || !body.gaps) {
+        return json({ error: "target/totals/gaps are required" }, 400);
+      }
+
+      // 空送信ガード
+      const cal = toNum(body.totals.cal, 0) ?? 0;
+      const p = toNum(body.totals.p, 0) ?? 0;
+      const f = toNum(body.totals.f, 0) ?? 0;
+      const c = toNum(body.totals.c, 0) ?? 0;
+      if (Math.abs(cal) < 1 && Math.abs(p) < 0.1 && Math.abs(f) < 0.1 && Math.abs(c) < 0.1) {
+        return json({ error: "totals are empty. Please log at least one meal before daily_summary." }, 400);
+      }
+
+      let prompt = `
+        必ずJSONのみで返す。説明文は禁止。
+        {
+        "headline": string,
+        "what_went_well": [string,string],
+        "one_next_action": string
+        }
+        制約:
+        - headline最大28文字
+        - what_went_well最大2つ（各最大32文字）
+        - one_next_action最大24文字
+        入力:
+        target=${JSON.stringify(body.target)}
+        totals=${JSON.stringify(body.totals)}
+        gaps=${JSON.stringify(body.gaps)}
+      `.trim();
+
+      if (body.note && body.note.trim()) {
+        prompt += `\n補足:${truncateByChars(body.note.trim(), 160)}`;
+      }
+
+      const parts = [{ text: prompt }];
+
+      const res = await callGemini({
+        apiKey: GEMINI_API_KEY,
+        model: (Deno.env.get("GEMINI_MODEL_SUMMARY") ?? GEMINI_MODEL_FLASH),
+        parts,
+        temperature: 0.2,
+        maxOutputTokens: 260,
+      });
+
+      if (!res.ok) {
+        console.error("[nutrition-gemini] daily_summary gemini error", { status: res.status, detail: res.detail });
+        return json({ error: `Gemini error ${res.status}`, detail: res.detail }, 502);
+      }
+
+      let parsed: any = null;
+      try {
+        parsed = safeParseJsonFromText(res.text);
+      } catch (e) {
+        console.error("[nutrition-gemini] daily_summary JSON parse failed", {
+          textPreview: String(res.text).slice(0, 800),
+          err: String((e as Error)?.message ?? e),
+        });
+        return json(
+          { error: "Failed to parse Gemini JSON", detail: String((e as Error)?.message ?? e), textPreview: String(res.text).slice(0, 800) },
+          422
+        );
+      }
+
+      const normalized = normalizeDailySummaryResult(parsed);
+
+      const summaryText = buildCompactSummaryText({
+        headline: normalized.headline,
+        what_went_well: normalized.what_went_well,
+      });
+
+      const actionForTomorrow = truncateByChars(normalized.one_next_action, 24);
+
+      const totalCalories = Math.round(toNum(body.totals.cal, 0) ?? 0);
+      const p1 = Math.round((toNum(body.totals.p, 0) ?? 0) * 10) / 10;
+      const f1 = Math.round((toNum(body.totals.f, 0) ?? 0) * 10) / 10;
+      const c1 = Math.round((toNum(body.totals.c, 0) ?? 0) * 10) / 10;
+
+      const upsertPayload = {
+        user_id: authedUserId,
+        report_date: body.date,
+        total_calories: totalCalories,
+        p: p1,
+        f: f1,
+        c: c1,
+        score: null,
+        summary: summaryText,
+        action_for_tomorrow: actionForTomorrow,
+      };
+
+      const { data, error } = await supabase
+        .from("nutrition_daily_reports")
+        .upsert(upsertPayload, { onConflict: "user_id,report_date" })
+        .select()
+        .single();
+
+      if (error) {
+        return json(
+          {
+            error: "Failed to upsert nutrition_daily_reports",
+            detail: String(error.message ?? error),
+          },
+          500
+        );
+      }
+
+      return json({
+        ok: true,
+        result: {
+          normalized,
+          saved: {
+            report_date: body.date,
+            total_calories: totalCalories,
+            p: p1,
+            f: f1,
+            c: c1,
+            summary: summaryText,
+            action_for_tomorrow: actionForTomorrow,
+          },
+          row: data,
+        },
+      });
+    }
+
+    return json({ error: "Unknown type" }, 400);
+  } catch (e) {
+    console.error("[nutrition-gemini] Unhandled error", {
+      err: String((e as Error)?.message ?? e),
+      stack: (e as Error)?.stack ?? null,
+    });
+    return json({ error: "Unhandled error", detail: String((e as Error)?.message ?? e) }, 500);
+  }
 });

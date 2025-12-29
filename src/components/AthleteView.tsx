@@ -50,6 +50,8 @@ import { getTodayEnergySummary } from '../lib/getTodayEnergySummary';
 import { NutritionCard } from './NutritionCard';
 import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
+import NutritionOverview from "../components/NutritionOverview";
+import { buildDailyTargets } from "../lib/nutritionCalc";
 
 import {
   Activity,
@@ -321,31 +323,39 @@ export function AthleteView({
   // =========================
   // ✅ 今日のスナップショット fetch（setStateでレンダー増えるのは正常）
   // =========================
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchSnapshot() {
-      try {
-        const { data, error } = await supabase
-          .from('daily_energy_snapshots')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('date', today)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!cancelled) setSnapshotToday(data ?? null);
-      } catch (e) {
-        if (import.meta.env.DEV) console.error('[daily_energy_snapshots] fetch error:', e);
-        if (!cancelled) setSnapshotToday(null);
-      }
-    }
-
-    fetchSnapshot();
-    return () => {
-      cancelled = true;
-    };
-  }, [user.id, today]);
+  const targets = useMemo(() => {
+    const weightKg =
+      Number(latestInbody?.weight ?? latestInbody?.weight_kg) ||
+      Number(user?.weight_kg) ||
+      0;
+  
+    if (!weightKg || weightKg <= 0) return null;
+  
+    const bodyFatPercentRaw = Number(latestInbody?.body_fat_percent ?? latestInbody?.body_fat_perc);
+    const bodyFatPercent = Number.isFinite(bodyFatPercentRaw) && bodyFatPercentRaw > 0 ? bodyFatPercentRaw : null;
+  
+    const heightCmRaw = Number(user?.height_cm);
+    const heightCm = Number.isFinite(heightCmRaw) && heightCmRaw > 0 ? heightCmRaw : null;
+  
+    const res = buildDailyTargets({
+      weightKg,
+      bodyFatPercent,
+      heightCm,
+      age: null,
+      sex: null,
+      activityLevel: "moderate",
+      goalType: "maintain",
+    });
+  
+    return res?.target ?? null;
+  }, [
+    user?.weight_kg,
+    user?.height_cm,
+    latestInbody?.weight,
+    latestInbody?.weight_kg,
+    latestInbody?.body_fat_percent,
+    latestInbody?.body_fat_perc,
+  ]);
 
   // =========================
   // ✅ 今日の負荷（useMemo）
@@ -881,8 +891,17 @@ export function AthleteView({
 
 
 
-            {/* ✅ 栄養 */}
+          
             {/* ✅ 栄養：nutrition_enabled=false の人には表示しない */}
+            <NutritionOverview
+              totals={nutritionTotalsToday}
+              targets={targets}          // buildDailyTargetsのtarget
+              loading={nutritionLoading}
+              subtitle={recordDate}
+              />
+
+
+
             {canUseNutrition && (
             <div className="mt-6">
               <NutritionCard
