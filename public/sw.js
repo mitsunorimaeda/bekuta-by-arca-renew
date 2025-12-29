@@ -1,5 +1,3 @@
-// public/sw.js
-
 self.addEventListener("push", (event) => {
     event.waitUntil((async () => {
       let data = {};
@@ -26,17 +24,15 @@ self.addEventListener("push", (event) => {
     event.notification.close();
     const url = event.notification?.data?.url || "/";
   
-    event.waitUntil((async () => {
-      const clientList = await clients.matchAll({ type: "window", includeUncontrolled: true });
-  
-      for (const client of clientList) {
-        if ("focus" in client) {
-          // 既存タブがあればそこへ
-          await client.navigate(url);
-          return client.focus();
+    event.waitUntil(
+      clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if ("focus" in client) {
+            client.navigate(url);
+            return client.focus();
+          }
         }
-      }
-      // なければ新規で開く
-      return clients.openWindow(url);
-    })());
+        return clients.openWindow(url);
+      })
+    );
   });

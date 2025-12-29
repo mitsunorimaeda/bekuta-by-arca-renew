@@ -41,10 +41,10 @@ if (error) throw error;
 if (!subs?.length) throw new Error("No subscriptions found");
 
 const payload = JSON.stringify({
-  title: "Bekuta",
-  body: "夜の振り返り、30秒だけ。いける？",
-  url: "/reflection",
-});
+    title: process.env.PUSH_TITLE || "Bekuta",
+    body: process.env.PUSH_BODY || "夜の振り返り、30秒だけ。いける？",
+    url: process.env.PUSH_URL || "/reflection",
+  });
 
 for (const s of subs) {
   try {
