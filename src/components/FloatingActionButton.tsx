@@ -1,22 +1,40 @@
-import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Camera } from "lucide-react";
 
-interface FloatingActionButtonProps {
-  onClick: () => void;
-}
+type Props = {
+  onClick: () => void;          // ＋
+  onCameraClick?: () => void;   // 📷（あれば表示）
+};
 
-export function FloatingActionButton({ onClick }: FloatingActionButtonProps) {
+export function FloatingActionButton({ onClick, onCameraClick }: Props) {
   return (
-    <button
-      onClick={onClick}
-      className="fixed bottom-6 right-6 z-40 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full p-4 shadow-2xl transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800"
-      style={{
-        WebkitTapHighlightColor: 'rgba(0,0,0,0)',
-        touchAction: 'manipulation'
-      }}
-      aria-label="記録を追加"
-    >
-      <Plus className="w-8 h-8" />
-    </button>
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3">
+      {/* 📷：栄養ONのときだけ */}
+      {onCameraClick && (
+        <button
+          type="button"
+          onClick={onCameraClick}
+          className="h-14 w-14 rounded-full shadow-lg bg-white dark:bg-gray-800
+                     border border-gray-200 dark:border-gray-700
+                     flex items-center justify-center
+                     active:scale-95 transition"
+          aria-label="食事を撮影・選択"
+        >
+          <Camera className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* ＋：常に表示 */}
+      <button
+        type="button"
+        onClick={onClick}
+        className="h-14 w-14 rounded-full shadow-lg
+                   bg-blue-600 text-white
+                   flex items-center justify-center
+                   active:scale-95 transition"
+        aria-label="今日の記録を追加"
+      >
+        <Plus className="w-7 h-7" />
+      </button>
+    </div>
   );
 }

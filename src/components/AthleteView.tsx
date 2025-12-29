@@ -52,6 +52,8 @@ import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
 import NutritionOverview from "../components/NutritionOverview";
 import { buildDailyTargets } from "../lib/nutritionCalc";
+import { useState } from "react";
+
 
 import {
   Activity,
@@ -143,6 +145,7 @@ export function AthleteView({
   const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
+  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -894,33 +897,31 @@ export function AthleteView({
 
           
             {/* ✅ 栄養：nutrition_enabled=false の人には表示しない */}
-            {canUseNutrition && (
-            <NutritionOverview
-              totals={nutritionTotalsToday}
-              targets={targets}          // buildDailyTargetsのtarget
-              loading={nutritionLoading}
-              subtitle={recordDate}
-              />
-            )} 
-
-
-
-            {canUseNutrition && (
-            <div className="mt-6">
-              <NutritionCard
-                user={user}
-                latestInbody={latestInbody ?? null}
-                date={today}
-                trainingRecords={records}
-                sleepRecords={sleepRecords}
-                motivationRecords={motivationRecords}
-                badgeText="栄養(β)"
-                nutritionLogs={nutritionLogsToday}
-                nutritionTotals={nutritionTotalsToday}
-                nutritionLoading={nutritionLoading}
-                nutritionError={nutritionError}
-              />
-            </div>
+            {canUseNutrition ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('nutrition')}
+                className="w-full text-left mt-6"
+                aria-label="栄養の詳細へ"
+              >
+                <div className="rounded-xl hover:opacity-95 active:opacity-90 transition">
+                  <NutritionOverview
+                    totals={nutritionTotalsToday}
+                    targets={targets}
+                    loading={nutritionLoading}
+                    subtitle={recordDate}
+                  />
+                </div>
+              </button>
+            ) : (
+              <div className="mt-6">
+                <NutritionOverview
+                  totals={nutritionTotalsToday}
+                  targets={targets}
+                  loading={nutritionLoading}
+                  subtitle={recordDate}
+                />
+              </div>
             )}
 
             <div className="mt-6">
@@ -1606,10 +1607,13 @@ export function AthleteView({
 
       {activeTab === 'unified' && (
         <FloatingActionButton
-          onClick={() => {
-            setShowUnifiedCheckIn(true);
-          }}
-        />
+        onClick={() => setShowUnifiedCheckIn(true)}
+        onCameraClick={
+          canUseNutrition
+            ? () => setShowPhotoSheet(true)
+            : undefined
+        }
+      />
       )}
     </div>
   );
