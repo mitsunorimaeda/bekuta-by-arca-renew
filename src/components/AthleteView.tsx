@@ -140,12 +140,12 @@ export function AthleteView({
   }
 
   const today = useMemo(() => getTodayJSTString(), []);
-  const recordDate = today;
+
 
   const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
-  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
+ 
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -511,6 +511,26 @@ export function AthleteView({
       return result;
     },
     [addPerformanceRecord, performanceTestTypes, getPersonalBest]
+  );
+
+  const recordDate = today; // ✅ subtitle用（recordDate未定義エラー回避）
+
+  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
+
+  // 📷 ファイル選択用（撮影 / ライブラリ）
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const libraryInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handlePickPhoto = useCallback(
+    (file: File) => {
+      // ここで “栄養詳細へ” へ遷移（まずは確実に動く挙動）
+      setShowPhotoSheet(false);
+      setActiveTab("nutrition");
+
+      // 必要なら後で Nutrition 側にファイルを渡す設計に拡張できる
+      // 例：window.dispatchEvent(new CustomEvent("nutrition:photo", { detail: { file, date: today } }));
+    },
+    [today]
   );
 
   const getCategoryDisplayName = useCallback((category: string) => {
@@ -1602,6 +1622,73 @@ export function AthleteView({
         onClick={() => setShowUnifiedCheckIn(true)}
         onCameraClick={canUseNutrition ? () => setShowPhotoSheet(true) : undefined}
         />
+      )}
+            {/* 📷 Photo Sheet */}
+            {showPhotoSheet && (
+        <div className="fixed inset-0 z-50" onClick={() => setShowPhotoSheet(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-2xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+              写真を追加
+            </p>
+
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium active:opacity-90"
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                撮影する
+              </button>
+
+              <button
+                type="button"
+                className="w-full py-3 rounded-xl bg-blue-600 text-white font-medium active:opacity-90"
+                onClick={() => libraryInputRef.current?.click()}
+              >
+                写真を選ぶ
+              </button>
+
+              <button
+                type="button"
+                className="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium active:opacity-90"
+                onClick={() => setShowPhotoSheet(false)}
+              >
+                キャンセル
+              </button>
+            </div>
+
+            {/* hidden inputs */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) handlePickPhoto(file);
+              }}
+            />
+
+            <input
+              ref={libraryInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) handlePickPhoto(file);
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
