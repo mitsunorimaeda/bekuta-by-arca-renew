@@ -1,3 +1,4 @@
+import React from "react";
 import { Plus, Camera } from "lucide-react";
 
 type Props = {
@@ -13,8 +14,8 @@ export function FloatingActionButton({ onClick, onCameraClick }: Props) {
         <button
           type="button"
           onClick={onCameraClick}
-          className="h-14 w-14 rounded-full shadow-lg bg-white dark:bg-gray-800
-                     border border-gray-200 dark:border-gray-700
+          className="h-14 w-14 rounded-full shadow-lg
+                     bg-blue-600 text-white
                      flex items-center justify-center
                      active:scale-95 transition"
           aria-label="食事を撮影・選択"

@@ -895,13 +895,13 @@ export function AthleteView({
 
 
 
-          
-            {/* ✅ 栄養：nutrition_enabled=false の人には表示しない */}
-            {canUseNutrition ? (
+          {/* ✅ 栄養：nutrition_enabled=true の人だけ表示 */}
+          {canUseNutrition && (
+            <div className="mt-6">
               <button
                 type="button"
-                onClick={() => setActiveTab('nutrition')}
-                className="w-full text-left mt-6"
+                onClick={() => setActiveTab("nutrition")}
+                className="w-full text-left"
                 aria-label="栄養の詳細へ"
               >
                 <div className="rounded-xl hover:opacity-95 active:opacity-90 transition">
@@ -913,16 +913,8 @@ export function AthleteView({
                   />
                 </div>
               </button>
-            ) : (
-              <div className="mt-6">
-                <NutritionOverview
-                  totals={nutritionTotalsToday}
-                  targets={targets}
-                  loading={nutritionLoading}
-                  subtitle={recordDate}
-                />
-              </div>
-            )}
+            </div>
+          )}
 
             <div className="mt-6">
               <DailyReflectionCard userId={user.id} />
