@@ -1600,12 +1600,8 @@ export function AthleteView({
       {activeTab === 'unified' && (
         <FloatingActionButton
         onClick={() => setShowUnifiedCheckIn(true)}
-        onCameraClick={
-          canUseNutrition
-            ? () => setShowPhotoSheet(true)
-            : undefined
-        }
-      />
+        onCameraClick={canUseNutrition ? () => setShowPhotoSheet(true) : undefined}
+        />
       )}
     </div>
   );
