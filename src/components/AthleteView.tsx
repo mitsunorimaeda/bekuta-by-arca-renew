@@ -138,6 +138,7 @@ export function AthleteView({
   }
 
   const today = useMemo(() => getTodayJSTString(), []);
+  const recordDate = today;
 
   const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -893,12 +894,14 @@ export function AthleteView({
 
           
             {/* ✅ 栄養：nutrition_enabled=false の人には表示しない */}
+            {canUseNutrition && (
             <NutritionOverview
               totals={nutritionTotalsToday}
               targets={targets}          // buildDailyTargetsのtarget
               loading={nutritionLoading}
               subtitle={recordDate}
               />
+            )} 
 
 
 
