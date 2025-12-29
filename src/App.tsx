@@ -39,8 +39,8 @@ import { CommercialTransactions } from './pages/CommercialTransactions';
 import { HelpPage } from './pages/HelpPage';
 import { TeamAchievementNotification } from './components/TeamAchievementNotification';
 import { supabase } from './lib/supabase';
-
-type AppUserRole = 'athlete' | 'staff' | 'admin';
+import type { AppRole } from './lib/roles';          // ← 型（TypeScript用）
+import { isGlobalAdmin } from './lib/permissions';
 
 function App() {
   const {
@@ -57,12 +57,12 @@ function App() {
 
   useRealtimeHub(userProfile?.id ?? '');
 
-  const effectiveRole: AppUserRole =
-    userProfile?.role === 'staff' ||
-    userProfile?.role === 'admin' ||
-    userProfile?.role === 'athlete'
-      ? userProfile.role
-      : 'athlete';
+  const effectiveRole: AppRole =
+  userProfile?.role === 'staff' ||
+  userProfile?.role === 'global_admin' ||
+  userProfile?.role === 'athlete'
+    ? (userProfile.role as AppRole)
+    : 'athlete';
 
   const [requiresPasswordChange, setRequiresPasswordChange] = React.useState(false);
   const { isOrganizationAdmin, getOrganizationAdminRoles } = useOrganizationRole(userProfile?.id);
@@ -276,7 +276,7 @@ function App() {
               onNavigateToCommercial={() => setCurrentPage('commercial')}
               onNavigateToHelp={() => setCurrentPage('help')}
             />
-          ) : effectiveRole === 'admin' ? (
+          ) : isGlobalAdmin(effectiveRole) ? (
             <AdminView
               user={userProfile}
               alerts={alerts}

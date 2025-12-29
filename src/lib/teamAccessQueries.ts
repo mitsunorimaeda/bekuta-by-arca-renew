@@ -1,4 +1,6 @@
+// src/lib/teamAccessQueries.ts
 import { supabase } from './supabase';
+import type { AppRole } from './roles';
 
 export interface TeamAccessRequest {
   id: string;
@@ -20,6 +22,7 @@ export interface TeamAccessRequest {
   team?: {
     id: string;
     name: string;
+    organization_id?: string;
   };
   reviewer?: {
     id: string;
@@ -27,17 +30,21 @@ export interface TeamAccessRequest {
   };
 }
 
+const isGlobalAdmin = (role?: AppRole | string | null) => role === 'global_admin';
+
 export const teamAccessQueries = {
   async getMyRequests(userId: string) {
     const { data, error } = await supabase
       .from('team_access_requests')
-      .select(`
+      .select(
+        `
         *,
         team:teams (
           id,
           name
         )
-      `)
+      `,
+      )
       .eq('requester_id', userId)
       .order('created_at', { ascending: false });
 
@@ -46,7 +53,7 @@ export const teamAccessQueries = {
   },
 
   async getPendingRequestsForMyTeams(userId: string) {
-    // Check if user is a system admin
+    // users.role を参照（usersで統一）
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('role')
@@ -55,11 +62,12 @@ export const teamAccessQueries = {
 
     if (userError) throw userError;
 
-    // If system admin, return all pending requests
-    if (userData?.role === 'admin') {
+    // ✅ global_admin は全件見える
+    if (isGlobalAdmin(userData?.role)) {
       const { data, error } = await supabase
         .from('team_access_requests')
-        .select(`
+        .select(
+          `
           *,
           requester:users!team_access_requests_requester_id_fkey (
             id,
@@ -71,7 +79,8 @@ export const teamAccessQueries = {
             name,
             organization_id
           )
-        `)
+        `,
+        )
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
@@ -79,7 +88,7 @@ export const teamAccessQueries = {
       return data as TeamAccessRequest[];
     }
 
-    // For regular staff, get the teams managed by this user
+    // ✅ staff は自分が管理しているteamだけ
     const { data: myTeams, error: teamsError } = await supabase
       .from('staff_team_links')
       .select('team_id')
@@ -87,16 +96,13 @@ export const teamAccessQueries = {
 
     if (teamsError) throw teamsError;
 
-    const teamIds = myTeams?.map(t => t.team_id) || [];
+    const teamIds = myTeams?.map((t) => t.team_id).filter(Boolean) || [];
+    if (teamIds.length === 0) return [];
 
-    if (teamIds.length === 0) {
-      return [];
-    }
-
-    // Then get the pending requests for those teams
     const { data, error } = await supabase
       .from('team_access_requests')
-      .select(`
+      .select(
+        `
         *,
         requester:users!team_access_requests_requester_id_fkey (
           id,
@@ -107,7 +113,8 @@ export const teamAccessQueries = {
           id,
           name
         )
-      `)
+      `,
+      )
       .eq('status', 'pending')
       .in('team_id', teamIds)
       .order('created_at', { ascending: false });
@@ -119,7 +126,8 @@ export const teamAccessQueries = {
   async getRequestsForOrganization(organizationId: string) {
     const { data, error } = await supabase
       .from('team_access_requests')
-      .select(`
+      .select(
+        `
         *,
         requester:users!team_access_requests_requester_id_fkey (
           id,
@@ -134,7 +142,8 @@ export const teamAccessQueries = {
           id,
           name
         )
-      `)
+      `,
+      )
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false });
 
@@ -143,7 +152,7 @@ export const teamAccessQueries = {
   },
 
   async getAvailableTeamsToRequest(userId: string, organizationId: string) {
-    // Get the user's primary team (from users.team_id)
+    // ✅ users.team_id を参照（usersで統一）
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('team_id')
@@ -152,7 +161,7 @@ export const teamAccessQueries = {
 
     if (userError) throw userError;
 
-    // Get teams the user already has access to via staff_team_links
+    // ✅ staff_team_links ですでにアクセスしているチーム
     const { data: myTeams, error: myTeamsError } = await supabase
       .from('staff_team_links')
       .select('team_id')
@@ -160,14 +169,12 @@ export const teamAccessQueries = {
 
     if (myTeamsError) throw myTeamsError;
 
-    const myTeamIds = myTeams?.map(t => t.team_id) || [];
+    const myTeamIds = (myTeams ?? []).map((t) => t.team_id).filter(Boolean);
 
-    // Add the user's primary team if they have one
-    if (userData?.team_id) {
-      myTeamIds.push(userData.team_id);
-    }
+    // ✅ primary team も除外
+    if (userData?.team_id) myTeamIds.push(userData.team_id);
 
-    // Get pending requests
+    // ✅ pending request も除外
     const { data: pendingRequests, error: pendingError } = await supabase
       .from('team_access_requests')
       .select('team_id')
@@ -176,43 +183,25 @@ export const teamAccessQueries = {
 
     if (pendingError) throw pendingError;
 
-    const pendingTeamIds = pendingRequests?.map(r => r.team_id) || [];
-    const excludedTeamIds = [...myTeamIds, ...pendingTeamIds];
+    const pendingTeamIds = (pendingRequests ?? []).map((r) => r.team_id).filter(Boolean);
+    const excludedTeamIds = Array.from(new Set([...myTeamIds, ...pendingTeamIds])).filter(Boolean);
 
-    console.log('getAvailableTeamsToRequest debug:', {
-      userId,
-      organizationId,
-      primaryTeamId: userData?.team_id,
-      myTeamIds,
-      pendingTeamIds,
-      excludedTeamIds
-    });
-
-    // Get all teams in organization, excluding the ones user already has access to
-    let query = supabase
+    // ✅ organization内の全teamを取得して excluded をローカルで除外（安全・確実）
+    // 1000件超える規模になったらRPC/VIEWで最適化する方針でOK
+    const { data, error } = await supabase
       .from('teams')
       .select('id, name, organization_id')
-      .eq('organization_id', organizationId);
-
-    // Only apply the exclusion filter if there are teams to exclude
-    if (excludedTeamIds.length > 0) {
-      query = query.not('id', 'in', `(${excludedTeamIds.join(',')})`);
-    }
-
-    const { data, error } = await query.order('name');
-
-    console.log('getAvailableTeamsToRequest result:', { data, error, count: data?.length });
+      .eq('organization_id', organizationId)
+      .order('name');
 
     if (error) throw error;
-    return data;
+
+    if (!excludedTeamIds.length) return data ?? [];
+
+    return (data ?? []).filter((t) => !excludedTeamIds.includes(t.id));
   },
 
-  async createRequest(
-    requesterId: string,
-    teamId: string,
-    organizationId: string,
-    message: string = ''
-  ) {
+  async createRequest(requesterId: string, teamId: string, organizationId: string, message: string = '') {
     const { data, error } = await supabase
       .from('team_access_requests')
       .insert({
@@ -220,7 +209,7 @@ export const teamAccessQueries = {
         team_id: teamId,
         organization_id: organizationId,
         status: 'pending',
-        request_message: message
+        request_message: message,
       })
       .select()
       .single();
@@ -233,7 +222,7 @@ export const teamAccessQueries = {
     const { error } = await supabase.rpc('approve_team_access_request', {
       request_id: requestId,
       reviewer_user_id: reviewerId,
-      notes: notes
+      notes,
     });
 
     if (error) throw error;
@@ -243,7 +232,7 @@ export const teamAccessQueries = {
     const { error } = await supabase.rpc('reject_team_access_request', {
       request_id: requestId,
       reviewer_user_id: reviewerId,
-      notes: notes
+      notes,
     });
 
     if (error) throw error;
@@ -262,7 +251,8 @@ export const teamAccessQueries = {
   async getRequestById(requestId: string) {
     const { data, error } = await supabase
       .from('team_access_requests')
-      .select(`
+      .select(
+        `
         *,
         requester:users!team_access_requests_requester_id_fkey (
           id,
@@ -277,11 +267,12 @@ export const teamAccessQueries = {
           id,
           name
         )
-      `)
+      `,
+      )
       .eq('id', requestId)
       .maybeSingle();
 
     if (error) throw error;
     return data as TeamAccessRequest | null;
-  }
+  },
 };

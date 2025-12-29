@@ -41,30 +41,32 @@ CREATE POLICY "Admin users can manage all users"
   );
 
 -- Create policy for staff to update team_id for athletes in their organization
+DROP POLICY IF EXISTS "Staff can update athlete team assignments" ON public.users;
+
 CREATE POLICY "Staff can update athlete team assignments"
-  ON users
+  ON public.users
   FOR UPDATE
   TO authenticated
   USING (
-    -- Staff can update athletes in their organization
     role = 'athlete'
     AND EXISTS (
-      SELECT 1 FROM users AS staff
-      JOIN organization_members AS staff_org ON staff.id = staff_org.user_id
-      JOIN organization_members AS athlete_org ON athlete_org.user_id = users.id
-      WHERE staff.id = auth.uid()
+      SELECT 1
+      FROM public.users AS staff
+      JOIN public.organization_members AS staff_org ON staff.id = staff_org.user_id
+      JOIN public.organization_members AS athlete_org ON athlete_org.user_id = public.users.id
+      WHERE staff.id = public.current_app_user_id()          -- ←ここも統一（超重要）
       AND staff.role IN ('staff', 'admin')
       AND staff_org.organization_id = athlete_org.organization_id
     )
   )
   WITH CHECK (
-    -- Ensure the update is only to team_id and within same organization
     role = 'athlete'
     AND EXISTS (
-      SELECT 1 FROM users AS staff
-      JOIN organization_members AS staff_org ON staff.id = staff_org.user_id
-      JOIN organization_members AS athlete_org ON athlete_org.user_id = users.id
-      WHERE staff.id = auth.uid()
+      SELECT 1
+      FROM public.users AS staff
+      JOIN public.organization_members AS staff_org ON staff.id = staff_org.user_id
+      JOIN public.organization_members AS athlete_org ON athlete_org.user_id = public.users.id
+      WHERE staff.id = public.current_app_user_id()          -- ←ここも統一
       AND staff.role IN ('staff', 'admin')
       AND staff_org.organization_id = athlete_org.organization_id
     )

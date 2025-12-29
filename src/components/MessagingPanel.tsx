@@ -285,7 +285,7 @@ export const MessagingPanel = React.memo(function MessagingPanel({
                           )}
                         </div>
                         <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                          {thread.other_user?.role === 'admin'
+                          {thread.other_user?.role === '<global_admin'
                             ? '管理者'
                             : thread.other_user?.role === 'staff'
                             ? 'コーチ'
@@ -371,7 +371,7 @@ export const MessagingPanel = React.memo(function MessagingPanel({
                           </p>
                           <p className="text-xs text-gray-600 dark:text-gray-400">
                             {user.email} •{' '}
-                            {user.role === 'admin'
+                            {user.role === 'global_admin'
                               ? '管理者'
                               : user.role === 'staff'
                               ? 'コーチ'
@@ -404,7 +404,7 @@ export const MessagingPanel = React.memo(function MessagingPanel({
                       {activeThread.other_user?.name || '不明なユーザー'}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {activeThread.other_user?.role === 'admin'
+                      {activeThread.other_user?.role === 'global_admin'
                         ? '管理者'
                         : activeThread.other_user?.role === 'staff'
                         ? 'コーチ'

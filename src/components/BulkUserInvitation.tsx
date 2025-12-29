@@ -21,7 +21,7 @@ interface BulkUserInvitationProps {
 interface CsvUserRow {
   name: string;
   email: string;
-  role: 'athlete' | 'staff' | 'admin';
+  role: 'athlete' | 'staff' | 'global_admin';
   organizationName: string;
   teamName?: string;
 }
@@ -55,7 +55,7 @@ export function BulkUserInvitation({
         ['田中太郎', 'tanaka@example.com', 'athlete', '愛工大名電高校', 'サッカー部'],
         ['佐藤花子', 'sato@example.com', 'staff', '愛工大名電高校', 'バスケットボール部'],
         allowAdminInvite
-          ? ['管理者', 'admin@example.com', 'admin', '愛工大名電高校', '']
+          ? ['管理者', 'admin@example.com', 'global_admin', '愛工大名電高校', '']
           : null,
       ].filter(Boolean) as string[][]
     );
@@ -64,12 +64,12 @@ export function BulkUserInvitation({
       '# Bekuta ユーザー一括招待テンプレート',
       '# 注意事項:',
       allowAdminInvite
-        ? '# - role は athlete, staff, admin のいずれかを指定してください'
+        ? '# - role は athlete, staff, global_admin のいずれかを指定してください'
         : '# - role は athlete, staff のいずれかを指定してください',
       '# - organizationName は管理画面に表示されている組織名と完全に同じ文字列で入力してください',
       '# - athlete の場合は team_name を必ず指定してください',
       '# - staff の場合も team_name を指定することを推奨します（指定したチームを管理します）',
-      '# - admin の場合は team_name は空白でも構いません',
+      '# - global_admin の場合は team_name は空白でも構いません',
       '',
       headers.join(','),
       ...sampleData.map((row) => row.join(',')),
@@ -138,7 +138,7 @@ export function BulkUserInvitation({
 
       const roleRaw = cols[roleIdx].toLowerCase();
       const validRoles = allowAdminInvite
-        ? ['athlete', 'staff', 'admin']
+        ? ['athlete', 'staff', 'global_admin']
         : ['athlete', 'staff'];
 
       if (!validRoles.includes(roleRaw)) continue;
@@ -146,7 +146,7 @@ export function BulkUserInvitation({
       users.push({
         name: cols[nameIdx],
         email: cols[emailIdx],
-        role: roleRaw as 'athlete' | 'staff' | 'admin',
+        role: roleRaw as 'athlete' | 'staff' | 'global_admin',
         organizationName: cols[orgIdx],
         teamName: teamIdx !== -1 ? cols[teamIdx] || undefined : undefined,
       });
@@ -542,7 +542,7 @@ export function BulkUserInvitation({
                   <strong>email:</strong> メールアドレス
                 </li>
                 <li>
-                  <strong>role:</strong> athlete, staff, admin のいずれか
+                  <strong>role:</strong> athlete, staff, global_admin のいずれか
                 </li>
                 <li>
                   <strong>organizationName:</strong> 組織名（管理画面に表示される名称と完全一致）

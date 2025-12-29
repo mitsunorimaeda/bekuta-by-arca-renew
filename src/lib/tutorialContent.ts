@@ -1,3 +1,4 @@
+import type { AppRole } from './roles';
 import { TutorialStep } from '../components/TutorialController';
 
 export const athleteTutorialSteps: TutorialStep[] = [
@@ -121,7 +122,7 @@ export const staffTutorialSteps: TutorialStep[] = [
   },
 ];
 
-export const adminTutorialSteps: TutorialStep[] = [
+export const globalAdminTutorialSteps: TutorialStep[] = [
   {
     id: 'admin-welcome',
     title: 'Bekuta 管理者ダッシュボードへようこそ',
@@ -235,16 +236,21 @@ export const gamificationTutorialSteps: TutorialStep[] = [
   },
 ];
 
-export function getTutorialSteps(role: 'athlete' | 'staff' | 'admin' | 'gamification'): TutorialStep[] {
+// ✅ ここが本丸：AppRole で統一
+export function getTutorialSteps(role: AppRole | 'gamification'): TutorialStep[] {
   switch (role) {
     case 'athlete':
       return athleteTutorialSteps;
     case 'staff':
       return staffTutorialSteps;
-    case 'admin':
-      return adminTutorialSteps;
+
+    // ✅ 'admin' ではなく 'global_admin'
+    case 'global_admin':
+      return globalAdminTutorialSteps;
+
     case 'gamification':
       return gamificationTutorialSteps;
+
     default:
       return [];
   }

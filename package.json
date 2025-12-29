@@ -17,17 +17,18 @@
     "migrations:view": "node scripts/apply-migrations-to-production.mjs",
     "validate-env": "node scripts/validate-env.mjs",
     "protect-env": "node scripts/protect-env.mjs",
-    "fix-env": "node scripts/validate-env.mjs"
+    "fix-env": "node scripts/validate-env.mjs",
+    "push:test": "node scripts/push-test.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.38.4",
+    "@supabase/supabase-js": "^2.89.0",
     "canvas-confetti": "^1.9.4",
-    "dotenv": "^17.2.3",
     "lucide-react": "^0.344.0",
     "pg": "^8.16.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "recharts": "^2.8.0"
+    "recharts": "^2.8.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
@@ -35,6 +36,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",
+    "dotenv": "^17.2.3",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",

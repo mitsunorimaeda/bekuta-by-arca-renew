@@ -78,17 +78,21 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_team_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE training_records ENABLE ROW LEVEL SECURITY;
 
--- Create policies for teams
+-- Ensure idempotency: policy may already exist from earlier migration
+DROP POLICY IF EXISTS "Users can view teams they belong to" ON public.teams;
+
 CREATE POLICY "Users can view teams they belong to"
-  ON teams FOR SELECT
+  ON public.teams
+  FOR SELECT
   TO authenticated
   USING (
     id IN (
-      SELECT team_id FROM users WHERE id = auth.uid()
+      SELECT team_id FROM public.users WHERE id = auth.uid()
       UNION
-      SELECT team_id FROM staff_team_links WHERE staff_user_id = auth.uid()
+      SELECT team_id FROM public.staff_team_links WHERE staff_user_id = auth.uid()
     )
   );
+
 
 -- Create policies for users
 CREATE POLICY "Users can view their own data"
@@ -106,24 +110,37 @@ CREATE POLICY "Staff can view athletes in their teams"
   );
 
 -- Create policies for staff_team_links
+DROP POLICY IF EXISTS "Staff can view their team links" ON public.staff_team_links;
+
 CREATE POLICY "Staff can view their team links"
-  ON staff_team_links FOR SELECT
+  ON public.staff_team_links
+  FOR SELECT
   TO authenticated
   USING (staff_user_id = auth.uid());
 
 -- Create policies for training_records
+-- training_records
+DROP POLICY IF EXISTS "Athletes can manage their own training records" ON public.training_records;
+
 CREATE POLICY "Athletes can manage their own training records"
-  ON training_records FOR ALL
+  ON public.training_records
+  FOR ALL
   TO authenticated
-  USING (user_id = auth.uid());
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+-- Staff can view training records of their team members
+DROP POLICY IF EXISTS "Staff can view training records of their team members" ON public.training_records;
 
 CREATE POLICY "Staff can view training records of their team members"
-  ON training_records FOR SELECT
+  ON public.training_records
+  FOR SELECT
   TO authenticated
   USING (
     user_id IN (
-      SELECT u.id FROM users u
-      JOIN staff_team_links stl ON u.team_id = stl.team_id
+      SELECT u.id
+      FROM public.users u
+      JOIN public.staff_team_links stl ON u.team_id = stl.team_id
       WHERE stl.staff_user_id = auth.uid()
     )
   );

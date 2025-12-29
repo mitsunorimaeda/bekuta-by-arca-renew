@@ -2,8 +2,9 @@
 import React from 'react';
 import { AlertTriangle, HelpCircle, Menu, X, LogOut, Shield, FileText, Building2 } from 'lucide-react';
 import { AlertBadge } from './AlertBadge';
+import type { AppRole } from '../lib/roles';
 
-type Role = 'athlete' | 'staff' | 'admin';
+type Role = AppRole;
 
 type GlobalHeaderProps = {
   effectiveRole: Role;

@@ -1,10 +1,10 @@
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY")!;
-const MODEL = Deno.env.get("GEMINI_MODEL") ??
-  "gemini-2.5-flash-preview-09-2025";
+const MODEL =
+  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash-preview-09-2025";
 
 type GeminiPart =
   | { text: string }
-  | { inline_data: { mime_type: string; data: string } };
+  | { inlineData: { mimeType: string; data: string } };
 
 export async function geminiGenerateJson(parts: GeminiPart[]) {
   const url =
@@ -14,9 +14,9 @@ export async function geminiGenerateJson(parts: GeminiPart[]) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts }],
+      contents: [{ role: "user", parts }],
       generationConfig: {
-        response_mime_type: "application/json",
+        responseMimeType: "application/json",
         temperature: 0.2,
       },
     }),
@@ -28,11 +28,23 @@ export async function geminiGenerateJson(parts: GeminiPart[]) {
   }
 
   const data = await res.json();
+
+  // responseMimeType が効けば、parts[0].text が JSON文字列として返ることが多い
   const text =
     data?.candidates?.[0]?.content?.parts?.[0]?.text ??
     "";
 
-  // 余計な ```json ``` を剥がしてJSON化
-  const cleaned = String(text).replace(/```json/g, "").replace(/```/g, "").trim();
-  return JSON.parse(cleaned);
+  const cleaned = String(text)
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // デバッグしやすいように raw を返す（本番ならログだけでもOK）
+    throw new Error(
+      `Failed to parse Gemini JSON. cleaned="${cleaned.slice(0, 300)}..." raw=${JSON.stringify(data).slice(0, 300)}...`
+    );
+  }
 }

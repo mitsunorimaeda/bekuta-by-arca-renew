@@ -206,11 +206,11 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
               <select
                 value={formData.role}
                 onChange={(e) => {
-                  const newRole = e.target.value as 'athlete' | 'staff' | 'admin';
+                  const newRole = e.target.value as 'athlete' | 'staff' | 'global_admin';
                   setFormData(prev => ({ 
                     ...prev, 
                     role: newRole,
-                    teamId: newRole === 'admin' ? '' : prev.teamId
+                    teamId: newRole === 'global_admin' ? '' : prev.teamId
                   }));
                 }}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
@@ -219,7 +219,7 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
               >
                 <option value="athlete">選手</option>
                 <option value="staff">スタッフ</option>
-                <option value="admin">管理者</option>
+                <option value="global_admin">管理者</option>
               </select>
             </div>
 
@@ -239,16 +239,16 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
                   isMultiTeamStaff && formData.role === 'staff' ? 'border-amber-300 bg-amber-50' : 'border-gray-300'
                 }`}
                 required={formData.role === 'athlete'}
-                disabled={formData.role === 'admin'}
+                disabled={formData.role === 'global_admin'}
               >
                 <option value="">
-                  {formData.role === 'admin' ? '管理者はチーム不要' : 'チームを選択'}
+                  {formData.role === 'global_admin' ? '管理者はチーム不要' : 'チームを選択'}
                 </option>
                 {teams.map(team => (
                   <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
               </select>
-              {formData.role === 'admin' && (
+              {formData.role === 'global_admin' && (
                 <p className="text-xs text-gray-500 mt-1">
                   管理者は全てのチームにアクセスできます
                 </p>

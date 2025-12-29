@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/components/PermissionsManagement.tsx
+import React, { useMemo, useState } from 'react';
 import { usePermissions } from '../hooks/useSubscription';
 import { Shield, Check, X, Info } from 'lucide-react';
 
@@ -6,40 +7,66 @@ interface PermissionsManagementProps {
   organizationId?: string;
 }
 
-export function PermissionsManagement({ organizationId }: PermissionsManagementProps) {
-  const { allPermissions, loading, error } = usePermissions(undefined);
-  const [selectedRole, setSelectedRole] = useState<string>('organization_admin');
+/**
+ * ここは「権限セット用のロール」なので AppRole（athlete/staff/global_admin 等）とは別系統。
+ * ただ、roles.ts に寄せたいなら、この union を roles.ts に切り出して import してOK。
+ */
+type PermissionRoleId = 'global_admin' | 'organization_admin' | 'staff' | 'member';
 
-  const roles = [
+export function PermissionsManagement({ organizationId }: PermissionsManagementProps) {
+  // ✅ 全権限一覧（roleId を渡さないと全件返す想定）
+  const { allPermissions, loading, error } = usePermissions(undefined);
+
+  const [selectedRole, setSelectedRole] = useState<PermissionRoleId>('organization_admin');
+
+  const roles: Array<{
+    id: PermissionRoleId;
+    name: string;
+    description: string;
+  }> = [
     {
-      id: 'admin',
+      id: 'global_admin',
       name: 'システム管理者',
-      description: 'すべての機能とデータにアクセス可能'
+      description: 'すべての機能とデータにアクセス可能',
     },
     {
       id: 'organization_admin',
       name: '組織管理者',
-      description: '組織内のすべてのデータと設定を管理（監督、GM、統括コーチなど）'
+      description: '組織内のすべてのデータと設定を管理（監督、GM、統括コーチなど）',
     },
     {
       id: 'staff',
       name: 'コーチ',
-      description: '担当チームのデータと設定を管理'
+      description: '担当チームのデータと設定を管理',
     },
     {
       id: 'member',
       name: '一般メンバー',
-      description: '通常のコーチ/選手として活動（管理権限なし）'
-    }
+      description: '通常のコーチ/選手として活動（管理権限なし）',
+    },
   ];
 
+  // ✅ 選択中ロールの権限
   const {
     permissions: rolePermissions,
     loading: roleLoading,
-    hasPermission,
-    hasAnyPermission,
-    hasAllPermissions
   } = usePermissions(selectedRole);
+
+  // ✅ 権限マトリックス用：Hookはループで呼ばない（固定回数で呼ぶ）
+  const { permissions: globalAdminPerms } = usePermissions('global_admin');
+  const { permissions: orgAdminPerms } = usePermissions('organization_admin');
+  const { permissions: staffPerms } = usePermissions('staff');
+  const { permissions: memberPerms } = usePermissions('member');
+
+  const permissionsByRole: Record<PermissionRoleId, any[] | null | undefined> = useMemo(
+    () => ({
+      global_admin: globalAdminPerms,
+      organization_admin: orgAdminPerms,
+      staff: staffPerms,
+      member: memberPerms,
+    }),
+    [globalAdminPerms, orgAdminPerms, staffPerms, memberPerms],
+  );
 
   if (loading) {
     return (
@@ -58,9 +85,7 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
   }
 
   const groupedPermissions = allPermissions.reduce((acc, perm) => {
-    if (!acc[perm.category]) {
-      acc[perm.category] = [];
-    }
+    if (!acc[perm.category]) acc[perm.category] = [];
     acc[perm.category].push(perm);
     return acc;
   }, {} as Record<string, typeof allPermissions>);
@@ -71,8 +96,19 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
     reports: 'レポートと分析',
     organization: '組織管理',
     billing: '課金管理',
-    admin: '管理者機能'
+    admin: '管理者機能', // ← category名としての admin はOK（roleとは無関係）
   };
+
+  // ✅ 1つの権限を「そのロールが持つか？」を判定する関数
+  const hasPermissionKey = (perms: any[] | null | undefined, permissionKey: string) => {
+    if (!perms || perms.length === 0) return false;
+    return perms.some(
+      (rp: any) => rp.permission && rp.permission.permission_key === permissionKey,
+    );
+  };
+
+  // ✅ global_admin は全許可扱いにする（DBのpermissionセットが全件じゃなくてもUI上OK）
+  const isAllAccessRole = (roleId: PermissionRoleId) => roleId === 'global_admin';
 
   return (
     <div className="space-y-6">
@@ -93,13 +129,14 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
             <p className="font-semibold mb-1">権限について</p>
             <p>
               各ロールには事前定義された権限セットが割り当てられています。
-              組織管理者は組織内のすべてのデータにアクセスでき、部署マネージャーは担当部署のデータのみにアクセスできます。
+              組織管理者は組織内のすべてのデータにアクセスでき、コーチは担当チームのデータのみにアクセスできます。
             </p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* ロール一覧 */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">ロール一覧</h3>
           <div className="space-y-2">
@@ -114,15 +151,18 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
                 }`}
               >
                 <div className="font-medium text-gray-900 dark:text-white">{role.name}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">{role.description}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  {role.description}
+                </div>
               </button>
             ))}
           </div>
         </div>
 
+        {/* 選択ロールの権限 */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            {roles.find(r => r.id === selectedRole)?.name}の権限
+            {roles.find((r) => r.id === selectedRole)?.name}の権限
           </h3>
 
           {roleLoading ? (
@@ -132,17 +172,19 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
           ) : (
             <div className="space-y-6">
               {Object.entries(groupedPermissions).map(([category, perms]) => (
-                <div key={category} className="border-b dark:border-gray-700 pb-6 last:border-0 last:pb-0">
+                <div
+                  key={category}
+                  className="border-b dark:border-gray-700 pb-6 last:border-0 last:pb-0"
+                >
                   <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
                     {categoryNames[category] || category}
                   </h4>
+
                   <div className="space-y-2">
                     {perms.map((perm) => {
                       const hasThisPermission =
-                        selectedRole === 'admin' ||
-                        (rolePermissions && rolePermissions.some((rp: any) =>
-                          rp.permission && rp.permission.permission_key === perm.permission_key
-                        ));
+                        isAllAccessRole(selectedRole) ||
+                        hasPermissionKey(rolePermissions, perm.permission_key);
 
                       return (
                         <div
@@ -159,6 +201,7 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
                               </div>
                             )}
                           </div>
+
                           <div className="ml-4">
                             {hasThisPermission ? (
                               <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
@@ -183,8 +226,10 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
         </div>
       </div>
 
+      {/* 権限マトリックス */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">権限マトリックス</h3>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -202,6 +247,7 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
                 ))}
               </tr>
             </thead>
+
             <tbody>
               {Object.entries(groupedPermissions).flatMap(([category, perms]) =>
                 perms.map((perm, idx) => (
@@ -219,13 +265,11 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
                         </div>
                       )}
                     </td>
+
                     {roles.map((role) => {
-                      const { permissions: rPerms } = usePermissions(role.id);
+                      const rPerms = permissionsByRole[role.id];
                       const hasThisPermission =
-                        role.id === 'admin' ||
-                        (rPerms && rPerms.some((rp: any) =>
-                          rp.permission && rp.permission.permission_key === perm.permission_key
-                        ));
+                        isAllAccessRole(role.id) || hasPermissionKey(rPerms, perm.permission_key);
 
                       return (
                         <td key={role.id} className="text-center py-2 px-4">
@@ -238,7 +282,7 @@ export function PermissionsManagement({ organizationId }: PermissionsManagementP
                       );
                     })}
                   </tr>
-                ))
+                )),
               )}
             </tbody>
           </table>

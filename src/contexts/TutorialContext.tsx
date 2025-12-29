@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { useTutorial, TutorialProgress } from '../hooks/useTutorial';
+import type { AppRole } from '../lib/roles';
 
 interface TutorialContextValue {
   progress: TutorialProgress | null;
@@ -22,7 +23,7 @@ const TutorialContext = createContext<TutorialContextValue | undefined>(undefine
 
 interface TutorialProviderProps {
   userId: string;
-  role: 'athlete' | 'staff' | 'admin';
+  role: AppRole;
   children: React.ReactNode;
 }
 

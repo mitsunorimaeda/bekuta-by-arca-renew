@@ -1,3 +1,5 @@
+//supabase/functions/nutrition-analyze/index.ts
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAuthedSupabaseClient } from "../_shared/supabaseClient.ts";
@@ -47,9 +49,8 @@ serve(async (req) => {
 
     const result = await geminiGenerateJson([
       { text: prompt },
-      { inline_data: { mime_type, data: image_base64 } },
+      { inlineData: { mimeType: mime_type, data: image_base64 } },
     ]);
-
     // 最低限バリデーション（崩れ対策）
     if (typeof result?.total_calories !== "number" || !result?.nutrients) {
       return jsonResponse({ error: "Invalid AI response", raw: result }, 422);

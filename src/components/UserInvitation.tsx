@@ -41,7 +41,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'athlete' as 'athlete' | 'staff' | 'admin',
+    role: 'athlete' as 'athlete' | 'staff' | 'global_admin',
     organizationId: restrictToOrganizationId || '',
     teamId: '',
   });
@@ -277,7 +277,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
     switch (role) {
       case 'athlete': return '選手';
       case 'staff': return 'スタッフ';
-      case 'admin': return '管理者';
+      case 'global_admin': return '管理者';
       default: return role;
     }
   };
@@ -397,18 +397,18 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
               <select
                 value={formData.role}
                 onChange={(e) => {
-                  const newRole = e.target.value as 'athlete' | 'staff' | 'admin';
+                  const newRole = e.target.value as 'athlete' | 'staff' | 'global_admin';
                   setFormData(prev => ({
                     ...prev,
                     role: newRole,
-                    teamId: newRole === 'admin' ? '' : prev.teamId
+                    teamId: newRole === 'global_admin' ? '' : prev.teamId
                   }));
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="athlete">選手</option>
                 <option value="staff">スタッフ</option>
-                {allowAdminInvite && <option value="admin">管理者</option>}
+                {allowAdminInvite && <option value="global_admin">管理者</option>}
               </select>
             </div>
 
@@ -447,10 +447,10 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
                 onChange={(e) => setFormData(prev => ({ ...prev, teamId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required={formData.role === 'athlete'}
-                disabled={formData.role === 'admin' || !formData.organizationId}
+                disabled={formData.role === 'global_admin' || !formData.organizationId}
               >
                 <option value="">
-                  {formData.role === 'admin'
+                  {formData.role === 'global_admin'
                     ? '管理者はチーム不要'
                     : !formData.organizationId
                     ? '先に組織を選択してください'
@@ -460,12 +460,12 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
                   <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
               </select>
-              {formData.role === 'admin' && (
+              {formData.role === 'global_admin' && (
                 <p className="text-xs text-gray-500 mt-1">
                   管理者は全てのチームにアクセスできます
                 </p>
               )}
-              {formData.role !== 'admin' && !formData.organizationId && (
+              {formData.role !== 'global_admin' && !formData.organizationId && (
                 <p className="text-xs text-amber-600 mt-1">
                   先に組織を選択してください
                 </p>

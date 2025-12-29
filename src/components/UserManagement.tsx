@@ -45,7 +45,7 @@ export function UserManagement({ teams, restrictToOrganizationId }: UserManageme
           .from('users')
           .select('*')
           .in('id', userIds)
-          .neq('role', 'admin')
+          .neq('role', 'global_admin')
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -125,14 +125,14 @@ export function UserManagement({ teams, restrictToOrganizationId }: UserManageme
     switch (role) {
       case 'athlete': return '選手';
       case 'staff': return 'スタッフ';
-      case 'admin': return '管理者';
+      case 'global_admin': return '管理者';
       default: return role;
     }
   };
 
   const getRoleBadgeStyle = (role: string) => {
     switch (role) {
-      case 'admin': return 'bg-purple-100 text-purple-800';
+      case 'global_admin': return 'bg-purple-100 text-purple-800';
       case 'staff': return 'bg-green-100 text-green-800';
       case 'athlete': return 'bg-blue-100 text-blue-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -273,7 +273,7 @@ export function UserManagement({ teams, restrictToOrganizationId }: UserManageme
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
               >
                 <option value="all">全ての役割</option>
-                <option value="admin">管理者</option>
+                <option value="global_admin">管理者</option>
                 <option value="staff">スタッフ</option>
                 <option value="athlete">選手</option>
               </select>
@@ -324,7 +324,7 @@ export function UserManagement({ teams, restrictToOrganizationId }: UserManageme
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
           <div className="text-2xl font-bold text-purple-600">
-            {users.filter(u => u.role === 'admin').length}
+            {users.filter(u => u.role === 'global_admin').length}
           </div>
           <div className="text-sm text-purple-700">管理者</div>
         </div>

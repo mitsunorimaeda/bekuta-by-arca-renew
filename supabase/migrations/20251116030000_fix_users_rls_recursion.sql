@@ -1,41 +1,70 @@
 /*
-  # Fix RLS recursion issue in users table
+  # Fix RLS recursion issue in users table (SAFE / IDEMPOTENT)
 
-  1. Problem
-    - Previous policy causes infinite recursion by querying users table within users RLS policy
-    - This breaks login and all user operations
-
-  2. Solution
-    - Drop the recursive policies
-    - Restore the original working policies
-    - Use organization_members table to check admin status (no recursion)
-
-  3. Security
-    - Admin users (checked via organization_members) can manage users
-    - Users can manage their own profile
-    - All authenticated users can view basic user info
+  - users テーブルの RLS 再帰を完全に除去
+  - policy 衝突を防ぐため、必ず DROP → CREATE
 */
 
--- Drop the problematic recursive policies
-DROP POLICY IF EXISTS "Admin users can manage all users" ON users;
-DROP POLICY IF EXISTS "Staff can update athlete team assignments" ON users;
+SET search_path = public;
 
--- Simple policy: Organization admins can manage all users in their organization
+-- ===============================
+-- STEP 1: users の既存 RLS を全削除
+-- ===============================
+DO $$
+DECLARE p record;
+BEGIN
+  FOR p IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'users'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.users;', p.policyname);
+  END LOOP;
+END $$;
+
+-- ===============================
+-- STEP 2: 必要最小限の RLS を再定義
+-- ===============================
+
+-- ① ユーザー本人は自分の情報を管理できる
+CREATE POLICY "Users can manage own profile"
+  ON public.users
+  FOR ALL
+  TO authenticated
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
+
+-- ② 認証ユーザーは基本情報を閲覧可能（チーム表示など用）
+CREATE POLICY "Authenticated users can view basic user info"
+  ON public.users
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- ③ 組織管理者は users を管理できる（再帰なし）
 CREATE POLICY "Organization admins can manage users"
-  ON users
+  ON public.users
   FOR ALL
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM organization_members om
+      SELECT 1
+      FROM public.organization_members om
       WHERE om.user_id = auth.uid()
-      AND om.role = 'organization_admin'
+        AND om.role = 'organization_admin'
     )
   )
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM organization_members om
+      SELECT 1
+      FROM public.organization_members om
       WHERE om.user_id = auth.uid()
-      AND om.role = 'organization_admin'
+        AND om.role = 'organization_admin'
     )
   );
+
+DO $$
+BEGIN
+  RAISE NOTICE 'users RLS policies reset successfully (SAFE)';
+END $$;

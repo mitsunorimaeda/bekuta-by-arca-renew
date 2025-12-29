@@ -22,8 +22,11 @@ DROP POLICY IF EXISTS "Users can update their own profile" ON users;
 -- Create new, simplified policies
 
 -- Policy 1: Users can view and update their own complete profile
+-- Policy 1: Users can view and update their own complete profile
+DROP POLICY IF EXISTS "Users can manage own profile" ON public.users;
+
 CREATE POLICY "Users can manage own profile"
-  ON users
+  ON public.users
   FOR ALL
   TO authenticated
   USING (auth.uid() = id)
@@ -44,8 +47,10 @@ CREATE POLICY "Admin users can manage all users"
 
 -- Policy 3: Authenticated users can view basic info of other users (for team functionality)
 -- This is needed for staff to see their team members and for general app functionality
+DROP POLICY IF EXISTS "Authenticated users can view basic user info" ON public.users;
+
 CREATE POLICY "Authenticated users can view basic user info"
-  ON users
+  ON public.users
   FOR SELECT
   TO authenticated
   USING (true);

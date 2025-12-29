@@ -6,6 +6,9 @@ interface WelcomePageProps {
   onContinue: () => void;
 }
 
+
+
+
 interface InvitationData {
   email: string;
   name: string;
@@ -180,7 +183,7 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
         return 'アスリート';
       case 'staff':
         return 'スタッフ';
-      case 'admin':
+      case 'global_admin':
         return '管理者';
       default:
         return role;

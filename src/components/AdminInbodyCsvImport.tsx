@@ -3,7 +3,7 @@ import { Upload, FileText, CheckCircle2, AlertTriangle, Loader2 } from "lucide-r
 import { supabase } from "../lib/supabase";
 
 type ParsedRow = {
-  rowIndex: number; // 1-based data row index (excluding header)
+  rowIndex: number;
   phone_number: string;
   measured_at: string; // YYYY-MM-DD
   height: number | null;
@@ -18,10 +18,9 @@ type RowError = {
   raw: Record<string, string>;
 };
 
-const MAX_ROWS = 2000;         // 暴走防止（必要なら調整）
-const UPSERT_CHUNK = 200;      // Supabase upsert chunk
+const MAX_ROWS = 2000;
+const UPSERT_CHUNK = 200; // UI用（Edgeに投げるなら主に表示/分割用）
 
-// --- CSV parser (quoted commas対応の軽量版) ---
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -32,7 +31,7 @@ function parseCSV(text: string): string[][] {
     const c = text[i];
     const next = text[i + 1];
 
-    if (c === '"' ) {
+    if (c === '"') {
       if (inQuotes && next === '"') {
         field += '"';
         i++;
@@ -60,22 +59,28 @@ function parseCSV(text: string): string[][] {
     field += c;
   }
 
-  // last field
   row.push(field);
   rows.push(row);
 
-  // remove trailing empty rows
   while (rows.length && rows[rows.length - 1].every((x) => (x ?? "").trim() === "")) {
     rows.pop();
   }
   return rows;
 }
 
+// ✅ ここが今回の肝：番号付きヘッダを吸収
 function normalizeHeader(h: string) {
-  return (h ?? "")
+  const s = (h ?? "")
     .trim()
+    .replace(/^\uFEFF/, "")
+    .replace(/\u3000/g, " ")
+    .replace(/\s+/g, " ");
+
+  // 例: "1. Mobile Number" / "2) Height" / "3 - Test Date / Time"
+  const withoutPrefix = s.replace(/^\s*\d+\s*[\.\)\-:]\s*/g, "");
+
+  return withoutPrefix
     .toLowerCase()
-    .replace(/\u3000/g, " ") // 全角スペース→半角
     .replace(/\s+/g, " ")
     .replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf %/_-]/g, "");
 }
@@ -91,12 +96,11 @@ function parseNumberOrNull(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// Test Date / Time → measured_at(date) : YYYY-MM-DD に丸め（時刻は捨てる）
+// Test Date / Time → YYYY-MM-DD（プレビュー/簡易バリデーション用）
 function parseToISODateOnly(v: string): string | null {
   const s = (v ?? "").toString().trim();
   if (!s) return null;
 
-  // まず YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD を拾う
   const m = s.match(/(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
   if (m) {
     const y = m[1];
@@ -105,7 +109,6 @@ function parseToISODateOnly(v: string): string | null {
     return `${y}-${mm}-${dd}`;
   }
 
-  // ISOっぽいのは Date で頑張る（タイムゾーン付きでもOK）
   const d = new Date(s);
   if (!Number.isNaN(d.getTime())) {
     const y = d.getFullYear();
@@ -133,7 +136,6 @@ function buildObjectsFromCSV(table: string[][]) {
 }
 
 function findFieldKey(headers: string[], candidates: string[]) {
-  // candidates: normalized header strings
   const normalized = headers.map((h) => ({ raw: h, norm: normalizeHeader(h) }));
   const found = normalized.find((h) => candidates.includes(h.norm));
   return found?.raw ?? null;
@@ -141,6 +143,7 @@ function findFieldKey(headers: string[], candidates: string[]) {
 
 export default function AdminInbodyCsvImport() {
   const [fileName, setFileName] = useState<string>("");
+  const [csvText, setCsvText] = useState<string>(""); // ✅ Edgeに投げる用
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -162,6 +165,7 @@ export default function AdminInbodyCsvImport() {
 
     try {
       const text = await f.text();
+      setCsvText(text); // ✅ 保存
       const table = parseCSV(text);
 
       const { headers, rows } = buildObjectsFromCSV(table);
@@ -170,8 +174,7 @@ export default function AdminInbodyCsvImport() {
         return;
       }
 
-      // 必須カラム：Mobile Number / Test Date / Time / 身長 / Weight / PBF
-      // 多少の表記揺れも吸収
+      // ✅ 番号付きも normalizeHeader が剥がすので、候補は素の名前でOK
       const keyPhone = findFieldKey(headers, [
         "mobile number",
         "mobile",
@@ -202,18 +205,19 @@ export default function AdminInbodyCsvImport() {
       const keyHeight = findFieldKey(headers, ["height", "height_cm", "身長"]);
       const keyWeight = findFieldKey(headers, ["weight", "体重"]);
       const keyPbf = findFieldKey(headers, [
+        "pbf (percent body fat)",
         "pbf",
         "percent body fat",
         "percent_body_fat",
         "body fat percent",
         "body_fat_percent",
-        "体脂肪率",
+        "体脂肪率"
       ]);
 
       const missing = [
         !keyPhone ? "Mobile Number(電話番号)" : null,
         !keyTest ? "Test Date / Time(測定日)" : null,
-        !keyHeight ? "身長" : null,
+        !keyHeight ? "Height(身長)" : null,
         !keyWeight ? "Weight(体重)" : null,
         !keyPbf ? "PBF(体脂肪率)" : null,
       ].filter(Boolean);
@@ -232,7 +236,7 @@ export default function AdminInbodyCsvImport() {
       const ng: RowError[] = [];
 
       rows.forEach((r, idx) => {
-        const rowIndex = idx + 1; // data row number
+        const rowIndex = idx + 1;
         const phone = digitsOnlyPhone(r[keyPhone!]);
         const measured = parseToISODateOnly(r[keyTest!]);
 
@@ -240,9 +244,8 @@ export default function AdminInbodyCsvImport() {
         const weight = parseNumberOrNull(r[keyWeight!]);
         const pbf = parseNumberOrNull(r[keyPbf!]);
 
-        // validation
         if (!phone) {
-          ng.push({ rowIndex, message: "電話番号が空 or 不正です（数字のみで抽出できません）", raw: r });
+          ng.push({ rowIndex, message: "電話番号が空 or 不正です（数字のみ抽出できません）", raw: r });
           return;
         }
         if (!measured) {
@@ -290,38 +293,21 @@ export default function AdminInbodyCsvImport() {
     setInfo("");
 
     try {
-      // upsert payload（DBスキーマに合わせる）
-      const payload = parsed.map((r) => ({
-        phone_number: r.phone_number,
-        measured_at: r.measured_at,
-        height: r.height,
-        weight: r.weight,
-        body_fat_percent: r.body_fat_percent,
-        source: "csv",
-        note: null,
-      }));
+      // ✅ Edge Function に “元CSV” を投げる（Edge側で measured_at_ts / phone_norm / upsert）
+      const { data, error } = await supabase.functions.invoke("import-inbody-csv", {
+        body: {
+          csv: csvText,
+          source: "csv",
+          note: null,
+        },
+      });
 
-      let totalUpserted = 0;
+      if (error) throw error;
 
-      for (let i = 0; i < payload.length; i += UPSERT_CHUNK) {
-        const chunk = payload.slice(i, i + UPSERT_CHUNK);
+      const inserted = (data as any)?.inserted_or_updated ?? 0;
+      const rejected = (data as any)?.rejected ?? 0;
 
-        const { error } = await supabase
-          .from("inbody_records")
-          .upsert(chunk, { onConflict: "phone_number,measured_at" });
-
-        if (error) throw error;
-        totalUpserted += chunk.length;
-      }
-
-      // 任意：電話番号で user_id を紐付けるRPC（存在するなら）
-      // 失敗しても「取り込み自体」は成功扱いにする
-      const { error: linkErr } = await supabase.rpc("link_inbody_records_by_phone");
-      if (linkErr) {
-        console.warn("[link_inbody_records_by_phone] error:", linkErr);
-      }
-
-      setInfo(`✅ 取り込み成功：${totalUpserted} 行を upsert しました（同一電話+同一日付は更新）`);
+      setInfo(`✅ 取り込み成功：${inserted} 行を upsert（rejected: ${rejected}）`);
     } catch (e: any) {
       console.error(e);
       setInfo(`❌ 取り込み失敗: ${String(e?.message ?? e)}`);
@@ -341,14 +327,14 @@ export default function AdminInbodyCsvImport() {
         <div className="text-sm text-gray-600 mb-4">
           <div className="font-medium text-gray-800 mb-1">必須カラム</div>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Mobile Number（電話番号）</li>
-            <li>Test Date / Time（※時刻は捨てて日付だけ保存）</li>
-            <li>身長</li>
+            <li>Mobile Number（電話番号）※「1. Mobile Number」でもOK</li>
+            <li>Test Date / Time（※時刻込みOK / プレビューは日付だけ表示）</li>
+            <li>Height（身長）</li>
             <li>Weight（体重）</li>
             <li>PBF（Percent Body Fat / 体脂肪率）</li>
           </ul>
           <div className="mt-2 text-xs text-gray-500">
-            ※電話番号は数字のみ抽出して保存します（ハイフン等OK）。同一「電話番号 + 測定日」は上書き更新です。
+            ※番号付きヘッダ（例: 1. Mobile Number）も自動で吸収します。
           </div>
         </div>
 
@@ -359,9 +345,7 @@ export default function AdminInbodyCsvImport() {
               <div className="text-sm font-medium text-gray-800">
                 CSVファイルを選択（ドラッグ&ドロップでもOK）
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                上限 {MAX_ROWS} 行 / 1回 {UPSERT_CHUNK} 行ずつupsert
-              </div>
+              <div className="text-xs text-gray-500 mt-1">上限 {MAX_ROWS} 行</div>
               {fileName && <div className="text-xs text-gray-700 mt-2">選択中: {fileName}</div>}
             </div>
           </div>
@@ -403,7 +387,7 @@ export default function AdminInbodyCsvImport() {
                 取り込み中...
               </span>
             ) : (
-              "DBへ一括取り込み"
+              "DBへ一括取り込み（Edge）"
             )}
           </button>
 
@@ -421,7 +405,6 @@ export default function AdminInbodyCsvImport() {
         </div>
       </div>
 
-      {/* エラー一覧 */}
       {errors.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -453,13 +436,10 @@ export default function AdminInbodyCsvImport() {
             </table>
           </div>
 
-          {errors.length > 50 && (
-            <div className="text-xs text-gray-500 mt-2">※表示は最初の50行のみ</div>
-          )}
+          {errors.length > 50 && <div className="text-xs text-gray-500 mt-2">※表示は最初の50行のみ</div>}
         </div>
       )}
 
-      {/* プレビュー（任意） */}
       {parsed.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <h4 className="text-md font-semibold text-gray-900 mb-3">プレビュー（先頭10行）</h4>
@@ -489,9 +469,7 @@ export default function AdminInbodyCsvImport() {
               </tbody>
             </table>
           </div>
-          <div className="text-xs text-gray-500 mt-2">
-            ※ Test Date / Time は「日付だけ保存」です（時刻はDBに入りません）
-          </div>
+          <div className="text-xs text-gray-500 mt-2">※実際の保存は Edge 側が日時（measured_at_ts）も扱います</div>
         </div>
       )}
     </div>

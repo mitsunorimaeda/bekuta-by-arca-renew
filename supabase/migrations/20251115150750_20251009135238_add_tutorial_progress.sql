@@ -24,65 +24,75 @@
     - Admins can monitor tutorial completion rates
 */
 
+/*
+  tutorial_progress (idempotent migration)
+*/
+
 -- Create tutorial_progress table
-CREATE TABLE IF NOT EXISTS tutorial_progress (
+CREATE TABLE IF NOT EXISTS public.tutorial_progress (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   role text NOT NULL CHECK (role IN ('athlete', 'staff', 'admin')),
-  completed_steps jsonb DEFAULT '[]'::jsonb,
+  completed_steps jsonb NOT NULL DEFAULT '[]'::jsonb,
   current_step text DEFAULT NULL,
-  is_completed boolean DEFAULT false,
-  skipped boolean DEFAULT false,
-  last_updated timestamptz DEFAULT now(),
-  created_at timestamptz DEFAULT now(),
-  UNIQUE(user_id, role)
+  is_completed boolean NOT NULL DEFAULT false,
+  skipped boolean NOT NULL DEFAULT false,
+  last_updated timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT tutorial_progress_user_role_unique UNIQUE(user_id, role)
 );
 
--- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_tutorial_progress_user_id ON tutorial_progress(user_id);
-CREATE INDEX IF NOT EXISTS idx_tutorial_progress_role ON tutorial_progress(role);
-CREATE INDEX IF NOT EXISTS idx_tutorial_progress_completed ON tutorial_progress(is_completed);
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_tutorial_progress_user_id
+  ON public.tutorial_progress(user_id);
 
--- Enable RLS
-ALTER TABLE tutorial_progress ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_tutorial_progress_role
+  ON public.tutorial_progress(role);
 
--- Policy: Users can view their own tutorial progress
+CREATE INDEX IF NOT EXISTS idx_tutorial_progress_completed
+  ON public.tutorial_progress(is_completed);
+
+-- RLS
+ALTER TABLE public.tutorial_progress ENABLE ROW LEVEL SECURITY;
+
+-- ✅ Policies（重複で落ちないよう drop → create）
+DROP POLICY IF EXISTS "Users can view own tutorial progress" ON public.tutorial_progress;
 CREATE POLICY "Users can view own tutorial progress"
-  ON tutorial_progress
+  ON public.tutorial_progress
   FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id);
 
--- Policy: Users can insert their own tutorial progress
+DROP POLICY IF EXISTS "Users can create own tutorial progress" ON public.tutorial_progress;
 CREATE POLICY "Users can create own tutorial progress"
-  ON tutorial_progress
+  ON public.tutorial_progress
   FOR INSERT
   TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
--- Policy: Users can update their own tutorial progress
+DROP POLICY IF EXISTS "Users can update own tutorial progress" ON public.tutorial_progress;
 CREATE POLICY "Users can update own tutorial progress"
-  ON tutorial_progress
+  ON public.tutorial_progress
   FOR UPDATE
   TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- Policy: Admins can view all tutorial progress
+DROP POLICY IF EXISTS "Admins can view all tutorial progress" ON public.tutorial_progress;
 CREATE POLICY "Admins can view all tutorial progress"
-  ON tutorial_progress
+  ON public.tutorial_progress
   FOR SELECT
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid()
+        AND u.role = 'admin'
     )
   );
 
 -- Function to automatically update last_updated timestamp
-CREATE OR REPLACE FUNCTION update_tutorial_progress_timestamp()
+CREATE OR REPLACE FUNCTION public.update_tutorial_progress_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.last_updated = now();
@@ -90,9 +100,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to update timestamp on every update
-DROP TRIGGER IF EXISTS trigger_update_tutorial_progress_timestamp ON tutorial_progress;
+-- Trigger
+DROP TRIGGER IF EXISTS trigger_update_tutorial_progress_timestamp ON public.tutorial_progress;
 CREATE TRIGGER trigger_update_tutorial_progress_timestamp
-  BEFORE UPDATE ON tutorial_progress
+  BEFORE UPDATE ON public.tutorial_progress
   FOR EACH ROW
-  EXECUTE FUNCTION update_tutorial_progress_timestamp();
+  EXECUTE FUNCTION public.update_tutorial_progress_timestamp();

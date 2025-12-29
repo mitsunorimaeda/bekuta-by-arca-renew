@@ -32,16 +32,7 @@ CREATE POLICY "Admin users can view all users"
     )
   );
 
-CREATE POLICY "Admin users can view all teams"
-  ON teams FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM users 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
-
+DROP POLICY IF EXISTS "Admin users can view all staff team links" ON staff_team_links;
 CREATE POLICY "Admin users can view all staff team links"
   ON staff_team_links FOR SELECT
   TO authenticated
@@ -52,6 +43,8 @@ CREATE POLICY "Admin users can view all staff team links"
     )
   );
 
+
+DROP POLICY IF EXISTS "Admin users can view all training records" ON training_records;
 CREATE POLICY "Admin users can view all training records"
   ON training_records FOR SELECT
   TO authenticated
@@ -63,6 +56,7 @@ CREATE POLICY "Admin users can view all training records"
   );
 
 -- Add admin insert/update/delete policies
+DROP POLICY IF EXISTS "Admin users can manage all users" ON users;
 CREATE POLICY "Admin users can manage all users"
   ON users FOR ALL
   TO authenticated
@@ -73,22 +67,19 @@ CREATE POLICY "Admin users can manage all users"
     )
   );
 
-CREATE POLICY "Admin users can manage all teams"
-  ON teams FOR ALL
+-- Admin users can view all teams
+DROP POLICY IF EXISTS "Admin users can view all teams" ON public.teams;
+
+CREATE POLICY "Admin users can view all teams"
+  ON public.teams
+  FOR SELECT
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM users 
-      WHERE id = auth.uid() AND role = 'admin'
+      SELECT 1
+      FROM public.users
+      WHERE id = auth.uid()
+        AND role = 'admin'
     )
   );
 
-CREATE POLICY "Admin users can manage all staff team links"
-  ON staff_team_links FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM users 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );

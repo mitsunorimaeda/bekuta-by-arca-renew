@@ -69,4 +69,4 @@ CREATE INDEX IF NOT EXISTS idx_user_badges_user
 
 -- User goals: Optimize active goals queries
 CREATE INDEX IF NOT EXISTS idx_user_goals_user_status
-  ON user_goals(user_id, status, target_date);
+  ON user_goals(user_id, status);

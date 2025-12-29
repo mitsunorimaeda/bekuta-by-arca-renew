@@ -401,7 +401,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                     <AthleteTransferManagement
                       userId={user.id}
                       organizationId={organizationId}
-                      isAdmin={true}
+                      isAdmin={isGlobalAdmin(user.role)}
                     />
                   ) : organizationSubTab === 'team-access' ? (
                     <TeamAccessRequestManagement
@@ -418,7 +418,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
       </main>
 
       <TutorialController
-        steps={getTutorialSteps('admin')}
+        steps={getTutorialSteps('global_admin')}
         isActive={isActive}
         onComplete={completeTutorial}
         onSkip={skipTutorial}

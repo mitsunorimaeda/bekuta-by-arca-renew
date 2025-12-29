@@ -14,86 +14,134 @@
 -- Fix RLS policies for teams table
 -- ============================================================================
 
--- Policy: Organization admins can create teams in their organization
-DROP POLICY IF EXISTS "Organization admins can create teams in their organization" ON teams;
-CREATE POLICY "Organization admins can create teams in their organization"
-  ON teams FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = (SELECT id FROM users WHERE user_id = auth.uid())
-      AND role = 'organization_admin'
+/*
+  Fix teams RLS policies with correct user mapping.
+  - auth.uid() is auth.users.id (uuid)
+  - public.users.user_id stores auth.users.id as text
+  - public.users.id is app user id (uuid)
+*/
+
+set search_path = public;
+
+-- 1) helper: auth.uid() -> public.users.id
+create or replace function public.current_app_user_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.id
+  from public.users u
+  where u.user_id = auth.uid()::text
+  limit 1
+$$;
+
+-- 2) 念のため teams の該当ポリシーは一旦DROP（存在しても/しなくてもOK）
+drop policy if exists "Organization admins can create teams in their organization" on public.teams;
+drop policy if exists "Organization admins can update teams in their organization" on public.teams;
+drop policy if exists "Organization admins can delete teams in their organization" on public.teams;
+drop policy if exists "Organization admins can view teams in their organization"   on public.teams;
+
+-- 3) 再作成：organization_members.user_id は public.users.id (uuid) 前提で判定
+create policy "Organization admins can create teams in their organization"
+  on public.teams
+  for insert
+  to authenticated
+  with check (
+    -- global admin
+    exists (
+      select 1
+      from public.users uu
+      where uu.id = public.current_app_user_id()
+        and uu.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.user_id = auth.uid() AND users.role = 'admin'
+    or
+    -- org admin
+    exists (
+      select 1
+      from public.organization_members om
+      where om.user_id = public.current_app_user_id()
+        and om.organization_id = public.teams.organization_id
+        and om.role = 'organization_admin'
     )
   );
 
--- Policy: Organization admins can update teams in their organization
-DROP POLICY IF EXISTS "Organization admins can update teams in their organization" ON teams;
-CREATE POLICY "Organization admins can update teams in their organization"
-  ON teams FOR UPDATE
-  TO authenticated
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = (SELECT id FROM users WHERE user_id = auth.uid())
-      AND role = 'organization_admin'
+create policy "Organization admins can update teams in their organization"
+  on public.teams
+  for update
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.users uu
+      where uu.id = public.current_app_user_id()
+        and uu.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.user_id = auth.uid() AND users.role = 'admin'
+    or
+    exists (
+      select 1
+      from public.organization_members om
+      where om.user_id = public.current_app_user_id()
+        and om.organization_id = public.teams.organization_id
+        and om.role = 'organization_admin'
     )
   )
-  WITH CHECK (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = (SELECT id FROM users WHERE user_id = auth.uid())
-      AND role = 'organization_admin'
+  with check (
+    exists (
+      select 1
+      from public.users uu
+      where uu.id = public.current_app_user_id()
+        and uu.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.user_id = auth.uid() AND users.role = 'admin'
-    )
-  );
-
--- Policy: Organization admins can delete teams in their organization
-DROP POLICY IF EXISTS "Organization admins can delete teams in their organization" ON teams;
-CREATE POLICY "Organization admins can delete teams in their organization"
-  ON teams FOR DELETE
-  TO authenticated
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = (SELECT id FROM users WHERE user_id = auth.uid())
-      AND role = 'organization_admin'
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.user_id = auth.uid() AND users.role = 'admin'
+    or
+    exists (
+      select 1
+      from public.organization_members om
+      where om.user_id = public.current_app_user_id()
+        and om.organization_id = public.teams.organization_id
+        and om.role = 'organization_admin'
     )
   );
 
--- Policy: Organization admins can view teams in their organization
-DROP POLICY IF EXISTS "Organization admins can view teams in their organization" ON teams;
-CREATE POLICY "Organization admins can view teams in their organization"
-  ON teams FOR SELECT
-  TO authenticated
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = (SELECT id FROM users WHERE user_id = auth.uid())
-      AND role IN ('organization_admin', 'viewer')
+create policy "Organization admins can delete teams in their organization"
+  on public.teams
+  for delete
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.users uu
+      where uu.id = public.current_app_user_id()
+        and uu.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.user_id = auth.uid() AND users.role = 'admin'
+    or
+    exists (
+      select 1
+      from public.organization_members om
+      where om.user_id = public.current_app_user_id()
+        and om.organization_id = public.teams.organization_id
+        and om.role = 'organization_admin'
     )
   );
 
--- ============================================================================
--- Migration Complete
--- ============================================================================
-
-DO $$
-BEGIN
-  RAISE NOTICE 'Teams RLS policies updated successfully!';
-  RAISE NOTICE 'Admin users can now create, update, and delete teams.';
-END $$;
+create policy "Organization admins can view teams in their organization"
+  on public.teams
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.users uu
+      where uu.id = public.current_app_user_id()
+        and uu.role = 'admin'
+    )
+    or
+    exists (
+      select 1
+      from public.organization_members om
+      where om.user_id = public.current_app_user_id()
+        and om.organization_id = public.teams.organization_id
+        and om.role in ('organization_admin','viewer')
+    )
+  );

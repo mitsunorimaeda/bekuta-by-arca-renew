@@ -1,22 +1,18 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+// src/components/AthleteView.tsx
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { getTodayJSTString } from '../lib/date';
-import { toJSTDateString } from '../lib/date';
-import { User } from '../lib/supabase';
-import { Alert } from '../lib/alerts';
+import type { Database } from '../lib/database.types';
 import { TrainingForm } from './TrainingForm';
 import { ACWRChart } from './ACWRChart';
 import { TrainingRecordsList } from './TrainingRecordsList';
 import { AlertSummary } from './AlertSummary';
-// Lazy load heavy components
-
-const ExportPanel = lazy(() => import('./ExportPanel').then(m => ({ default: m.ExportPanel })));
+import { supabase } from '../lib/supabase';
 import { WeightForm } from './WeightForm';
 import { WeightChart } from './WeightChart';
 import { WeightRecordsList } from './WeightRecordsList';
 import { WeightACWRChart } from './WeightACWRChart';
 import { InsightCard } from './InsightCard';
 import { BMIDisplay } from './BMIDisplay';
-import { EmailNotificationSettings } from './EmailNotificationSettings';
 import { ProfileEditForm } from './ProfileEditForm';
 import { TutorialController } from './TutorialController';
 import { PerformanceRecordForm } from './PerformanceRecordForm';
@@ -44,23 +40,23 @@ import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusButton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
-import type { WeightRecord } from '../lib/supabase';
-import { getRiskLabel,getRiskColor } from '../lib/riskUtils';
+import { getRiskLabel, getRiskColor } from '../lib/riskUtils';
 import { useLastRecords } from '../hooks/useLastRecords';
-import type { Database } from '../lib/database.types';
-type UserProfile = Database['public']['Tables']['users']['Row'];
 import { useInbodyData } from '../hooks/useInbodyData';
 import { InBodyLatestCard } from './InBodyLatestCard';
 import { InBodyCharts } from './InBodyCharts';
+import { getTodayEnergySummary } from '../lib/getTodayEnergySummary';
+// ✅ 栄養カードはこれだけ残す
+import { NutritionCard } from './NutritionCard';
+import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
+import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
+
 import {
   Activity,
   TrendingUp,
   Calendar,
   AlertTriangle,
-  BarChart3,
-  Download,
   Scale,
-  LineChart,
   Settings,
   HelpCircle,
   Zap,
@@ -71,22 +67,29 @@ import {
   X,
   LogOut,
   Trophy,
-  MessageSquare,
   Shield,
   FileText,
   Building2,
-  Droplets
+  Droplets,
+  Flame,
 } from 'lucide-react';
+
 import { useDarkMode } from '../hooks/useDarkMode';
-const GamificationView = lazy(() => import('./GamificationView').then(m => ({ default: m.GamificationView })));
-const MessagingPanel = lazy(() => import('./MessagingPanel').then(m => ({ default: m.MessagingPanel })));
 import { MenstrualCycleForm } from './MenstrualCycleForm';
 import { BasalBodyTemperatureForm } from './BasalBodyTemperatureForm';
 import { MenstrualCycleChart } from './MenstrualCycleChart';
 import { MenstrualCycleCalendar } from './MenstrualCycleCalendar';
 import { CyclePerformanceCorrelation } from './CyclePerformanceCorrelation';
-import { supabase } from '../lib/supabase';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
+import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
+
+// Lazy load heavy components
+const ExportPanel = lazy(() => import('./ExportPanel').then((m) => ({ default: m.ExportPanel })));
+const GamificationView = lazy(() => import('./GamificationView').then((m) => ({ default: m.GamificationView })));
+const MessagingPanel = lazy(() => import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel })));
+
+type UserProfile = Database['public']['Tables']['users']['Row'];
+type DailyEnergySnapshotRow = Database['public']['Tables']['daily_energy_snapshots']['Row'];
 
 type AthleteViewProps = {
   user: UserProfile;
@@ -100,10 +103,91 @@ type AthleteViewProps = {
   onUserUpdated?: () => Promise<void> | void;
 };
 
-export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp,onUserUpdated }: AthleteViewProps) {
-  console.log('[AthleteView] User object:', user);
-  console.log('[AthleteView] User gender:', user.gender);
+export function AthleteView({
+  user,
+  alerts,
+  onLogout,
+  onHome,
+  onNavigateToPrivacy,
+  onNavigateToTerms,
+  onNavigateToCommercial,
+  onNavigateToHelp,
+  onUserUpdated,
+}: AthleteViewProps) {
+  // =========================
+  // ✅ DEVログは“必要な時だけ”
+  // =========================
+  const loggedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (loggedOnceRef.current) return;
+    loggedOnceRef.current = true;
 
+    console.log('[AthleteView] mounted', {
+      id: user.id,
+      role: user.role,
+      gender: user.gender,
+      team_id: user.team_id,
+    });
+  }, [user.id, user.role, user.gender, user.team_id]);
+
+  if (import.meta.env.DEV) {
+    console.count('[AthleteView] render');
+  }
+
+  const today = useMemo(() => getTodayJSTString(), []);
+
+  const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<
+    'unified' | 'overview' | 'weight' | 'insights' |'nutrition'| 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
+  >('unified');
+
+  //② nutrition_enabled を見て表示制御
+  const canUseNutrition = !!(user as any).nutrition_enabled;
+  // ③ もし nutrition_enabled=false なのに nutrition タブへ行こうとしたら戻す
+  useEffect(() => {
+    if (!canUseNutrition && activeTab === 'nutrition') {
+      setActiveTab('unified');
+    }
+  }, [canUseNutrition, activeTab])
+
+
+  const [celebrationData, setCelebrationData] = useState<{
+    testName: string;
+    value: number;
+    unit: string;
+    previousBest?: number;
+  } | null>(null);
+
+  const [hasStartedTutorial, setHasStartedTutorial] = useState(false);
+
+  // =========================
+  // ✅ gender 正規化（useMemo）
+  // =========================
+  const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null = useMemo(() => {
+    return user.gender === 'female' || user.gender === 'male' || user.gender === 'other' || user.gender === 'prefer_not_to_say'
+      ? user.gender
+      : null;
+  }, [user.gender]);
+
+  const normalizedGenderBinary: 'female' | 'male' | null = useMemo(() => {
+    return user.gender === 'female' || user.gender === 'male' ? user.gender : null;
+  }, [user.gender]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('[gender check]', { raw: user.gender, binary: normalizedGenderBinary, full: normalizedGenderFull });
+  }, [user.gender, normalizedGenderBinary, normalizedGenderFull]);
+
+  // =========================
+  // ✅ Hooks（データ）
+  // =========================
   const {
     records,
     loading,
@@ -111,10 +195,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     addTrainingRecord,
     updateTrainingRecord,
     deleteTrainingRecord,
-    acwrData
+    acwrData,
   } = useTrainingData(user.id);
-
-
 
   const {
     records: weightRecords,
@@ -124,7 +206,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     updateWeightRecord,
     deleteWeightRecord,
     getLatestWeight,
-    getWeightChange
+    getWeightChange,
   } = useWeightData(user.id);
 
   const {
@@ -135,7 +217,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     updateSleepRecord,
     getAverageSleepHours,
     getAverageSleepQuality,
-    getLatestSleep
+    getLatestSleep,
   } = useSleepData(user.id);
 
   const {
@@ -147,11 +229,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     getAverageMotivation,
     getAverageEnergy,
     getAverageStress,
-    getLatestMotivation
+    getLatestMotivation,
   } = useMotivationData(user.id);
 
   const { records: inbodyRecords, latest: latestInbody, loading: inbodyLoading, error: inbodyError } = useInbodyData(user.id);
-
   const { cycles: menstrualCycles, addCycle: addMenstrualCycle, updateCycle: updateMenstrualCycle } = useMenstrualCycleData(user.id);
 
   const [performanceCategory, setPerformanceCategory] = useState<'jump' | 'endurance' | 'strength' | 'sprint' | 'agility'>('jump');
@@ -165,276 +246,39 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     updateRecord: updatePerformanceRecord,
     checkExistingRecord,
     getRecordsByTestType,
-    getPersonalBest
+    getPersonalBest,
   } = usePerformanceData(user.id, performanceCategory);
 
-  const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } = useTutorialContext();
+  const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } =
+    useTutorialContext();
+
   const { isDarkMode } = useDarkMode();
 
-  const [, setShowAlertPanel] = useState(false);
-  const [showExportPanel, setShowExportPanel] = useState(false);
-  const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
-  const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [, setProfileRefreshKey] = useState(0);
-  const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
-  const [activeTab, setActiveTab] = useState<
-    'unified' | 'overview'  | 'weight' | 'insights' | 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
-  >('unified');
+  // =========================
+  // ✅ 栄養（今日）
+  // =========================
+  const {
+    logs: nutritionLogsToday,
+    totals: nutritionTotalsToday,
+    loading: nutritionLoading,
+    error: nutritionError,
+  } = useTodayNutritionTotals(user.id, today);
 
-  const [celebrationData, setCelebrationData] = useState<{
-    testName: string;
-    value: number;
-    unit: string;
-    previousBest?: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (shouldShowTutorial() && !loading) {
-      startTutorial();
-    }
-  }, [shouldShowTutorial, startTutorial, loading]);
-
-  const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
-  const latestMotivation = getLatestMotivation();
-  const latestWeight = getLatestWeight();
-
-  // // ★ 最新 sleep record（必ず一番新しい日付を選ぶ）
-  // const lastSleepRecord =
-  //   sleepRecords.length > 0
-  //     ? sleepRecords.reduce(
-  //         (latest, r) =>
-  //           !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
-  //         null as (typeof sleepRecords)[number] | null
-  //       )
-  //     : null;
-
-  // // ★ 最新 motivation record（必ず一番新しい日付を選ぶ）
-  // const lastMotivationRecord =
-  //   motivationRecords.length > 0
-  //     ? motivationRecords.reduce(
-  //         (latest, r) =>
-  //           !latest || new Date(r.date) > new Date(latest.date) ? r : latest,
-  //         null as (typeof motivationRecords)[number] | null
-  //       )
-  //     : null;
-
-  // gender をコンポーネント用に正規化
-  const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null =
-    user.gender === 'female' || user.gender === 'male' || user.gender === 'other' || user.gender === 'prefer_not_to_say'
-      ? user.gender
-      : null;
-
-  const normalizedGenderBinary: 'female' | 'male' | null =
-    user.gender === 'female' || user.gender === 'male' ? user.gender : null;
-
-    console.log('[gender check] raw:', user.gender, 'binary:', normalizedGenderBinary, 'full:', normalizedGenderFull);
-
-  // sleep_quality を number に統一（null の場合は 0 とみなす）
-  const normalizedSleepRecords = sleepRecords.map(r => ({
-    ...r,
-    sleep_quality: r.sleep_quality ?? 0
-  }));
-
-
-
-  // ユーザー固有のアラート
-  const userAlerts = alerts.filter(alert => alert.user_id === user.id);
-  const highPriorityAlerts = userAlerts.filter(alert => alert.priority === 'high');
-
-  // 今日の日付（JST）
-  const today = getTodayJSTString();
-  const todayWeight = weightRecords.find(r => r.date === today);
-  
-
-  // Get last records for quick record suggestions
-  // const lastTrainingRecord =
-  // records.length > 0
-  //   ? records.reduce((latest, r) =>
-  //       !latest || new Date(r.date) > new Date(latest.date) ? r : latest
-  //     , null as (typeof records)[number] | null)
-  //   : null;
-
-  const lastWeightRecord =
-  weightRecords.length > 0
-    ? weightRecords.reduce((latest, r) =>
-        !latest || new Date(r.date) > new Date(latest.date) ? r : latest
-      , null as (typeof weightRecords)[number] | null)
-    : null;
-
-  // // Calculate weekly average for smart input
-  // const getWeeklyAverage = () => {
-  //   const oneWeekAgo = new Date();
-  //   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-  //   const recentRecords = records.filter(r => new Date(r.date) >= oneWeekAgo);
-
-  //   if (recentRecords.length === 0) return null;
-
-  //   const totalRpe = recentRecords.reduce((sum, r) => sum + r.rpe, 0);
-  //   const totalDuration = recentRecords.reduce((sum, r) => sum + r.duration_min, 0);
-  //   const totalLoad = recentRecords.reduce((sum, r) => sum + (r.load ?? 0), 0);
-
-  //   return {
-  //     rpe: totalRpe / recentRecords.length,
-  //     duration: totalDuration / recentRecords.length,
-  //     load: totalLoad / recentRecords.length
-  //   };
-  // };
-
-  // const weeklyAverage = getWeeklyAverage();
-
-
-//   const getConsecutiveDays = () => {
-//    //if (records.length === 0) return 0;
-
-//    const sortedDates = [...new Set(records.map(r => r.date))].sort();
-//     const todayDate = new Date();
-//     todayDate.setHours(0, 0, 0, 0);
-
-//     let consecutive = 0;
-//     let currentDate = new Date(todayDate);
-
-//    for (let i = 0; i < 365; i++) {
-//      const dateStr = toJSTDateString(currentDate);
-//      if (sortedDates.includes(dateStr)) {
-//        consecutive++;
-//        currentDate.setDate(currentDate.getDate() - 1);
-//      } else {
-//        break;
-//      }
-//    }
-
-//    return consecutive;
-//   };
-
-  
-//  const consecutiveDays = getConsecutiveDays();
-
-  const handlePerformanceRecordSubmit = async (recordData: any) => {
-    const result = await addPerformanceRecord(recordData);
-
-    if (result.isNewPersonalBest) {
-      const testType = performanceTestTypes.find(t => t.id === recordData.test_type_id);
-      const previousBest = getPersonalBest(recordData.test_type_id);
-
-      if (testType) {
-        setCelebrationData({
-          testName: testType.display_name,
-          value: recordData.values.primary_value,
-          unit: testType.unit,
-          previousBest: previousBest?.value
-        });
-      }
-    }
-
-    return result;
-  };
-
-  // Training 更新用のラッパー（Promise<void> に揃える）
-  const handleTrainingUpdate = async (
-    recordId: string,
-    recordData: { rpe: number; duration_min: number; date?: string }
-  ) => {
-    await updateTrainingRecord(recordId, recordData);
-  };
-
-  const handleTrainingUpdateForList = async (
-    recordId: string,
-    recordData: { rpe: number; duration_min: number }
-  ) => {
-    await updateTrainingRecord(recordId, recordData);
-  };
-
-  // ✅ UnifiedDailyCheckIn 用：training submit（矢印/電波も保存）
-  const handleTrainingSubmitForCheckIn = async (data: {
-    rpe: number;
-    duration_min: number;
-    date: string;
-    arrow_score?: number;
-    signal_score?: number;
-  }) => {
-    await addTrainingRecord({
-      rpe: data.rpe,
-      duration_min: data.duration_min,
-      date: data.date,
-      arrow_score: data.arrow_score ?? 50,
-      signal_score: data.signal_score ?? 50,
-    } as any);
-  };
-
-  // ✅ UnifiedDailyCheckIn 用：training update（矢印/電波も更新）
-  const handleTrainingUpdateForCheckIn = async (
-    recordId: string,
-    recordData: {
-      rpe: number;
-      duration_min: number;
-      arrow_score?: number;
-      signal_score?: number;
-    }
-  ) => {
-    await updateTrainingRecord(recordId, {
-      rpe: recordData.rpe,
-      duration_min: recordData.duration_min,
-      arrow_score: recordData.arrow_score ?? 50,
-      signal_score: recordData.signal_score ?? 50,
-    } as any);
-  };
-
-  // Performance 更新用ラッパー
-  const handlePerformanceUpdate = async (
-    recordId: string,
-    updates: {
-      date?: string;
-      values?: Record<string, any>;
-      notes?: string;
-      is_official?: boolean;
-      weather_conditions?: string;
-    }
-  ) => {
-    await updatePerformanceRecord(recordId, updates);
-  };
-
-  const lastPerformanceRecords = new Map();
-  const personalBestsMap = new Map();
-
-  performanceTestTypes.forEach(testType => {
-    const recs = getRecordsByTestType(testType.id);
-    if (recs.length > 0) {
-      lastPerformanceRecords.set(testType.id, recs[0]);
-    }
-
-    const pb = getPersonalBest(testType.id);
-    if (pb) {
-      personalBestsMap.set(testType.id, pb);
-    }
-  });
-
-  const getCategoryDisplayName = (category: string) => {
-    switch (category) {
-      case 'jump': return 'ジャンプ測定';
-      case 'endurance': return '全身持久力測定';
-      case 'strength': return '筋力測定';
-      case 'sprint': return 'スプリント測定';
-      case 'agility': return 'アジリティ測定';
-      default: return 'パフォーマンス測定';
-    }
-  };
-
-  const [menuOpen, setMenuOpen] = useState(false);
-
+  // =========================
+  // ✅ Derived（useMemoで参照安定化しやすい形へ）
+  // =========================
   const derived = useAthleteDerivedValues({
     trainingRecords: records,
     weightRecords,
     sleepRecords,
     motivationRecords,
   });
-  
-  // ✅ ここ3つだけ使うならこれでOK
+
   const daysWithData = derived.daysWithTrainingData;
   const consecutiveDays = derived.consecutiveTrainingDays;
   const weeklyAverage = derived.weeklyAverage;
-  
-  // ✅ lastRecord系は “直接” 渡す（中間変数いらない）
+
+  // ✅ lastRecord系は “直接” 渡す
   const {
     normalizedLastTrainingRecord,
     normalizedLastTrainingRecordForCheckIn,
@@ -447,10 +291,254 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     lastSleepRecord: derived.lastSleepRecord,
     lastMotivationRecord: derived.lastMotivationRecord,
   });
-  
 
-  
+  // =========================
+  // ✅ sleepRecords 正規化（useMemo）
+  // =========================
+  const normalizedSleepRecords = useMemo(() => {
+    return sleepRecords.map((r) => ({
+      ...r,
+      sleep_quality: r.sleep_quality ?? 0,
+    }));
+  }, [sleepRecords]);
+
+  const timelineSleepRecords = useMemo(() => {
+    return normalizedSleepRecords.map((r) => ({
+      sleep_hours: r.sleep_hours,
+      sleep_quality: r.sleep_quality,
+      date: r.date,
+    }));
+  }, [normalizedSleepRecords]);
+
+  // =========================
+  // ✅ アラート（useMemo）
+  // =========================
+  const userAlerts = useMemo(() => alerts.filter((a) => a.user_id === user.id), [alerts, user.id]);
+  const highPriorityAlerts = useMemo(() => userAlerts.filter((a) => a.priority === 'high'), [userAlerts]);
+
+  const todayWeight = useMemo(() => weightRecords.find((r) => r.date === today), [weightRecords, today]);
+
+  // =========================
+  // ✅ 今日のスナップショット fetch（setStateでレンダー増えるのは正常）
+  // =========================
   useEffect(() => {
+    let cancelled = false;
+
+    async function fetchSnapshot() {
+      try {
+        const { data, error } = await supabase
+          .from('daily_energy_snapshots')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('date', today)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!cancelled) setSnapshotToday(data ?? null);
+      } catch (e) {
+        if (import.meta.env.DEV) console.error('[daily_energy_snapshots] fetch error:', e);
+        if (!cancelled) setSnapshotToday(null);
+      }
+    }
+
+    fetchSnapshot();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id, today]);
+
+  // =========================
+  // ✅ 今日の負荷（useMemo）
+  // =========================
+  const todayTrainingRecord = useMemo(() => records.find((r) => r.date === today) ?? null, [records, today]);
+
+  const todayLoad = useMemo(() => {
+    return todayTrainingRecord ? (todayTrainingRecord.rpe ?? 0) * (todayTrainingRecord.duration_min ?? 0) : 0;
+  }, [todayTrainingRecord]);
+
+  // =========================
+  // ✅ エネルギーサマリー（useMemo）
+  // =========================
+  const intakeToday = 0;
+
+  const energySummary = useMemo(() => {
+    return getTodayEnergySummary({
+      date: today,
+      snapshot: snapshotToday
+        ? {
+            bmr: snapshotToday.bmr,
+            tdee: snapshotToday.tdee,
+            srpe: snapshotToday.srpe,
+            activity_factor: Number(snapshotToday.activity_factor),
+          }
+        : null,
+      intakeCalories: intakeToday,
+      fallback: { todayLoad },
+    });
+  }, [today, snapshotToday, intakeToday, todayLoad]);
+
+  // =========================
+  // ✅ チュートリアル開始（必要時のみ）
+  // =========================
+  useEffect(() => {
+    if (hasStartedTutorial) return;
+    if (loading) return;
+
+    if (shouldShowTutorial()) {
+      startTutorial();
+      setHasStartedTutorial(true);
+    }
+  }, [loading, hasStartedTutorial, shouldShowTutorial, startTutorial]);
+
+  // =========================
+  // ✅ “最新値”系（useMemo）
+  // =========================
+  const latestACWR = useMemo(() => (acwrData.length > 0 ? acwrData[acwrData.length - 1] : null), [acwrData]);
+  const latestWeight = useMemo(() => getLatestWeight(), [getLatestWeight]);
+
+  const lastWeightRecord = useMemo(() => {
+    if (weightRecords.length === 0) return null;
+    return weightRecords.reduce((latest, r) => (!latest || new Date(r.date) > new Date(latest.date) ? r : latest), null as any);
+  }, [weightRecords]);
+
+  // =========================
+  // ✅ handlers（useCallbackで参照固定）
+  // =========================
+  const handleTrainingSubmit = useCallback(
+    async (data: { rpe: number; duration_min: number; date: string; arrow_score?: number; signal_score?: number }) => {
+      await addTrainingRecord({
+        rpe: data.rpe,
+        duration_min: data.duration_min,
+        date: data.date,
+        arrow_score: data.arrow_score ?? 50,
+        signal_score: data.signal_score ?? 50,
+      } as any);
+
+      await upsertDailyEnergySnapshot({
+        userId: user.id,
+        date: data.date,
+        rpe: data.rpe,
+        durationMin: data.duration_min,
+      });
+    },
+    [addTrainingRecord, user.id]
+  );
+
+  const handleTrainingUpdate = useCallback(
+    async (recordId: string, recordData: { rpe: number; duration_min: number; date?: string }) => {
+      await updateTrainingRecord(recordId, recordData);
+    },
+    [updateTrainingRecord]
+  );
+
+  const handleTrainingUpdateForList = useCallback(
+    async (recordId: string, recordData: { rpe: number; duration_min: number }) => {
+      await updateTrainingRecord(recordId, recordData);
+    },
+    [updateTrainingRecord]
+  );
+
+  const handleTrainingSubmitForCheckIn = useCallback(
+    async (data: { rpe: number; duration_min: number; date: string; arrow_score?: number; signal_score?: number }) => {
+      await addTrainingRecord({
+        rpe: data.rpe,
+        duration_min: data.duration_min,
+        date: data.date,
+        arrow_score: data.arrow_score ?? 50,
+        signal_score: data.signal_score ?? 50,
+      } as any);
+    },
+    [addTrainingRecord]
+  );
+
+  const handleTrainingUpdateForCheckIn = useCallback(
+    async (
+      recordId: string,
+      recordData: { rpe: number; duration_min: number; arrow_score?: number; signal_score?: number }
+    ) => {
+      await updateTrainingRecord(recordId, {
+        rpe: recordData.rpe,
+        duration_min: recordData.duration_min,
+        arrow_score: recordData.arrow_score ?? 50,
+        signal_score: recordData.signal_score ?? 50,
+      } as any);
+    },
+    [updateTrainingRecord]
+  );
+
+  const handlePerformanceUpdate = useCallback(
+    async (
+      recordId: string,
+      updates: { date?: string; values?: Record<string, any>; notes?: string; is_official?: boolean; weather_conditions?: string }
+    ) => {
+      await updatePerformanceRecord(recordId, updates);
+    },
+    [updatePerformanceRecord]
+  );
+
+  const handlePerformanceRecordSubmit = useCallback(
+    async (recordData: any) => {
+      const result = await addPerformanceRecord(recordData);
+
+      if (result?.isNewPersonalBest) {
+        const testType = performanceTestTypes.find((t) => t.id === recordData.test_type_id);
+        const previousBest = getPersonalBest(recordData.test_type_id);
+
+        if (testType) {
+          setCelebrationData({
+            testName: testType.display_name,
+            value: recordData.values.primary_value,
+            unit: testType.unit,
+            previousBest: previousBest?.value,
+          });
+        }
+      }
+
+      return result;
+    },
+    [addPerformanceRecord, performanceTestTypes, getPersonalBest]
+  );
+
+  const getCategoryDisplayName = useCallback((category: string) => {
+    switch (category) {
+      case 'jump':
+        return 'ジャンプ測定';
+      case 'endurance':
+        return '全身持久力測定';
+      case 'strength':
+        return '筋力測定';
+      case 'sprint':
+        return 'スプリント測定';
+      case 'agility':
+        return 'アジリティ測定';
+      default:
+        return 'パフォーマンス測定';
+    }
+  }, []);
+
+  // =========================
+  // ✅ Map生成（useMemoで参照固定）
+  // =========================
+  const { lastPerformanceRecords, personalBestsMap } = useMemo(() => {
+    const lastMap = new Map();
+    const pbMap = new Map();
+
+    performanceTestTypes.forEach((testType) => {
+      const recs = getRecordsByTestType(testType.id);
+      if (recs.length > 0) lastMap.set(testType.id, recs[0]);
+
+      const pb = getPersonalBest(testType.id);
+      if (pb) pbMap.set(testType.id, pb);
+    });
+
+    return { lastPerformanceRecords: lastMap, personalBestsMap: pbMap };
+  }, [performanceTestTypes, getRecordsByTestType, getPersonalBest]);
+
+  // =========================
+  // ✅ derived check ログもDEV限定
+  // =========================
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log('[derived check]', {
       lastTraining: derived.lastTrainingRecord?.date,
       lastSleep: derived.lastSleepRecord?.date,
@@ -466,12 +554,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
     derived.consecutiveTrainingDays,
   ]);
 
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <header className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 shadow-lg transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          {/* ここだけで左右分ける */}
           <div className="flex items-center justify-between">
             {/* 左：ロゴ */}
             <button
@@ -483,7 +569,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               <span className="text-2xl sm:text-3xl font-bold text-white">Bekuta</span>
               <span className="text-xs font-medium text-blue-100 hidden sm:inline">by ARCA</span>
             </button>
-  
+
             {/* 右：? と ハンバーガー */}
             <div className="flex items-center gap-3">
               <button
@@ -495,7 +581,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               >
                 <HelpCircle className="w-5 h-5" />
               </button>
-  
+
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
@@ -514,15 +600,26 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
       <div className="bg-gray-50 dark:bg-gray-900 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {user.name}さん · {activeTab === 'unified' ? 'すべての記録を一目で確認' :
-             activeTab === 'overview' ? '今日の練習データを記録' :
-             activeTab === 'weight' ? '体重の変化を管理' :
-             activeTab === 'insights' ? 'データから新しい発見を' :
-             activeTab === 'performance' ? 'パフォーマンスを測定' :
-             activeTab === 'conditioning' ? 'コンディション管理' :
-             activeTab === 'cycle' ? '月経周期とコンディションを記録' :
-             activeTab === 'gamification' ? 'ストリーク、バッジ、目標を管理' :
-             '設定とお知らせ'}
+            {user.name}さん ·{' '}
+            {activeTab === 'unified'
+              ? 'すべての記録を一目で確認'
+              : activeTab === 'overview'
+              ? '今日の練習データを記録'
+              : activeTab === 'weight'
+              ? '体重の変化を管理'
+              : activeTab === 'insights'
+              ? 'データから新しい発見を'
+              : activeTab === 'performance'
+              ? 'パフォーマンスを測定'
+              : activeTab === 'conditioning'
+              ? 'コンディション管理'
+              : activeTab === 'cycle'
+              ? '月経周期とコンディションを記録'
+               : activeTab === 'nutrition'
+              ? '栄養：AI下書き→あなたが確定'
+              : activeTab === 'gamification'
+              ? 'ストリーク、バッジ、目標を管理'
+              : '設定とお知らせ'}
           </p>
         </div>
       </div>
@@ -537,10 +634,12 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2">
-
-              {/* 🏠 ホーム（旧：統合ビュー） */}
+              {/* 🏠 ホーム */}
               <button
-                onClick={() => { setActiveTab('unified'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('unified');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'unified'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -553,7 +652,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {/* 体重管理 */}
               <button
-                onClick={() => { setActiveTab('weight'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('weight');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'weight'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -566,7 +668,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {/* コンディション管理 */}
               <button
-                onClick={() => { setActiveTab('conditioning'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('conditioning');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'conditioning'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -580,7 +685,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               {/* 女性のみ：月経周期 */}
               {normalizedGenderBinary === 'female' && (
                 <button
-                  onClick={() => { setActiveTab('cycle'); setMenuOpen(false); }}
+                  onClick={() => {
+                    setActiveTab('cycle');
+                    setMenuOpen(false);
+                  }}
                   className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                     activeTab === 'cycle'
                       ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -594,7 +702,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {/* 練習記録 */}
               <button
-                onClick={() => { setActiveTab('overview'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('overview');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'overview'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -605,9 +716,29 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <span className="text-sm font-medium">練習記録</span>
               </button>
 
+              {canUseNutrition && (
+                <button
+                  onClick={() => {
+                    setActiveTab('nutrition');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                    activeTab === 'nutrition'
+                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Flame className="w-4 h-4" />
+                  <span className="text-sm font-medium">栄養</span>
+                </button>
+              )}
+
               {/* パフォーマンス */}
               <button
-                onClick={() => { setActiveTab('performance'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('performance');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'performance'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -620,7 +751,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {/* ゲーミフィケーション */}
               <button
-                onClick={() => { setActiveTab('gamification'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('gamification');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'gamification'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -632,11 +766,14 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 <span className="text-sm font-medium">ゲーミフィケーション</span>
               </button>
 
-              {/* 設定・法的情報 */}
+              {/* 設定 */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
 
               <button
-                onClick={() => { setActiveTab('settings'); setMenuOpen(false); }}
+                onClick={() => {
+                  setActiveTab('settings');
+                  setMenuOpen(false);
+                }}
                 className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                   activeTab === 'settings'
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
@@ -652,7 +789,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {onNavigateToHelp && (
                 <button
-                  onClick={() => { setMenuOpen(false); onNavigateToHelp(); }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onNavigateToHelp();
+                  }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <HelpCircle className="w-4 h-4" />
@@ -662,7 +802,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {onNavigateToPrivacy && (
                 <button
-                  onClick={() => { setMenuOpen(false); onNavigateToPrivacy(); }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onNavigateToPrivacy();
+                  }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <Shield className="w-4 h-4" />
@@ -672,7 +815,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {onNavigateToTerms && (
                 <button
-                  onClick={() => { setMenuOpen(false); onNavigateToTerms(); }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onNavigateToTerms();
+                  }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <FileText className="w-4 h-4" />
@@ -682,7 +828,10 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
               {onNavigateToCommercial && (
                 <button
-                  onClick={() => { setMenuOpen(false); onNavigateToCommercial(); }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onNavigateToCommercial();
+                  }}
                   className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <Building2 className="w-4 h-4" />
@@ -727,37 +876,48 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 else if (section === 'conditioning') setActiveTab('conditioning');
                 else if (section === 'cycle') setActiveTab('cycle');
               }}
-              onQuickAdd={() => {
-                console.log('[AthleteView] Quick add button clicked, opening UnifiedDailyCheckIn');
-                setShowUnifiedCheckIn(true);
-              }}
+              onQuickAdd={() => setShowUnifiedCheckIn(true)}
             />
+
+
+
+            {/* ✅ 栄養 */}
+            {/* ✅ 栄養：nutrition_enabled=false の人には表示しない */}
+            {canUseNutrition && (
+            <div className="mt-6">
+              <NutritionCard
+                user={user}
+                latestInbody={latestInbody ?? null}
+                date={today}
+                trainingRecords={records}
+                sleepRecords={sleepRecords}
+                motivationRecords={motivationRecords}
+                badgeText="栄養(β)"
+                nutritionLogs={nutritionLogsToday}
+                nutritionTotals={nutritionTotalsToday}
+                nutritionLoading={nutritionLoading}
+                nutritionError={nutritionError}
+              />
+            </div>
+            )}
 
             <div className="mt-6">
               <DailyReflectionCard userId={user.id} />
             </div>
 
-            {/* ✅ スタッフに共有ボタン（まずはここに置く） */}
+            {/* ✅ スタッフに共有ボタン */}
             <div className="mt-4">
-              <ShareStatusButton
-                userId={user.id}
-                highlight={highPriorityAlerts.length > 0}
-              />
+              <ShareStatusButton userId={user.id} highlight={highPriorityAlerts.length > 0} />
             </div>
 
             <div className="mt-6">
               <MultiMetricTimeline
                 acwrData={acwrData}
                 weightRecords={weightRecords}
-                sleepRecords={normalizedSleepRecords.map(r => ({
-                  sleep_hours: r.sleep_hours,
-                  sleep_quality: r.sleep_quality,
-                  date: r.date
-                }))}
+                sleepRecords={timelineSleepRecords}
                 motivationRecords={motivationRecords}
               />
             </div>
-            
 
             {highPriorityAlerts.length > 0 && (
               <div className="mt-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">
@@ -773,6 +933,22 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               </div>
             )}
           </>
+        ) : activeTab === 'nutrition' ? (
+          canUseNutrition ? (
+            <AthleteNutritionDashboardView
+              user={user}
+              date={today}
+              nutritionLogs={nutritionLogsToday}
+              nutritionTotals={nutritionTotalsToday}
+              nutritionLoading={nutritionLoading}
+              nutritionError={nutritionError}
+              onBackHome={() => setActiveTab('unified')}
+            />
+          ) : null
+
+
+
+
         ) : activeTab === 'overview' ? (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -782,15 +958,14 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 {userAlerts.length > 0 && (
                   <AlertSummary
                     alerts={userAlerts}
-                    onViewAll={() => setShowAlertPanel(true)}
+                    onViewAll={() => {
+                      // ここは表示先があるなら繋ぐ（今はnoopでもOK）
+                    }}
                   />
                 )}
 
                 <div className="mt-3">
-                  <ShareStatusButton
-                    userId={user.id}
-                    highlight={highPriorityAlerts.length > 0}
-                  />
+                  <ShareStatusButton userId={user.id} highlight={highPriorityAlerts.length > 0} />
                 </div>
 
                 {/* High Priority Alert Banner */}
@@ -814,12 +989,11 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs text-green-600 dark:text-green-400 mb-1">今日の体重</p>
-                        <p className="text-2xl font-bold text-green-700 dark:text-green-300">{Number(todayWeight.weight_kg).toFixed(1)} kg</p>
+                        <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                          {Number(todayWeight.weight_kg).toFixed(1)} kg
+                        </p>
                       </div>
-                      <button
-                        onClick={() => setActiveTab('weight')}
-                        className="text-sm text-green-600 dark:text-green-400 hover:underline"
-                      >
+                      <button onClick={() => setActiveTab('weight')} className="text-sm text-green-600 dark:text-green-400 hover:underline">
                         体重管理へ →
                       </button>
                     </div>
@@ -833,15 +1007,11 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                     <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                   </div>
 
-                  <DerivedStatsBar
-                    daysWithData={daysWithData}
-                    consecutiveDays={consecutiveDays}
-                    weeklyAverage={weeklyAverage}
-                  />  
+                  <DerivedStatsBar daysWithData={daysWithData} consecutiveDays={consecutiveDays} weeklyAverage={weeklyAverage} />
 
                   <TrainingForm
                     userId={user.id}
-                    onSubmit={addTrainingRecord}
+                    onSubmit={handleTrainingSubmit}
                     onCheckExisting={checkExistingTrainingRecord}
                     onUpdate={handleTrainingUpdate}
                     loading={loading}
@@ -863,9 +1033,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                       <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
                         {latestACWR.acwr}
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                        {getRiskLabel(latestACWR.riskLevel ?? 'unknown')}
-                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</div>
                       <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
                         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
                           <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">急性負荷</p>
@@ -896,7 +1064,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
               </div>
             </div>
 
-            {/* Training Records Section - Full Width */}
+            {/* Training Records Section */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mt-6 transition-colors">
               <TrainingRecordsList
                 records={records}
@@ -905,181 +1073,143 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 loading={loading}
                 allowEdit={true}
                 allowDelete={true}
-                allowDateEdit={false} // 日付編集は慎重に検討
+                allowDateEdit={false}
                 showLimited={true}
                 limitCount={10}
               />
             </div>
-            
           </>
-        
-      ) : activeTab === 'weight' ? (
-        /* Weight Management Tab */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-          {/* Left Column - Weight Form and Stats */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Cross-tab reference: Latest ACWR */}
-            {latestACWR && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">現在のACWR</p>
-                    <p
-                      className="text-2xl font-bold"
-                      style={{ color: getRiskColor(latestACWR.riskLevel) }}
-                    >
-                      {latestACWR.acwr}
-                    </p>
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      {getRiskLabel(latestACWR.riskLevel ?? 'unknown')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('overview')}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    練習記録へ →
-                  </button>
-                </div>
-              </div>
-            )}
-      
-            {/* Weight Stats Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                体重サマリー
-              </h3>
-              <div className="space-y-4">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <p className="text-xs text-blue-600 mb-1">現在の体重</p>
-                  <p className="text-2xl font-bold text-blue-700">
-                    {getLatestWeight() !== null ? `${getLatestWeight()!.toFixed(1)} kg` : '未記録'}
-                  </p>
-                </div>
-      
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">30日変化</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {getWeightChange(30) !== null ? (
-                        <>
-                          {getWeightChange(30)! > 0 ? '+' : ''}
-                          {getWeightChange(30)!.toFixed(1)} kg
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </p>
-                  </div>
-      
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">記録数</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {weightRecords.length}
-                    </p>
+        ) : activeTab === 'weight' ? (
+          /* Weight Management Tab */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+            {/* Left Column - Weight Form and Stats */}
+            <div className="lg:col-span-1 space-y-6">
+              {/* Cross-tab reference: Latest ACWR */}
+              {latestACWR && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">現在のACWR</p>
+                      <p className="text-2xl font-bold" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
+                        {latestACWR.acwr}
+                      </p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</p>
+                    </div>
+                    <button onClick={() => setActiveTab('overview')} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                      練習記録へ →
+                    </button>
                   </div>
                 </div>
-              </div>
-            </div>
+              )}
 
-            {/* InBody Latest */}
-            {inbodyLoading ? (
+              {/* Weight Stats Card */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <div className="flex items-center justify-center h-24">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">体重サマリー</h3>
+                <div className="space-y-4">
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <p className="text-xs text-blue-600 mb-1">現在の体重</p>
+                    <p className="text-2xl font-bold text-blue-700">
+                      {getLatestWeight() !== null ? `${getLatestWeight()!.toFixed(1)} kg` : '未記録'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">30日変化</p>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {getWeightChange(30) !== null ? (
+                          <>
+                            {getWeightChange(30)! > 0 ? '+' : ''}
+                            {getWeightChange(30)!.toFixed(1)} kg
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">記録数</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">{weightRecords.length}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : inbodyError ? (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-                <p className="text-sm text-red-700 dark:text-red-300">
-                  InBodyデータの取得でエラーが発生しました：{inbodyError}
-                </p>
-              </div>
-            ) : latestInbody ? (
-              <div className="space-y-6">
-                <InBodyLatestCard
-                  latest={latestInbody}
-                  loading={inbodyLoading}
-                  error={inbodyError}
-                />
 
-                <InBodyCharts records={inbodyRecords} gender={normalizedGenderBinary} />
-              </div>
-            ) : (
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  InBodyデータはまだ登録されていません
-                </p>
-              </div>
-            )}
-      
-            {/* BMI Display - Show only if height is set */}
-            {user.height_cm && latestWeight && (
-              <BMIDisplay
-                weightKg={latestWeight}
-                heightCm={user.height_cm}
-                dateOfBirth={user.date_of_birth}
-                gender={normalizedGenderFull}
-              />
-            )}
-      
-            {!user.height_cm && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 transition-colors">
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  身長を設定するとBMIが表示されます。設定タブからプロフィールを編集してください。
-                </p>
-              </div>
-            )}
-      
-            {/* Weight Form */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">体重記録</h2>
-                <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
-              </div>
-              <WeightForm
-                onSubmit={addWeightRecord}
-                onCheckExisting={checkExistingWeightRecord}
-                onUpdate={updateWeightRecord}
-                loading={weightLoading}
-                lastRecord={lastWeightRecord}
-              />
-            </div>
-          </div>
-          {/* Right Column - Chart */}
-          <div className="lg:col-span-2">
-            {/* Weight Chart */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
-                体重推移グラフ
-              </h2>
-              {weightLoading ? (
-                <div className="flex items-center justify-center h-64 sm:h-80">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              {/* InBody Latest */}
+              {inbodyLoading ? (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+                  <div className="flex items-center justify-center h-24">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                </div>
+              ) : inbodyError ? (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+                  <p className="text-sm text-red-700 dark:text-red-300">InBodyデータの取得でエラーが発生しました：{inbodyError}</p>
+                </div>
+              ) : latestInbody ? (
+                <div className="space-y-6">
+                  <InBodyLatestCard latest={latestInbody} loading={inbodyLoading} error={inbodyError} />
+                  <InBodyCharts records={inbodyRecords} gender={normalizedGenderBinary} />
                 </div>
               ) : (
-                <WeightChart data={weightRecords} />
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">InBodyデータはまだ登録されていません</p>
+                </div>
               )}
+
+              {/* BMI Display - Show only if height is set */}
+              {user.height_cm && latestWeight && (
+                <BMIDisplay weightKg={latestWeight} heightCm={user.height_cm} dateOfBirth={user.date_of_birth} gender={normalizedGenderFull} />
+              )}
+
+              {!user.height_cm && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 transition-colors">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    身長を設定するとBMIが表示されます。設定タブからプロフィールを編集してください。
+                  </p>
+                </div>
+              )}
+
+              {/* Weight Form */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">体重記録</h2>
+                  <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
+                </div>
+                <WeightForm
+                  onSubmit={addWeightRecord}
+                  onCheckExisting={checkExistingWeightRecord}
+                  onUpdate={updateWeightRecord}
+                  loading={weightLoading}
+                  lastRecord={lastWeightRecord}
+                />
+              </div>
             </div>
-      
-            {/* Weight Records List */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-              <WeightRecordsList
-                records={weightRecords}
-                onUpdate={updateWeightRecord}
-                onDelete={deleteWeightRecord}
-                loading={weightLoading}
-              />
+
+            {/* Right Column - Chart */}
+            <div className="lg:col-span-2">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mb-6 transition-colors">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">体重推移グラフ</h2>
+                {weightLoading ? (
+                  <div className="flex items-center justify-center h-64 sm:h-80">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <WeightChart data={weightRecords} />
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
+                <WeightRecordsList records={weightRecords} onUpdate={updateWeightRecord} onDelete={deleteWeightRecord} loading={weightLoading} />
+              </div>
             </div>
           </div>
-        </div>
-      ) : activeTab === 'insights' ? (
+        ) : activeTab === 'insights' ? (
           /* Correlation Analysis Tab */
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
-                体重とACWRの相関グラフ
-              </h2>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">体重とACWRの相関グラフ</h2>
               {loading || weightLoading ? (
                 <div className="flex items-center justify-center h-96">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1110,7 +1240,8 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                       <div key={pb.test_type_id} className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-2">
                         <p className="text-xs text-gray-600 dark:text-gray-400">{pb.test_display_name}</p>
                         <p className="text-lg font-bold text-yellow-700 dark:text-yellow-300">
-                          {pb.value.toFixed(pb.test_name.includes('rsi') ? 2 : 1)} {performanceTestTypes.find(t => t.id === pb.test_type_id)?.unit}
+                          {pb.value.toFixed(pb.test_name.includes('rsi') ? 2 : 1)}{' '}
+                          {performanceTestTypes.find((t) => t.id === pb.test_type_id)?.unit}
                         </p>
                       </div>
                     ))}
@@ -1196,7 +1327,6 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
 
             {/* Right Column - Overview and Records */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Performance Overview with Interactive Charts */}
               <PerformanceOverview
                 testTypes={performanceTestTypes}
                 records={performanceRecords}
@@ -1205,20 +1335,14 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 getPersonalBest={getPersonalBest}
               />
 
-              {/* Performance Records List */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <PerformanceRecordsList
-                  records={performanceRecords}
-                  personalBests={personalBests}
-                  loading={performanceLoading}
-                />
+                <PerformanceRecordsList records={performanceRecords} personalBests={personalBests} loading={performanceLoading} />
               </div>
             </div>
           </div>
         ) : activeTab === 'conditioning' ? (
           /* Conditioning Tab */
           <div className="space-y-6">
-            {/* Conditioning Summary Card */}
             <ConditioningSummaryCard
               latestACWR={latestACWR}
               sleepHours={getLatestSleep()?.sleep_hours ? Number(getLatestSleep()!.sleep_hours) : null}
@@ -1229,104 +1353,92 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
             />
 
             {/* Sleep Section */}
-              <div className="space-y-6">
-                {/* Sleep Form */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">睡眠記録</h2>
-                    <Moon className="w-6 h-6 text-indigo-500" />
-                  </div>
-
-                  <SleepForm
-                    onSubmit={addSleepRecord}
-                    onCheckExisting={checkExistingSleepRecord}
-                    onUpdate={updateSleepRecord}
-                    loading={sleepLoading}
-                    lastRecord={normalizedLastSleepRecord}
-                  />
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">睡眠記録</h2>
+                  <Moon className="w-6 h-6 text-indigo-500" />
                 </div>
 
-                {/* Sleep Chart */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">睡眠推移グラフ</h3>
-                  {sleepLoading ? (
-                    <div className="flex items-center justify-center h-96">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                    </div>
-                  ) : (
-                    <SleepChart data={sleepRecords} />
-                  )}
-                </div>
-
-                {/* Sleep Stats */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">7日平均睡眠時間</p>
-                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                      {getAverageSleepHours(7)?.toFixed(1) || '-'}h
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">7日平均睡眠の質</p>
-                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                      {getAverageSleepQuality(7)?.toFixed(1) || '-'}/5
-                    </p>
-                  </div>
-                </div>
+                <SleepForm
+                  onSubmit={addSleepRecord}
+                  onCheckExisting={checkExistingSleepRecord}
+                  onUpdate={updateSleepRecord}
+                  loading={sleepLoading}
+                  lastRecord={normalizedLastSleepRecord}
+                />
               </div>
 
-              {/* Motivation Section */}
-              <div className="space-y-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">モチベーション記録</h2>
-                    <Heart className="w-6 h-6 text-blue-500" />
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">睡眠推移グラフ</h3>
+                {sleepLoading ? (
+                  <div className="flex items-center justify-center h-96">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                   </div>
-                  <MotivationForm
-                    onSubmit={addMotivationRecord}
-                    onCheckExisting={checkExistingMotivationRecord}
-                    onUpdate={updateMotivationRecord}
-                    loading={motivationLoading}
-                    lastRecord={normalizedLastMotivationRecord ?? undefined}
-/>
-                </div>
+                ) : (
+                  <SleepChart data={sleepRecords} />
+                )}
+              </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">モチベーション推移グラフ</h3>
-                  {motivationLoading ? (
-                    <div className="flex items-center justify-center h-96">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    </div>
-                  ) : (
-                    <MotivationChart data={motivationRecords} />
-                  )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">7日平均睡眠時間</p>
+                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{getAverageSleepHours(7)?.toFixed(1) || '-'}h</p>
                 </div>
-
-                {/* Motivation Stats */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均意欲</p>
-                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      {getAverageMotivation(7)?.toFixed(1) || '-'}/10
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均体力</p>
-                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {getAverageEnergy(7)?.toFixed(1) || '-'}/10
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均ストレス</p>
-                    <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                      {getAverageStress(7)?.toFixed(1) || '-'}/10
-                    </p>
-                  </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">7日平均睡眠の質</p>
+                  <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                    {getAverageSleepQuality(7)?.toFixed(1) || '-'}/5
+                  </p>
                 </div>
               </div>
             </div>
-        ): // Add semicolon to fix the error
-        activeTab === 'cycle' ? (
+
+            {/* Motivation Section */}
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">モチベーション記録</h2>
+                  <Heart className="w-6 h-6 text-blue-500" />
+                </div>
+
+                <MotivationForm
+                  onSubmit={addMotivationRecord}
+                  onCheckExisting={checkExistingMotivationRecord}
+                  onUpdate={updateMotivationRecord}
+                  loading={motivationLoading}
+                  lastRecord={normalizedLastMotivationRecord ?? undefined}
+                />
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">モチベーション推移グラフ</h3>
+                {motivationLoading ? (
+                  <div className="flex items-center justify-center h-96">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <MotivationChart data={motivationRecords} />
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均意欲</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{getAverageMotivation(7)?.toFixed(1) || '-'}/10</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均体力</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{getAverageEnergy(7)?.toFixed(1) || '-'}/10</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">平均ストレス</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{getAverageStress(7)?.toFixed(1) || '-'}/10</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'cycle' ? (
           normalizedGenderBinary === 'female' ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1360,55 +1472,54 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
                 </div>
               </div>
 
-              {cycleViewMode === 'calendar' ? (
-                <MenstrualCycleCalendar userId={user.id} />
-              ) : (
-                <MenstrualCycleChart userId={user.id} days={90} />
-              )}
+              {cycleViewMode === 'calendar' ? <MenstrualCycleCalendar userId={user.id} /> : <MenstrualCycleChart userId={user.id} days={90} />}
 
               <CyclePerformanceCorrelation userId={user.id} />
             </div>
           ) : (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
               <Droplets className="w-12 h-12 text-yellow-600 dark:text-yellow-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                この機能は女性ユーザー専用です
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">この機能は女性ユーザー専用です</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 プロフィール設定で性別を「女性」に設定すると、月経周期トラッキング機能が利用できます。
               </p>
             </div>
           )
         ) : activeTab === 'gamification' ? (
-          <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            }
+          >
             <GamificationView userId={user.id} userTeamId={user.team_id} />
           </Suspense>
         ) : activeTab === 'messages' ? (
-          <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
-            <MessagingPanel
-              userId={user.id}
-              userName={user.name}
-              onClose={() => setActiveTab('unified')}
-            />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            }
+          >
+            <MessagingPanel userId={user.id} userName={user.name} onClose={() => setActiveTab('unified')} />
           </Suspense>
         ) : activeTab === 'settings' ? (
-          <AthleteSettingsView
-            user={user}
-            onOpenProfileEdit={() => setShowProfileEdit(true)}
-          />
+          <AthleteSettingsView user={user} onOpenProfileEdit={() => setShowProfileEdit(true)} />
         ) : null}
-
       </main>
 
       {/* Export Panel */}
       {showExportPanel && (
-        <Suspense fallback={<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div></div>}>
-          <ExportPanel
-            user={user}
-            trainingRecords={records}
-            acwrData={acwrData}
-            onClose={() => setShowExportPanel(false)}
-          />
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            </div>
+          }
+        >
+          <ExportPanel user={user} trainingRecords={records} acwrData={acwrData} onClose={() => setShowExportPanel(false)} />
         </Suspense>
       )}
 
@@ -1428,7 +1539,7 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <ProfileEditForm
           user={user}
           onUpdate={async () => {
-            await onUserUpdated?.(); // ✅ これで userProfile が更新される
+            await onUserUpdated?.();
           }}
           onClose={() => setShowProfileEdit(false)}
         />
@@ -1447,47 +1558,36 @@ export function AthleteView({ user, alerts, onLogout, onHome, onNavigateToPrivac
         <UnifiedDailyCheckIn
           userId={user.id}
           userGender={normalizedGenderBinary}
-
           onTrainingSubmit={handleTrainingSubmitForCheckIn}
           onTrainingCheckExisting={checkExistingTrainingRecord}
           onTrainingUpdate={handleTrainingUpdateForCheckIn}
-
           onWeightSubmit={addWeightRecord}
           onWeightCheckExisting={checkExistingWeightRecord}
           onWeightUpdate={updateWeightRecord}
-
           onSleepSubmit={addSleepRecord}
           onSleepCheckExisting={checkExistingSleepRecord}
           onSleepUpdate={updateSleepRecord}
-
           onMotivationSubmit={addMotivationRecord}
           onMotivationCheckExisting={checkExistingMotivationRecord}
           onMotivationUpdate={updateMotivationRecord}
-
           onCycleSubmit={addMenstrualCycle}
           onCycleUpdate={updateMenstrualCycle}
-
           onClose={() => setShowUnifiedCheckIn(false)}
-
-          // ✅ null を必ず渡す（undefined を潰す）
           lastTrainingRecord={normalizedLastTrainingRecordForCheckIn ?? null}
-
-          // ✅ Supabase Row をそのまま渡さず、UnifiedDailyCheckIn が期待する形に詰め替え
           lastWeightRecord={
-            lastWeightRecord
-              ? { weight_kg: Number(lastWeightRecord.weight_kg), date: lastWeightRecord.date }
-              : null
+            normalizedLastWeightRecord ? { weight_kg: Number(normalizedLastWeightRecord.weight_kg), date: normalizedLastWeightRecord.date } : null
           }
-
           lastSleepRecord={normalizedLastSleepRecord ?? null}
           lastMotivationRecord={normalizedLastMotivationRecord ?? null}
         />
       )}
+
       {activeTab === 'unified' && (
-        <FloatingActionButton onClick={() => {
-          console.log('[AthleteView] Floating action button clicked, opening UnifiedDailyCheckIn');
-          setShowUnifiedCheckIn(true);
-        }} />
+        <FloatingActionButton
+          onClick={() => {
+            setShowUnifiedCheckIn(true);
+          }}
+        />
       )}
     </div>
   );

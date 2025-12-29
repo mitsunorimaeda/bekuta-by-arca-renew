@@ -51,26 +51,32 @@ CREATE INDEX IF NOT EXISTS weight_records_date_idx
 ALTER TABLE weight_records ENABLE ROW LEVEL SECURITY;
 
 -- SELECT: 認証済みユーザーは自分のデータのみ閲覧可能
+-- ✅ Policies（重複で落ちないように drop → create）
+DROP POLICY IF EXISTS "Users can view own weight records" ON public.weight_records;
 CREATE POLICY "Users can view own weight records"
-  ON weight_records FOR SELECT
+  ON public.weight_records
+  FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id);
 
--- INSERT: 認証済みユーザーは自分のデータのみ挿入可能
+DROP POLICY IF EXISTS "Users can insert own weight records" ON public.weight_records;
 CREATE POLICY "Users can insert own weight records"
-  ON weight_records FOR INSERT
+  ON public.weight_records
+  FOR INSERT
   TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
--- UPDATE: 認証済みユーザーは自分のデータのみ更新可能
+DROP POLICY IF EXISTS "Users can update own weight records" ON public.weight_records;
 CREATE POLICY "Users can update own weight records"
-  ON weight_records FOR UPDATE
+  ON public.weight_records
+  FOR UPDATE
   TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- DELETE: 認証済みユーザーは自分のデータのみ削除可能
+DROP POLICY IF EXISTS "Users can delete own weight records" ON public.weight_records;
 CREATE POLICY "Users can delete own weight records"
-  ON weight_records FOR DELETE
+  ON public.weight_records
+  FOR DELETE
   TO authenticated
   USING (auth.uid() = user_id);

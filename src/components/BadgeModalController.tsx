@@ -7,16 +7,17 @@ type Props = {
 };
 
 export function BadgeModalController({ userId }: Props) {
-  const { userBadges, getNewBadges, markBadgeAsViewed } = useBadges(userId);
+  const { userBadges, markBadgeAsViewed } = useBadges(userId);
 
   const [activeUserBadgeId, setActiveUserBadgeId] = useState<string | null>(null);
 
   // ✅ 「一度表示した user_badges.id」は二度出さない
   const shownRef = useRef<Set<string>>(new Set());
 
-  // ✅ NEWバッジ一覧（表示順を安定化：ブロンズ→シルバー→…）
+  // ✅ NEWバッジ一覧（getNewBadgesに依存しない）
+  // 表示順を安定化： earned_at → tierOrder → name
   const newBadges = useMemo(() => {
-    const list = getNewBadges();
+    const list = (userBadges ?? []).filter((ub) => ub.is_new);
 
     const tierOrder: Record<string, number> = {
       'ブロンズ到達': 10,
@@ -43,7 +44,7 @@ export function BadgeModalController({ userId }: Props) {
       // 3) 最後は名前で安定化
       return aName.localeCompare(bName, 'ja');
     });
-  }, [userBadges]); // userBadgesが変わったら再計算
+  }, [userBadges]);
 
   useEffect(() => {
     if (activeUserBadgeId) return;
@@ -55,7 +56,7 @@ export function BadgeModalController({ userId }: Props) {
     setActiveUserBadgeId(next.id);
   }, [newBadges, activeUserBadgeId]);
 
-  const active = userBadges.find((ub) => ub.id === activeUserBadgeId) || null;
+  const active = (userBadges ?? []).find((ub) => ub.id === activeUserBadgeId) || null;
 
   const handleClose = async () => {
     if (activeUserBadgeId) {

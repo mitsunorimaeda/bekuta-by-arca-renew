@@ -76,96 +76,149 @@
 -- STEP 1: Drop dependent objects first (functions, triggers, policies)
 -- ============================================================================
 
--- Drop functions that reference departments
-DROP FUNCTION IF EXISTS safe_delete_department(uuid);
-DROP FUNCTION IF EXISTS validate_team_org_dept_consistency() CASCADE;
+/*
+  # Remove Departments and Consolidate to Teams (SAFE / IDEMPOTENT)
 
--- Drop the trigger that validates team-department consistency
-DROP TRIGGER IF EXISTS trigger_validate_team_organization_department ON teams;
+  - departments / department_managers を廃止し、organizations -> teams の2階層に統合
+  - ローカル supabase db reset で落ちないように、存在確認 + policy衝突回避を徹底
+*/
 
--- Drop department-related triggers
-DROP TRIGGER IF EXISTS trigger_update_department_timestamp ON departments;
+-- =============================================================================
+-- STEP 0: Preflight (schema固定)
+-- =============================================================================
+SET search_path = public;
 
--- Drop all RLS policies on departments
-DROP POLICY IF EXISTS "Users can view departments in their organizations" ON departments;
-DROP POLICY IF EXISTS "Organization admins can manage departments" ON departments;
+-- =============================================================================
+-- STEP 1: Drop dependent objects first (functions, triggers, policies)
+-- =============================================================================
 
--- Drop all RLS policies on department_managers
-DROP POLICY IF EXISTS "Users can view their department manager assignments" ON department_managers;
-DROP POLICY IF EXISTS "Organization admins can manage department managers" ON department_managers;
+/*
+  # Remove Departments and Consolidate to Teams (SAFE / IDEMPOTENT)
 
--- ============================================================================
--- STEP 2: Modify teams table structure
--- ============================================================================
+  - departments / department_managers を廃止し、organizations -> teams の2階層に統合
+  - supabase db reset / start で落ちないように、存在確認 + policy衝突回避を徹底
+*/
 
--- Add new columns to teams table
+-- =============================================================================
+-- STEP 0: Preflight
+-- =============================================================================
+SET search_path = public;
+
+-- =============================================================================
+-- STEP 1: Drop dependent objects first (functions, triggers, policies)
+-- =============================================================================
+
+-- Functions that may reference departments
+DROP FUNCTION IF EXISTS public.safe_delete_department(uuid);
+DROP FUNCTION IF EXISTS public.validate_team_org_dept_consistency() CASCADE;
+
+-- Triggers (safe)
+DROP TRIGGER IF EXISTS trigger_validate_team_organization_department ON public.teams;
+
 DO $$
 BEGIN
-  -- Add description column
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'teams' AND column_name = 'description'
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='departments'
   ) THEN
-    ALTER TABLE teams ADD COLUMN description text DEFAULT '';
-  END IF;
-
-  -- Add settings column
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'teams' AND column_name = 'settings'
-  ) THEN
-    ALTER TABLE teams ADD COLUMN settings jsonb DEFAULT '{}'::jsonb;
+    DROP TRIGGER IF EXISTS trigger_update_department_timestamp ON public.departments;
   END IF;
 END $$;
 
--- Remove department_id column from teams
+-- Policies on departments (guarded)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='departments'
+  ) THEN
+    DROP POLICY IF EXISTS "Users can view departments in their organizations" ON public.departments;
+    DROP POLICY IF EXISTS "Organization admins can manage departments" ON public.departments;
+  END IF;
+END $$;
+
+-- Policies on department_managers (guarded)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='department_managers'
+  ) THEN
+    DROP POLICY IF EXISTS "Users can view their department manager assignments" ON public.department_managers;
+    DROP POLICY IF EXISTS "Organization admins can manage department managers" ON public.department_managers;
+  END IF;
+END $$;
+
+-- =============================================================================
+-- STEP 2: Modify teams table structure
+-- =============================================================================
+
+-- Add columns if not exists
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='teams' AND column_name='description'
+  ) THEN
+    ALTER TABLE public.teams ADD COLUMN description text DEFAULT '';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='teams' AND column_name='settings'
+  ) THEN
+    ALTER TABLE public.teams ADD COLUMN settings jsonb DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
+
+-- Remove department_id from teams (if exists)
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'teams' AND column_name = 'department_id'
+    WHERE table_schema='public' AND table_name='teams' AND column_name='department_id'
   ) THEN
-    -- First remove any foreign key constraint
-    ALTER TABLE teams DROP CONSTRAINT IF EXISTS teams_department_id_fkey;
-    -- Then drop the column
-    ALTER TABLE teams DROP COLUMN department_id;
+    ALTER TABLE public.teams DROP CONSTRAINT IF EXISTS teams_department_id_fkey;
+    ALTER TABLE public.teams DROP COLUMN department_id;
   END IF;
 END $$;
 
--- ============================================================================
+-- =============================================================================
 -- STEP 3: Drop department-related tables
--- ============================================================================
+-- =============================================================================
 
--- Drop department_managers table (no longer needed)
-DROP TABLE IF EXISTS department_managers CASCADE;
+DROP TABLE IF EXISTS public.department_managers CASCADE;
+DROP TABLE IF EXISTS public.departments CASCADE;
 
--- Drop departments table
-DROP TABLE IF EXISTS departments CASCADE;
+DROP INDEX IF EXISTS public.idx_teams_department_id;
 
--- Drop the index that's no longer needed
-DROP INDEX IF EXISTS idx_teams_department_id;
+-- =============================================================================
+-- STEP 4: Update organization_members role constraint (remove department_manager)
+-- =============================================================================
 
--- ============================================================================
--- STEP 4: Update organization_members role constraint
--- ============================================================================
-
--- Drop existing constraint and recreate without 'department_manager'
 DO $$
 BEGIN
-  -- Drop the old constraint
-  ALTER TABLE organization_members DROP CONSTRAINT IF EXISTS organization_members_role_check;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='organization_members'
+  ) THEN
+    ALTER TABLE public.organization_members
+      DROP CONSTRAINT IF EXISTS organization_members_role_check;
 
-  -- Add new constraint with only organization_admin and viewer
-  ALTER TABLE organization_members ADD CONSTRAINT organization_members_role_check
-    CHECK (role IN ('organization_admin', 'viewer'));
+    ALTER TABLE public.organization_members
+      ADD CONSTRAINT organization_members_role_check
+      CHECK (role IN ('organization_admin', 'viewer'));
+  END IF;
 END $$;
 
--- ============================================================================
--- STEP 5: Update or recreate database functions
--- ============================================================================
+-- =============================================================================
+-- STEP 5: Recreate / update functions (no departments)
+-- =============================================================================
 
--- Recreate get_organization_hierarchy without departments
-CREATE OR REPLACE FUNCTION get_organization_hierarchy(org_id uuid)
+-- get_organization_hierarchy: departmentsなし版に作り替え
+DROP FUNCTION IF EXISTS public.get_organization_hierarchy(uuid) CASCADE;
+
+CREATE FUNCTION public.get_organization_hierarchy(org_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -177,16 +230,14 @@ DECLARE
   teams_data jsonb;
   member_count_val bigint;
 BEGIN
-  -- Get organization basic data
   SELECT to_jsonb(o.*) INTO org_data
-  FROM organizations o
+  FROM public.organizations o
   WHERE o.id = org_id;
 
   IF org_data IS NULL THEN
     RETURN NULL;
   END IF;
 
-  -- Get all teams directly under organization
   SELECT COALESCE(jsonb_agg(
     jsonb_build_object(
       'id', t.id,
@@ -196,15 +247,13 @@ BEGIN
       'created_at', t.created_at
     ) ORDER BY t.name
   ), '[]'::jsonb) INTO teams_data
-  FROM teams t
+  FROM public.teams t
   WHERE t.organization_id = org_id;
 
-  -- Get member count
   SELECT COUNT(*) INTO member_count_val
-  FROM organization_members
+  FROM public.organization_members
   WHERE organization_id = org_id;
 
-  -- Build result
   result := org_data || jsonb_build_object(
     'teams', teams_data,
     'member_count', member_count_val
@@ -214,8 +263,10 @@ BEGIN
 END;
 $$;
 
--- Recreate get_user_organizations without department_count
-CREATE OR REPLACE FUNCTION get_user_organizations(user_uuid uuid)
+-- get_user_organizations: RETURN型変更があり得るので DROP -> CREATE
+DROP FUNCTION IF EXISTS public.get_user_organizations(uuid) CASCADE;
+
+CREATE FUNCTION public.get_user_organizations(user_uuid uuid)
 RETURNS TABLE (
   organization_id uuid,
   organization_name text,
@@ -233,17 +284,18 @@ BEGIN
     o.id,
     o.name,
     om.role,
-    (SELECT COUNT(*) FROM organization_members WHERE organization_id = o.id),
-    (SELECT COUNT(*) FROM teams WHERE organization_id = o.id)
-  FROM organizations o
-  JOIN organization_members om ON o.id = om.organization_id
+    (SELECT COUNT(*) FROM public.organization_members WHERE organization_id = o.id),
+    (SELECT COUNT(*) FROM public.teams WHERE organization_id = o.id)
+  FROM public.organizations o
+  JOIN public.organization_members om ON o.id = om.organization_id
   WHERE om.user_id = user_uuid
   ORDER BY o.name;
 END;
 $$;
 
--- Update check_orphaned_records to remove department checks
-CREATE OR REPLACE FUNCTION check_orphaned_records()
+DROP FUNCTION IF EXISTS public.check_orphaned_records() CASCADE;
+
+CREATE OR REPLACE FUNCTION public.check_orphaned_records()
 RETURNS TABLE (
   record_type text,
   record_id uuid,
@@ -254,46 +306,46 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Check for teams without organizations
+  -- teams without organizations
   RETURN QUERY
   SELECT
     'team'::text,
     t.id,
     'Team has no organization assigned'::text
-  FROM teams t
+  FROM public.teams t
   WHERE t.organization_id IS NULL;
 
-  -- Check for organization_members referencing non-existent organizations
+  -- organization_members without organizations
   RETURN QUERY
   SELECT
     'organization_member'::text,
     om.id,
     'Organization member references non-existent organization'::text
-  FROM organization_members om
-  LEFT JOIN organizations o ON om.organization_id = o.id
+  FROM public.organization_members om
+  LEFT JOIN public.organizations o ON om.organization_id = o.id
   WHERE o.id IS NULL;
 
-  -- Check for organization_members referencing non-existent users
+  -- organization_members without users
   RETURN QUERY
   SELECT
     'organization_member'::text,
     om.id,
     'Organization member references non-existent user'::text
-  FROM organization_members om
-  LEFT JOIN users u ON om.user_id = u.id
+  FROM public.organization_members om
+  LEFT JOIN public.users u ON om.user_id = u.id
   WHERE u.id IS NULL;
 
   RETURN;
 END;
 $$;
 
--- ============================================================================
--- STEP 6: Recreate organization_stats view without department_count
--- ============================================================================
+-- =============================================================================
+-- STEP 6: Recreate organization_stats view (no departments)
+-- =============================================================================
 
-DROP VIEW IF EXISTS organization_stats;
+DROP VIEW IF EXISTS public.organization_stats;
 
-CREATE VIEW organization_stats AS
+CREATE VIEW public.organization_stats AS
 SELECT
   o.id,
   o.name,
@@ -303,108 +355,151 @@ SELECT
   COALESCE(t.team_count, 0) AS team_count,
   COALESCE(m.member_count, 0) AS member_count,
   COALESCE(a.admin_count, 0) AS admin_count
-FROM organizations o
+FROM public.organizations o
 LEFT JOIN (
   SELECT organization_id, COUNT(*) as team_count
-  FROM teams
+  FROM public.teams
   GROUP BY organization_id
 ) t ON o.id = t.organization_id
 LEFT JOIN (
   SELECT organization_id, COUNT(*) as member_count
-  FROM organization_members
+  FROM public.organization_members
   GROUP BY organization_id
 ) m ON o.id = m.organization_id
 LEFT JOIN (
   SELECT organization_id, COUNT(*) as admin_count
-  FROM organization_members
+  FROM public.organization_members
   WHERE role = 'organization_admin'
   GROUP BY organization_id
 ) a ON o.id = a.organization_id;
 
--- ============================================================================
--- STEP 7: Add new RLS policies for teams management by organization admins
--- ============================================================================
+-- =============================================================================
+-- STEP 7: Teams RLS policies (RESET & RECREATE to avoid collisions)
+-- =============================================================================
 
--- Policy: Organization admins can create teams in their organization
-DROP POLICY IF EXISTS "Organization admins can create teams in their organization" ON teams;
-CREATE POLICY "Organization admins can create teams in their organization"
-  ON teams FOR INSERT
+-- teams の既存policyを全削除（policynameが正しい列名）
+DO $$
+DECLARE p record;
+BEGIN
+  FOR p IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'teams'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.teams;', p.policyname);
+  END LOOP;
+END $$;
+
+-- SELECT: athlete/staff/org members/admin が必要な範囲の teams を見れる
+CREATE POLICY "Teams select: athlete/staff/org/admin"
+  ON public.teams
+  FOR SELECT
   TO authenticated
-  WITH CHECK (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = auth.uid()
-      AND role = 'organization_admin'
+  USING (
+    -- Global admin (users.role='admin') は全部
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin'
+    OR
+    -- organization member は所属orgのteams
+    EXISTS (
+      SELECT 1 FROM public.organization_members om
+      WHERE om.user_id = auth.uid()
+      AND om.organization_id = public.teams.organization_id
+      AND om.role IN ('organization_admin', 'viewer')
+    )
+    OR
+    -- staff は staff_team_links で許可された team
+    EXISTS (
+      SELECT 1 FROM public.staff_team_links stl
+      WHERE stl.staff_user_id = auth.uid()
+      AND stl.team_id = public.teams.id
+    )
+    OR
+    -- athlete は自分の users.team_id の team
+    EXISTS (
+      SELECT 1 FROM public.users a
+      WHERE a.id = auth.uid()
+      AND a.team_id = public.teams.id
     )
   );
 
--- Policy: Organization admins can update teams in their organization
-DROP POLICY IF EXISTS "Organization admins can update teams in their organization" ON teams;
-CREATE POLICY "Organization admins can update teams in their organization"
-  ON teams FOR UPDATE
+-- INSERT: organization_admin / admin のみ
+CREATE POLICY "Teams insert: org_admin/admin"
+  ON public.teams
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
+    )
+    OR
+    EXISTS (
+      SELECT 1 FROM public.organization_members om
+      WHERE om.user_id = auth.uid()
+      AND om.organization_id = public.teams.organization_id
+      AND om.role = 'organization_admin'
+    )
+  );
+
+-- UPDATE: organization_admin / admin のみ
+CREATE POLICY "Teams update: org_admin/admin"
+  ON public.teams
+  FOR UPDATE
   TO authenticated
   USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = auth.uid()
-      AND role = 'organization_admin'
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin'
+    OR
+    EXISTS (
+      SELECT 1 FROM public.organization_members om
+      WHERE om.user_id = auth.uid()
+      AND om.organization_id = public.teams.organization_id
+      AND om.role = 'organization_admin'
     )
   )
   WITH CHECK (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = auth.uid()
-      AND role = 'organization_admin'
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin'
+    OR
+    EXISTS (
+      SELECT 1 FROM public.organization_members om
+      WHERE om.user_id = auth.uid()
+      AND om.organization_id = public.teams.organization_id
+      AND om.role = 'organization_admin'
     )
   );
 
--- Policy: Organization admins can delete teams in their organization
-DROP POLICY IF EXISTS "Organization admins can delete teams in their organization" ON teams;
-CREATE POLICY "Organization admins can delete teams in their organization"
-  ON teams FOR DELETE
+-- DELETE: organization_admin / admin のみ
+CREATE POLICY "Teams delete: org_admin/admin"
+  ON public.teams
+  FOR DELETE
   TO authenticated
   USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = auth.uid()
-      AND role = 'organization_admin'
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
     )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin'
-    )
-  );
-
--- Policy: Organization admins can view all teams in their organization
-DROP POLICY IF EXISTS "Organization admins can view teams in their organization" ON teams;
-CREATE POLICY "Organization admins can view teams in their organization"
-  ON teams FOR SELECT
-  TO authenticated
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM organization_members
-      WHERE user_id = auth.uid()
-      AND role IN ('organization_admin', 'viewer')
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin'
+    OR
+    EXISTS (
+      SELECT 1 FROM public.organization_members om
+      WHERE om.user_id = auth.uid()
+      AND om.organization_id = public.teams.organization_id
+      AND om.role = 'organization_admin'
     )
   );
 
--- ============================================================================
--- STEP 8: Create helper function for organization admins to manage teams
--- ============================================================================
+-- =============================================================================
+-- STEP 8: Helper function (org admin view)
+-- =============================================================================
 
--- Function to get all teams in an organization
-CREATE OR REPLACE FUNCTION get_organization_teams(org_id uuid)
+CREATE OR REPLACE FUNCTION public.get_organization_teams(org_id uuid)
 RETURNS TABLE (
   id uuid,
   name text,
@@ -430,24 +525,23 @@ BEGIN
     t.created_at,
     COUNT(DISTINCT u.id) as member_count,
     COUNT(DISTINCT stl.staff_user_id) as staff_count
-  FROM teams t
-  LEFT JOIN users u ON u.team_id = t.id AND u.role = 'athlete'
-  LEFT JOIN staff_team_links stl ON stl.team_id = t.id
+  FROM public.teams t
+  LEFT JOIN public.users u
+    ON u.team_id = t.id AND u.role = 'athlete'
+  LEFT JOIN public.staff_team_links stl
+    ON stl.team_id = t.id
   WHERE t.organization_id = org_id
   GROUP BY t.id, t.name, t.description, t.settings, t.organization_id, t.created_at
   ORDER BY t.name;
 END;
 $$;
 
--- ============================================================================
--- Migration Complete
--- ============================================================================
-
--- Log completion
+-- =============================================================================
+-- DONE
+-- =============================================================================
 DO $$
 BEGIN
-  RAISE NOTICE 'Migration completed successfully!';
-  RAISE NOTICE 'Department tables and related objects have been removed.';
-  RAISE NOTICE 'Teams now directly belong to organizations.';
-  RAISE NOTICE 'Organization admins can now create and manage teams directly.';
+  RAISE NOTICE 'Migration completed successfully (SAFE).';
+  RAISE NOTICE 'Departments removed; teams now directly belong to organizations.';
+  RAISE NOTICE 'Teams RLS policies were reset & recreated to avoid collisions.';
 END $$;

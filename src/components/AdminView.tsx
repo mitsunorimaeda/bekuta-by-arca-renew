@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
+import { isGlobalAdmin } from '../lib/permissions';
 import { Alert } from '../lib/alerts';
 import { UserInvitation } from './UserInvitation';
 import { BulkUserInvitation } from './BulkUserInvitation';
@@ -9,6 +10,7 @@ import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import NutritionDev from "./NutritionDev"; // ✅ 追加
+import NutritionPhotoUploader from "./NutritionPhotoUploader";
 import {
   Settings,
   Users,
@@ -58,16 +60,32 @@ export function AdminView({
   onNavigateToCommercial,
   onNavigateToHelp
 }: AdminViewProps) {
+
+  if (!user || !isGlobalAdmin(user.role)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white border rounded-xl p-6">
+          <div className="text-lg font-semibold">権限がありません</div>
+          <div className="text-sm text-gray-600 mt-2">
+            このページは管理者のみアクセスできます。
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization'>('system');
   const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
 
   // ✅ 変更：'inbody' を追加
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody'>('invite');
-
+  const [targetUserId, setTargetUserId] = useState<string>("");
   const [organizationSubTab, setOrganizationSubTab] = useState<
     'overview' | 'list' | 'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'
   >('overview');
+  const [inbodyUsers, setInbodyUsers] = useState<{ user_id: string; name?: string }[]>([]);
+  const [inbodyUsersLoading, setInbodyUsersLoading] = useState(false);
 
   const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | undefined>();
@@ -122,10 +140,56 @@ export function AdminView({
     setCriticalAlertDismissed(true);
     localStorage.setItem('criticalAlertDismissed', Date.now().toString());
   };
+  const fetchInbodyUsers = async () => {
+    try {
+      setInbodyUsersLoading(true);
+  
+      // inbody_records に存在する user_id を重複なしで取得
+      const { data, error } = await supabase
+        .from('inbody_records')
+        .select('user_id')
+        .not('user_id', 'is', null);
+  
+      if (error) throw error;
+  
+      const unique = Array.from(new Set((data ?? []).map((r) => r.user_id))).filter(Boolean);
+  
+      // 表示用に app_users から名前も引く（テーブル名が users なら読み替え）
+      const { data: usersData, error: usersErr } = await supabase
+        .from('app_users')
+        .select('id, nickname, email') // ← nickname無ければ name などに変更
+        .in('id', unique);
+  
+      if (usersErr) {
+        // 名前が取れなくても user_id だけで動くので握りつぶしOK
+        console.warn('fetchInbodyUsers: failed to fetch app_users info:', usersErr);
+        setInbodyUsers(unique.map((id) => ({ user_id: id })));
+        return;
+      }
+  
+      const mapped =
+        (usersData ?? []).map((u: any) => ({
+          user_id: u.id,
+          name: u.nickname || u.email || u.id,
+        })) ?? [];
+  
+      setInbodyUsers(mapped);
+    } catch (e) {
+      console.error('fetchInbodyUsers error:', e);
+    } finally {
+      setInbodyUsersLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchTeams();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'system' && systemSubTab === 'nutrition-dev') {
+      fetchInbodyUsers();
+    }
+  }, [activeTab, systemSubTab]);
 
   const fetchTeams = async () => {
     try {
@@ -138,6 +202,54 @@ export function AdminView({
       setLoading(false);
     }
   };
+
+  const testCalculateMetabolism = async () => {
+    try {
+      if (!targetUserId) {
+        alert("user_id を入れてください");
+        return;
+      }
+  
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+  
+      if (!accessToken) {
+        alert("セッションが取得できません（未ログイン？）");
+        return;
+      }
+  
+      const res = await fetch(
+        "https://cymnqmbdwaveccoooics.supabase.co/functions/v1/calculate-metabolism",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            user_id: targetUserId,
+            activity_level: "medium",
+          }),
+        }
+      );
+  
+      const json = await res.json();
+      console.log("🧪 calculate-metabolism result:", json);
+  
+      if (!res.ok) {
+        alert(`失敗: ${res.status}\n` + JSON.stringify(json, null, 2));
+        return;
+      }
+  
+      alert(JSON.stringify(json, null, 2));
+    } catch (e) {
+      console.error(e);
+      alert("エラー発生（consoleを確認）");
+    }
+  };
+ 
+
+
 
   if (loading) {
     return (
@@ -483,11 +595,59 @@ export function AdminView({
                         非公開の開発用画面です（一般ユーザーには見せない想定）。
                       </p>
                     </div>
-                    <NutritionDev />
+                      <div className="space-y-4">
+                        <NutritionPhotoUploader />
+                        <NutritionDev />
+                      </div>
+
+                  {/* 🧪 calculate-metabolism テスト */}
+                    <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">テスト対象 user_id</p>
+                        <p className="text-xs text-gray-500">
+                          測定データ（inbody_records）が入っている選手の user_id を貼ってください
+                        </p>
+                      </div>
+                      {inbodyUsers.length > 0 && (
+                      <select
+                        value={targetUserId}
+                        onChange={(e) => setTargetUserId(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      >
+                        <option value="">（InBodyありユーザーを選択）</option>
+                        {inbodyUsers.map((u) => (
+                          <option key={u.user_id} value={u.user_id}>
+                            {u.name} — {u.user_id.slice(0, 8)}…
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+
+                      <input
+                        value={targetUserId}
+                        onChange={(e) => setTargetUserId(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        placeholder="例: f7f3aea1-764f-4013-b51d-c7bca2ed6d20"
+                      />
+
+                      <button
+                        onClick={testCalculateMetabolism}
+                        disabled={!targetUserId}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        🧪 代謝計算 Edge Function テスト
+                      </button>
+
+                      <p className="text-xs text-gray-500">
+                        ※ console / alert に結果を表示します
+                      </p>
+                    </div>
                   </div>
                 ) : null}
               </div>
             ) : activeTab === 'users' ? (
+              
 
                 <div>
                   {usersSubTab === 'invite' ? (
@@ -613,7 +773,11 @@ export function AdminView({
                   ) : organizationSubTab === 'transfers' ? (
                     <div>
                       {selectedOrganizationId ? (
-                        <AthleteTransferManagement userId={user.id} organizationId={selectedOrganizationId} isAdmin={true} />
+                      <AthleteTransferManagement
+                      userId={user.id}
+                      organizationId={selectedOrganizationId}
+                      isAdmin={isGlobalAdmin(user.role)}
+                    />
                       ) : (
                         <div className="text-center py-12">
                           <p className="text-gray-600 dark:text-gray-400 mb-4">選手移籍管理を表示するには、まず組織を選択してください</p>
@@ -629,7 +793,11 @@ export function AdminView({
                   ) : organizationSubTab === 'team-access' ? (
                     <div>
                       {selectedOrganizationId ? (
-                        <TeamAccessRequestManagement userId={user.id} organizationId={selectedOrganizationId} isAdmin={true} />
+                        <TeamAccessRequestManagement
+                        userId={user.id}
+                        organizationId={selectedOrganizationId}
+                        isAdmin={isGlobalAdmin(user.role)}
+                      />
                       ) : (
                         <div className="text-center py-12">
                           <p className="text-gray-600 dark:text-gray-400 mb-4">チームアクセスリクエストを表示するには、まず組織を選択してください</p>
@@ -651,7 +819,7 @@ export function AdminView({
       </main>
 
       <TutorialController
-        steps={getTutorialSteps('admin')}
+        steps={getTutorialSteps('global_admin')}
         isActive={isActive}
         onComplete={completeTutorial}
         onSkip={skipTutorial}

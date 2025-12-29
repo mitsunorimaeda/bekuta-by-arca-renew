@@ -2,23 +2,42 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../lib/supabase';
 import {
   Book, Search, ChevronRight, ChevronDown, Home,
-  Activity, BarChart3, Users, Settings, TrendingUp,
-  AlertTriangle, Calendar, Scale, Moon, Heart, Trophy,
-  MessageSquare, UserPlus, Shield, Building2, FileText,
-  Zap, Target, Clock, Award, HelpCircle, ArrowLeft,
-  ThumbsUp, ThumbsDown, Droplets, X
+  Activity, Users, TrendingUp,
+  Building2,
+  Zap, HelpCircle, ArrowLeft,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
+import type { AppRole } from '../lib/roles';
 
 interface HelpPageProps {
   user: User;
   onBack: () => void;
 }
 
+type HelpCategory = 'athlete' | 'coach' | 'admin' | 'all';
+type SelectedCategory = 'all' | 'athlete' | 'coach' | 'admin';
+
+useEffect(() => {
+  const normalizeRole = (role?: string | null): AppRole | 'unknown' => {
+    if (!role) return 'unknown';
+  
+    if (
+      role === 'athlete' ||
+      role === 'staff' ||
+      role === 'global_admin'
+    ) {
+      return role;
+    }
+  
+    return 'unknown';
+  };
+}, [userRole]);
+
 interface HelpArticle {
   id: string;
   title: string;
-  category: 'athlete' | 'coach' | 'admin' | 'all';
+  category: HelpCategory;
   icon: React.ReactNode;
   sections: {
     heading: string;
@@ -29,20 +48,25 @@ interface HelpArticle {
   relatedArticles?: string[];
 }
 
+
+
 export function HelpPage({ user, onBack }: HelpPageProps) {
   const { isDarkMode } = useDarkMode();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'athlete' | 'coach' | 'admin'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<SelectedCategory>('all');
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0]));
   const [helpful, setHelpful] = useState<{ [key: string]: boolean | null }>({});
 
-  const userRole = user.role || 'athlete';
+  const userRole = user.role;
 
   useEffect(() => {
-    if (userRole === 'athlete') setSelectedCategory('athlete');
-    else if (userRole === 'coach' || userRole === 'staff') setSelectedCategory('coach');
-    else if (userRole === 'admin' || userRole === 'org_admin') setSelectedCategory('admin');
+    const r = normalizeRole(userRole);
+  
+    if (r === 'athlete') setSelectedCategory('athlete');
+    else if (isCoachLike(userRole)) setSelectedCategory('coach');
+    else if (isAdminLike(userRole)) setSelectedCategory('admin');
+    else setSelectedCategory('all');
   }, [userRole]);
 
   const articles: HelpArticle[] = [
@@ -212,13 +236,19 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
   ];
 
   const filteredArticles = articles.filter(article => {
-    const matchesCategory = selectedCategory === 'all' || article.category === selectedCategory || article.category === 'all';
-    const matchesSearch = searchQuery === '' ||
+    const matchesCategory =
+      selectedCategory === 'all' ||
+      article.category === selectedCategory ||
+      article.category === 'all';
+
+    const matchesSearch =
+      searchQuery === '' ||
       article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       article.sections.some(section =>
         section.heading.toLowerCase().includes(searchQuery.toLowerCase()) ||
         section.content.toLowerCase().includes(searchQuery.toLowerCase())
       );
+
     return matchesCategory && matchesSearch;
   });
 
@@ -226,11 +256,8 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
 
   const toggleSection = (index: number) => {
     const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(index)) {
-      newExpanded.delete(index);
-    } else {
-      newExpanded.add(index);
-    }
+    if (newExpanded.has(index)) newExpanded.delete(index);
+    else newExpanded.add(index);
     setExpandedSections(newExpanded);
   };
 
@@ -424,7 +451,11 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
                       ? isDarkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-700'
                       : isDarkMode ? 'bg-purple-900/30 text-purple-400' : 'bg-purple-100 text-purple-700'
                   }`}>
-                    {currentArticle.category === 'athlete' ? '選手向け' : currentArticle.category === 'coach' ? 'コーチ向け' : '管理者向け'}
+                    {currentArticle.category === 'athlete'
+                      ? '選手向け'
+                      : currentArticle.category === 'coach'
+                      ? 'コーチ向け'
+                      : '管理者向け'}
                   </span>
                 </div>
               </div>
@@ -432,7 +463,12 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
 
             <div className="p-6">
               {currentArticle.sections.map((section, index) => (
-                <div key={index} className={`mb-4 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} ${index !== currentArticle.sections.length - 1 ? 'border-b pb-4' : ''}`}>
+                <div
+                  key={index}
+                  className={`mb-4 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} ${
+                    index !== currentArticle.sections.length - 1 ? 'border-b pb-4' : ''
+                  }`}
+                >
                   <button
                     onClick={() => toggleSection(index)}
                     className={`w-full flex items-center justify-between p-4 rounded-lg transition-colors ${
@@ -451,15 +487,16 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
 
                   {expandedSections.has(index) && (
                     <div className="px-4 pt-2">
-                      <p className={`mb-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        {section.content}
-                      </p>
+                      <p className={`mb-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{section.content}</p>
 
                       {section.steps && section.steps.length > 0 && (
                         <div className={`mb-4 p-4 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                           <ol className="space-y-2">
                             {section.steps.map((step, stepIndex) => (
-                              <li key={stepIndex} className={`flex gap-3 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              <li
+                                key={stepIndex}
+                                className={`flex gap-3 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                              >
                                 <span className={`font-semibold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                   {stepIndex + 1}.
                                 </span>
@@ -471,7 +508,13 @@ export function HelpPage({ user, onBack }: HelpPageProps) {
                       )}
 
                       {section.tips && section.tips.length > 0 && (
-                        <div className={`p-4 rounded-lg ${isDarkMode ? 'bg-yellow-900/20 border border-yellow-800' : 'bg-yellow-50 border border-yellow-200'}`}>
+                        <div
+                          className={`p-4 rounded-lg ${
+                            isDarkMode
+                              ? 'bg-yellow-900/20 border border-yellow-800'
+                              : 'bg-yellow-50 border border-yellow-200'
+                          }`}
+                        >
                           <div className="flex items-start gap-3">
                             <Zap className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDarkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
                             <div>

@@ -246,6 +246,26 @@ export function ConsolidatedOverviewDashboard({
   const predictedNextPeriod = getPredictedNextPeriod();
   const showCycleCard = userGender === 'female';
 
+  const latest = weightRecords?.[0];
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() - 30);
+
+  
+
+  // 30日前以前のレコードのうち、一番新しいもの（=30日前に一番近い過去データ）
+  const past30 = weightRecords
+  ?.filter(r => new Date(r.date) <= targetDate)
+  ?.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+  const diff30 =
+  latest?.weight_kg != null && past30?.weight_kg != null
+    ? Number(latest.weight_kg) - Number(past30.weight_kg)
+    : null;
+
+  <p className="text-lg font-bold text-green-800 dark:text-green-300">
+    {diff30 !== null ? `${diff30.toFixed(1)}kg` : '-'}
+  </p>
+
   // Debug log
   console.log('[ConsolidatedOverview] Gender:', userGender, 'Show cycle card:', showCycleCard, 'Cycles:', menstrualCycles?.length);
 

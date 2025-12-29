@@ -1,6 +1,7 @@
 // src/hooks/useAlerts.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import type { AppRole } from '../lib/roles';
 import {
   Alert,
   AlertRule,
@@ -13,7 +14,7 @@ import { calculateACWR } from '../lib/acwr';
 
 const ENABLE_REALTIME_ALERT_EMAILS = false;
 
-type UserRole = 'athlete' | 'staff' | 'admin';
+type UserRole = AppRole;
 
 export function useAlerts(userId: string, userRole: UserRole) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -83,7 +84,7 @@ export function useAlerts(userId: string, userRole: UserRole) {
       usersToCheck = Array.from(deduped.values());
     }
 
-    if (userRole === 'admin') {
+    if (userRole === 'global_admin') {
       const { data: allAthletes, error } = await supabase
         .from('users')
         .select('id, name')

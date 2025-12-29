@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import type { AppRole } from '../lib/roles';
 import { Alert, getAlertStyle, getAlertTypeLabel } from '../lib/alerts';
 import {
   X, Check, Eye, EyeOff, Filter, Clock, User, TrendingUp,
@@ -11,7 +12,7 @@ interface AlertPanelProps {
   onDismiss: (alertId: string) => void;
   onMarkAllAsRead: () => void;
   onClose: () => void;
-  userRole: 'athlete' | 'staff' | 'admin';
+  userRole: AppRole;
 
   // ✅ 追加：選択した選手だけ表示（これが入っていれば「その選手限定モード」）
   selectedUserId?: string;
