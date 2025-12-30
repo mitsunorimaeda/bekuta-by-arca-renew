@@ -1,6 +1,6 @@
 // supabase/functions/create-user/index.ts
+// ✅ global_admin / parent 対応 丸コピペ版
 
-// 先頭付近
 declare const Deno: any;
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -11,13 +11,15 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+type AppRole = 'athlete' | 'staff' | 'parent' | 'global_admin';
+
 interface CreateUserRequest {
   name: string;
   email: string;
-  role: 'athlete' | 'staff' | 'admin';
+  role: AppRole;
   teamId?: string;
   organizationId?: string;
-  redirectUrl?: string; // フロントから渡す（推奨: `${origin}/reset-password`）
+  redirectUrl?: string; // 推奨: `${origin}/reset-password`
 }
 
 function json(status: number, body: Record<string, any>) {
@@ -29,8 +31,7 @@ function json(status: number, body: Record<string, any>) {
 
 /**
  * redirectUrl を最低限バリデーションして、安全なURLだけ採用する
- * - ここは「許可したいオリジン」に合わせて調整してOK
- * - いまは bekuta.netlify.app を許可（必要なら localhost なども追加）
+ * - 許可したいオリジンに合わせて調整
  */
 function resolveRedirectTo(input?: string) {
   const FALLBACK =
@@ -41,23 +42,18 @@ function resolveRedirectTo(input?: string) {
   try {
     const u = new URL(input);
 
-    // ✅ HTTPSのみ（localhostは例外で許可したい場合は下で追加）
-    const isHttps = u.protocol === 'https:';
-
-    // ✅ 許可する origin（必要に応じて追加）
     const allowedOrigins = new Set<string>([
       'https://bekuta.netlify.app',
-      // 'http://localhost:5173', // ローカルも許可したいならコメントアウト解除
+      // 'http://localhost:5173',
     ]);
 
-    const isAllowedOrigin = allowedOrigins.has(u.origin);
-
-    // ✅ パスを /reset-password に固定したいならここで矯正する
-    //    すでに /reset-password を渡しているはずだけど、保険で寄せる
     const forced = new URL(u.toString());
     forced.pathname = '/reset-password';
 
+    const isAllowedOrigin = allowedOrigins.has(forced.origin);
     if (!isAllowedOrigin) return FALLBACK;
+
+    const isHttps = forced.protocol === 'https:';
     if (!isHttps && forced.origin !== 'http://localhost:5173') return FALLBACK;
 
     return forced.toString();
@@ -117,14 +113,20 @@ Deno.serve(async (req) => {
       return json(401, { error: 'Invalid authentication' });
     }
 
-    // 呼び出しユーザーが admin か確認
-    const { data: userData, error: userError } = await supabaseAdmin
+    // ✅ 呼び出しユーザーの権限チェック（admin → global_admin）
+    const { data: caller, error: callerError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (userError || userData?.role !== 'admin') {
+    if (callerError || !caller?.role) {
+      return json(403, { error: 'Admin access required' });
+    }
+
+    // ✅ ここが本丸：global_admin だけ許可（必要なら staff も許可可能）
+    const isAllowedCaller = caller.role === 'global_admin';
+    if (!isAllowedCaller) {
       return json(403, { error: 'Admin access required' });
     }
 
@@ -138,12 +140,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!['athlete', 'staff', 'admin'].includes(role)) {
+    const allowedRoles: AppRole[] = ['athlete', 'staff', 'parent', 'global_admin'];
+    if (!allowedRoles.includes(role)) {
       return json(400, {
-        error: 'Invalid role. Must be athlete, staff, or admin',
+        error: 'Invalid role. Must be athlete, staff, parent, or global_admin',
       });
     }
 
+    // athlete は team 必須（親は team 不要、staff は任意）
     if (role === 'athlete' && !teamId) {
       return json(400, { error: 'Team ID is required for athletes' });
     }
@@ -165,7 +169,6 @@ Deno.serve(async (req) => {
     }
 
     const temporaryPassword = generateTempPassword();
-
     console.log('🚀 Creating user:', email);
 
     // auth user 作成（temporary password）
@@ -209,7 +212,6 @@ Deno.serve(async (req) => {
 
     if (resetLinkError || !resetLinkData?.properties?.action_link) {
       console.error('Failed to generate password reset link:', resetLinkError);
-      // 作ったユーザーを消しておく（中途半端を残さない）
       try {
         await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
       } catch (e) {
@@ -285,7 +287,7 @@ Deno.serve(async (req) => {
         team_id: userProfile.team_id,
       },
       passwordSetupLink: resetLinkData.properties.action_link,
-      redirectToUsed: redirectTo, // デバッグ用（問題なければ消してOK）
+      redirectToUsed: redirectTo,
       message: 'User created successfully. Password setup link generated.',
     });
   } catch (error: any) {

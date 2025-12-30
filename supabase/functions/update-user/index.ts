@@ -1,230 +1,158 @@
-// 先頭付近
+// supabase/functions/update-user/index.ts
 declare const Deno: any;
-// 👇 ここを変更
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+type AppRole = "athlete" | "staff" | "parent" | "global_admin";
 
 interface UpdateUserRequest {
   userId: string;
   name: string;
   email: string;
-  role: 'athlete' | 'staff' | 'admin';
-  teamId?: string;
+  role: AppRole;
+  teamId?: string | null;
+  // 必要なら organizationId も追加できる
+}
+
+function json(status: number, body: Record<string, any>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    // Only allow POST requests
-    if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ error: 'Method not allowed' }),
-        { 
-          status: 405, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return json(401, { error: "Missing authorization header" });
     }
 
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {
+      return json(500, {
+        error:
+          "Missing env vars: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY",
+      });
     }
 
-    // Create Supabase client with service role key for admin operations
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    // service role（RLSバイパス）
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    // caller verify（anon）
+    const supabaseClient = createClient(SUPABASE_URL, ANON_KEY);
 
-    // Create regular client to verify the requesting user
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
+    // caller auth
+    const token = authHeader.replace("Bearer ", "").trim();
+    const {
+      data: { user: caller },
+      error: authError,
+    } = await supabaseClient.auth.getUser(token);
 
-    // Verify the requesting user is authenticated and is an admin
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid authentication' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
+    if (authError || !caller) return json(401, { error: "Invalid authentication" });
 
-    // Check if the user is an admin using supabaseAdmin to bypass RLS
-    const { data: userData, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
+    // caller が global_admin か確認（超重要）
+    const { data: callerRow, error: callerErr } = await supabaseAdmin
+      .from("users")
+      .select("role")
+      .eq("id", caller.id)
       .single();
 
-    if (userError || userData?.role !== 'admin') {
-      return new Response(
-        JSON.stringify({ error: 'Admin access required' }),
-        { 
-          status: 403, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    if (callerErr) return json(500, { error: "Failed to verify caller role" });
+    if (callerRow?.role !== "global_admin") {
+      return json(403, { error: "Global admin access required" });
     }
 
-    // Parse the request body
-    const requestData: UpdateUserRequest = await req.json();
-    const { userId, name, email, role, teamId } = requestData;
+    // body
+    const body: UpdateUserRequest = await req.json();
+    const { userId, name, email, role, teamId } = body;
 
-    // Validate required fields
     if (!userId || !name || !email || !role) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      return json(400, { error: "Missing required fields" });
     }
 
-    // Validate role
-    if (!['athlete', 'staff', 'admin'].includes(role)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid role' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    // role validation（あなたのDB制約に合わせる）
+    if (!["athlete", "staff", "parent", "global_admin"].includes(role)) {
+      return json(400, { error: "Invalid role" });
     }
 
-    // Validate team requirement for athletes
-    if (role === 'athlete' && !teamId) {
-      return new Response(
-        JSON.stringify({ error: 'Team ID required for athletes' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    // athlete の team 必須
+    if (role === "athlete" && !teamId) {
+      return json(400, { error: "Team ID required for athletes" });
     }
 
-    // Check if user exists
+    // 対象ユーザー存在確認
     const { data: existingUser, error: existingUserError } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('id', userId)
+      .from("users")
+      .select("id, role")
+      .eq("id", userId)
       .single();
 
     if (existingUserError || !existingUser) {
-      return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      return json(404, { error: "User not found" });
     }
 
-    // Step 1: Update user profile
+    // ① users テーブル更新（プロフィール側）
     const { error: updateError } = await supabaseAdmin
-      .from('users')
+      .from("users")
       .update({
         name,
         email,
         role,
-        team_id: role === 'athlete' ? teamId : null
+        team_id: role === "athlete" ? teamId : null,
       })
-      .eq('id', userId);
+      .eq("id", userId);
 
     if (updateError) {
-      console.error('User update error:', updateError);
-      return new Response(
-        JSON.stringify({ error: `Failed to update user: ${updateError.message}` }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      console.error("User update error:", updateError);
+      return json(400, { error: `Failed to update user: ${updateError.message}` });
     }
 
-    // Step 2: Handle staff team links
-    // First, remove existing staff team links
+    // ② staff_team_links を更新（staff のみ）
+    // 既存リンク削除
     const { error: deleteLinksError } = await supabaseAdmin
-      .from('staff_team_links')
+      .from("staff_team_links")
       .delete()
-      .eq('staff_user_id', userId);
+      .eq("staff_user_id", userId);
 
     if (deleteLinksError) {
-      console.error('Error deleting staff team links:', deleteLinksError);
-      return new Response(
-        JSON.stringify({ error: `Failed to update staff team links: ${deleteLinksError.message}` }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      console.error("Error deleting staff team links:", deleteLinksError);
+      return json(400, {
+        error: `Failed to update staff team links: ${deleteLinksError.message}`,
+      });
     }
 
-    // If the user is staff and has a team, create new staff team link
-    if (role === 'staff' && teamId) {
+    // staff なら新規作成（teamId があれば）
+    if (role === "staff" && teamId) {
       const { error: linkError } = await supabaseAdmin
-        .from('staff_team_links')
-        .insert({
-          staff_user_id: userId,
-          team_id: teamId
-        });
+        .from("staff_team_links")
+        .insert({ staff_user_id: userId, team_id: teamId });
 
       if (linkError) {
-        console.error('Error creating staff team link:', linkError);
-        return new Response(
-          JSON.stringify({ error: `Failed to create staff team link: ${linkError.message}` }),
-          { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
+        console.error("Error creating staff team link:", linkError);
+        return json(400, { error: `Failed to create staff team link: ${linkError.message}` });
       }
     }
 
-    // Return success response
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: 'User updated successfully'
-      }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    // ※ 注意：ここでは auth.users 側の email は更新していない
+    // 同期したいなら下のコメントをON（ただし email 変更時の挙動は運用設計が必要）
+    // await supabaseAdmin.auth.admin.updateUserById(userId, { email });
 
-  } catch (error) {
-    console.error('Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    return json(200, { success: true, message: "User updated successfully" });
+  } catch (error: any) {
+    console.error("Unexpected error:", error);
+    return json(500, { error: "Internal server error", details: error?.message ?? String(error) });
   }
 });

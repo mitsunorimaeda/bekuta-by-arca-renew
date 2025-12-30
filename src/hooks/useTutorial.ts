@@ -1,4 +1,3 @@
-// src/hooks/useTutorial.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { AppRole } from '../lib/roles';
@@ -44,16 +43,14 @@ export function useTutorial(userId: string, role: AppRole) {
       if (data) {
         setProgress(data as TutorialProgress);
       } else {
-        // 初回はローカルで初期状態を作る（保存はユーザー操作時）
-        const newProgress: TutorialProgress = {
+        setProgress({
           user_id: userId,
           role,
           completed_steps: [],
           current_step: null,
           is_completed: false,
           skipped: false,
-        };
-        setProgress(newProgress);
+        });
       }
     } catch (err: any) {
       console.error('Error loading tutorial progress:', err);
@@ -69,9 +66,11 @@ export function useTutorial(userId: string, role: AppRole) {
 
   const saveProgress = useCallback(
     async (updatedProgress: Partial<TutorialProgress>) => {
-      if (!userId || !role) return;
+      if (!userId || !role) return null;
 
       try {
+        setError(null);
+
         const progressToSave: TutorialProgress = {
           ...(progress ?? {
             user_id: userId,
@@ -83,14 +82,12 @@ export function useTutorial(userId: string, role: AppRole) {
           }),
           ...updatedProgress,
           user_id: userId,
-          role, // ✅ 常に正規roleで保存
+          role,
         };
 
         const { data, error: upsertError } = await supabase
           .from('tutorial_progress')
-          .upsert(progressToSave, {
-            onConflict: 'user_id,role',
-          })
+          .upsert(progressToSave, { onConflict: 'user_id,role' })
           .select()
           .single();
 
@@ -101,7 +98,23 @@ export function useTutorial(userId: string, role: AppRole) {
       } catch (err: any) {
         console.error('Error saving tutorial progress:', err);
         setError(err.message ?? String(err));
-        return null;
+        // ここで throw しない。UIを固めないため。
+        // 代わりにローカルは更新して “閉じられる” ようにする
+        const fallback: TutorialProgress = {
+          ...(progress ?? {
+            user_id: userId,
+            role,
+            completed_steps: [],
+            current_step: null,
+            is_completed: false,
+            skipped: false,
+          }),
+          ...updatedProgress,
+          user_id: userId,
+          role,
+        };
+        setProgress(fallback);
+        return fallback;
       }
     },
     [userId, role, progress],
@@ -109,43 +122,42 @@ export function useTutorial(userId: string, role: AppRole) {
 
   const completeStep = useCallback(
     async (stepId: string) => {
-      if (!progress) return;
+      if (!progress) return null;
 
       const completedSteps = [...progress.completed_steps];
       if (!completedSteps.includes(stepId)) completedSteps.push(stepId);
 
-      const saved = await saveProgress({
+      return await saveProgress({
         completed_steps: completedSteps,
         current_step: stepId,
       });
-      if (!saved) return; // ✅ 失敗時にループ/連鎖させない
     },
     [progress, saveProgress],
   );
 
   const setCurrentStep = useCallback(
     async (stepId: string | null) => {
-      await saveProgress({ current_step: stepId });
+      return await saveProgress({ current_step: stepId });
     },
     [saveProgress],
   );
 
   const completeTutorial = useCallback(async () => {
-    await saveProgress({
+    return await saveProgress({
       is_completed: true,
       current_step: null,
     });
   }, [saveProgress]);
 
   const skipTutorial = useCallback(async () => {
-    await saveProgress({
+    return await saveProgress({
       skipped: true,
       current_step: null,
     });
   }, [saveProgress]);
 
   const resetTutorial = useCallback(async () => {
-    await saveProgress({
+    return await saveProgress({
       completed_steps: [],
       current_step: null,
       is_completed: false,
