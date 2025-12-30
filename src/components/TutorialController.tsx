@@ -1,3 +1,4 @@
+// src/components/TutorialController.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { TutorialOverlay } from './TutorialOverlay';
 import { TutorialTooltip, TooltipPosition } from './TutorialTooltip';
@@ -48,12 +49,21 @@ export function TutorialController({
       return;
     }
 
+    let cancelled = false;
+
     const updateTargetElement = () => {
+      if (cancelled) return;
+
       if (currentStep.targetSelector) {
-        const element = document.querySelector(currentStep.targetSelector) as HTMLElement;
+        const element = document.querySelector(currentStep.targetSelector) as HTMLElement | null;
         if (element) {
           setTargetElement(element);
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // 画面がガタつく場合は 'auto' にしてもOK
+          try {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } catch {
+            // ignore
+          }
         } else {
           setTargetElement(null);
         }
@@ -63,35 +73,43 @@ export function TutorialController({
     };
 
     const executeBeforeStep = async () => {
-      if (currentStep.beforeStep) {
-        await currentStep.beforeStep();
+      try {
+        if (currentStep.beforeStep) {
+          await currentStep.beforeStep();
+        }
+      } catch (e) {
+        console.warn('[Tutorial] beforeStep error', e);
       }
     };
 
-    executeBeforeStep().then(() => {
-      updateTargetElement();
-    });
+    executeBeforeStep().then(updateTargetElement);
 
     const observer = new MutationObserver(updateTargetElement);
     observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
+      cancelled = true;
       observer.disconnect();
     };
   }, [isActive, currentStep, currentStepIndex]);
 
   const handleNext = useCallback(async () => {
     if (isExecutingAction) return;
+    if (!currentStep) return;
 
     try {
       setIsExecutingAction(true);
 
-      if (currentStep.afterStep) {
-        await currentStep.afterStep();
+      try {
+        if (currentStep.afterStep) await currentStep.afterStep();
+      } catch (e) {
+        console.warn('[Tutorial] afterStep error', e);
       }
 
-      if (currentStep.action) {
-        await currentStep.action();
+      try {
+        if (currentStep.action) await currentStep.action();
+      } catch (e) {
+        console.warn('[Tutorial] action error', e);
       }
 
       if (currentStepIndex < steps.length - 1) {
@@ -141,30 +159,39 @@ export function TutorialController({
 
   return (
     <>
-      <TutorialOverlay
-        targetElement={targetElement}
-        onClick={handleSkip}
-      />
+      {/* ✅ Overlayは「背面」(z:10000) */}
+      <TutorialOverlay targetElement={targetElement} onClick={handleSkip} />
 
-      <TutorialTooltip
-        targetElement={targetElement}
-        position={currentStep.position || 'bottom'}
-        title={currentStep.title}
-        description={currentStep.description}
-        currentStep={currentStepIndex + 1}
-        totalSteps={steps.length}
-        onNext={handleNext}
-        onPrev={currentStepIndex > 0 ? handlePrev : undefined}
-        onSkip={handleSkip}
-        showPrev={currentStepIndex > 0}
-      />
+      {/* ✅ クリックがOverlayへ抜けないようにガード（z:10001） */}
+      <div className="fixed inset-0 z-[10001] pointer-events-none">
+        <div
+          className="pointer-events-auto"
+          onClick={(e) => {
+            // Tooltip内クリックが Overlay に伝播するのを防ぐ
+            e.stopPropagation();
+          }}
+        >
+          <TutorialTooltip
+            targetElement={targetElement}
+            position={currentStep.position || 'bottom'}
+            title={currentStep.title}
+            description={currentStep.description}
+            currentStep={currentStepIndex + 1}
+            totalSteps={steps.length}
+            onNext={handleNext}
+            onPrev={currentStepIndex > 0 ? handlePrev : undefined}
+            onSkip={handleSkip}
+            showPrev={currentStepIndex > 0}
+          />
+        </div>
+      </div>
 
       {showProgress && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[10000]">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[10002] pointer-events-none">
           <TutorialProgress
             currentStep={currentStepIndex + 1}
             totalSteps={steps.length}
-            stepTitles={steps.map(s => s.title)}
+            stepTitles={steps.map((s) => s.title)}
           />
         </div>
       )}

@@ -101,7 +101,7 @@ export function useTutorial(userId: string, role: AppRole) {
       } catch (err: any) {
         console.error('Error saving tutorial progress:', err);
         setError(err.message ?? String(err));
-        throw err;
+        return null;
       }
     },
     [userId, role, progress],
@@ -114,10 +114,11 @@ export function useTutorial(userId: string, role: AppRole) {
       const completedSteps = [...progress.completed_steps];
       if (!completedSteps.includes(stepId)) completedSteps.push(stepId);
 
-      await saveProgress({
+      const saved = await saveProgress({
         completed_steps: completedSteps,
         current_step: stepId,
       });
+      if (!saved) return; // ✅ 失敗時にループ/連鎖させない
     },
     [progress, saveProgress],
   );

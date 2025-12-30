@@ -52,7 +52,7 @@ import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
 import NutritionOverview from "../components/NutritionOverview";
 import { buildDailyTargets } from "../lib/nutritionCalc";
-
+import { FTTCheck } from './FTTCheck';
 
 
 import {
@@ -151,8 +151,17 @@ export function AthleteView({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    'unified' | 'overview' | 'weight' | 'insights' |'nutrition'| 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
+    'unified' | 'overview' | 'weight' | 'insights' |'nutrition'|'ftt'| 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
   >('unified');
+  
+  const canUseFTT = !!(user as any).ftt_enabled;
+
+  useEffect(() => {
+    if (!canUseFTT && activeTab === 'ftt') {
+      setActiveTab('unified');
+    }
+  }, [canUseFTT, activeTab]);
+
 
   //② nutrition_enabled を見て表示制御
   const canUseNutrition = !!(user as any).nutrition_enabled;
@@ -749,6 +758,26 @@ export function AthleteView({
                 <span className="text-sm font-medium">練習記録</span>
               </button>
 
+              {/*FTT計測*/}
+              {canUseFTT && (
+                <button
+                  onClick={() => {
+                    setActiveTab('ftt');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                    activeTab === 'ftt'
+                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Activity className="w-4 h-4" />
+                  <span className="text-sm font-medium">ニューロチェック（10秒）</span>
+                </button>
+              )}
+
+
+              {/*栄養*/}
               {canUseNutrition && (
                 <button
                   onClick={() => {
@@ -976,6 +1005,13 @@ export function AthleteView({
               nutritionTotals={nutritionTotalsToday}
               nutritionLoading={nutritionLoading}
               nutritionError={nutritionError}
+              onBackHome={() => setActiveTab('unified')}
+            />
+          ) : null
+        ) : activeTab === 'ftt' ? (
+          canUseFTT ? (
+            <FTTCheck
+              userId={user.id}
               onBackHome={() => setActiveTab('unified')}
             />
           ) : null

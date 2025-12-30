@@ -1,5 +1,6 @@
 import React from "react";
 import { Plus, Camera } from "lucide-react";
+import { stopAllMediaStreams } from "../lib/stopCamera";
 
 type Props = {
   onClick: () => void;          // ＋
