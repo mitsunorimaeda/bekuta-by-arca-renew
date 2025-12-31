@@ -238,8 +238,29 @@ function App() {
     );
   }
 
-  if (!user || !userProfile) {
-    return <LoginForm onLogin={signIn} />;
+  if (!user) return <LoginForm onLogin={signIn} />;
+
+  // userはいるが userProfile が取れない（or 取れない状態が続く）
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="space-y-3 text-center">
+          <div>プロフィール読み込みに失敗しました</div>
+          <button
+            className="px-4 py-2 rounded bg-blue-600 text-white"
+            onClick={refreshUserProfile}
+          >
+            再読み込み
+          </button>
+          <button
+            className="px-4 py-2 rounded bg-gray-200"
+            onClick={signOut}
+          >
+            ログアウト
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (requiresPasswordChange) {

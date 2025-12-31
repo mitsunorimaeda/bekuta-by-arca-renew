@@ -9,25 +9,32 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
+  
   // --- ユーザープロフィール読込 (users テーブル) ---
   const fetchUserProfile = async (userId: string) => {
+    setLoading(true);
+
+    // ✅ 8秒でタイムアウトして“固まり”を防ぐ
+    const timeoutMs = 8000;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("fetchUserProfile timeout")), timeoutMs)
+    );
+
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const { data, error } = await Promise.race([
+        supabase.from("users").select("*").eq("id", userId).maybeSingle(),
+        timeout,
+      ]);
 
       if (error) {
-        console.error('Error fetching user profile:', error);
+        console.error("Error fetching user profile:", error);
         setUserProfile(null);
-      } else if (data) {
-        setUserProfile(data as User);
-      } else {
-        setUserProfile(null);
+        return;
       }
-    } catch (error) {
-      console.error('Unexpected error fetching user profile:', error);
+
+      setUserProfile(data ? (data as User) : null);
+    } catch (e) {
+      console.error("Unexpected error fetching user profile:", e);
       setUserProfile(null);
     } finally {
       setLoading(false);
