@@ -16,6 +16,7 @@ const g = globalThis as any;
 
 export const supabase =
   g.__bekuta_supabase ??
+  // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
   (g.__bekuta_supabase = createClient<Database>(supabaseUrl!, supabaseAnonKey!, {
     auth: {
       persistSession: true,
