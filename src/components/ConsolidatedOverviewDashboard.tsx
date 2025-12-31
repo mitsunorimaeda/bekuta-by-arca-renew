@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { Activity, Scale, Heart, TrendingUp, TrendingDown, AlertTriangle, Calendar, ChevronRight, Plus, Droplets } from 'lucide-react';
 import { ACWRData } from '../lib/acwr';
 import type { Database } from '../lib/database.types';
@@ -53,11 +53,52 @@ export function ConsolidatedOverviewDashboard({
   onOpenDetailView,
   onQuickAdd
 }: ConsolidatedOverviewDashboardProps) {
-  const latestACWR = acwrData.length > 0 ? acwrData[acwrData.length - 1] : null;
-  const latestWeight = weightRecords.length > 0 ? weightRecords[0] : null;
-  const latestSleep = sleepRecords.length > 0 ? sleepRecords[0] : null;
-  const latestMotivation = motivationRecords.length > 0 ? motivationRecords[0] : null;
-  const latestTraining = trainingRecords.length > 0 ? trainingRecords[trainingRecords.length - 1] : null;
+
+  // ✅ ACWR: “配列末尾が最新” 前提が崩れる可能性があるなら dateで決める
+  const latestACWR = useMemo(() => {
+    if (!acwrData || acwrData.length === 0) return null;
+
+    // ACWRData に date がある前提（無いなら末尾でOK）
+    const withDate = acwrData.filter((x: any) => x?.date);
+    if (withDate.length === 0) return acwrData[acwrData.length - 1] ?? null;
+
+    return withDate.reduce((a: any, b: any) =>
+      new Date(a.date).getTime() >= new Date(b.date).getTime() ? a : b
+    );
+  }, [acwrData]);
+
+  // ✅ 体重：並び順に依存しない
+  const latestWeight = useMemo(() => {
+    if (!weightRecords || weightRecords.length === 0) return null;
+    return weightRecords.reduce((a, b) =>
+      new Date(a.date).getTime() >= new Date(b.date).getTime() ? a : b
+    );
+  }, [weightRecords]);
+
+  // ✅ 睡眠：並び順に依存しない（sleep_quality の null もここで吸収してOK）
+  const latestSleep = useMemo(() => {
+    if (!sleepRecords || sleepRecords.length === 0) return null;
+    return sleepRecords.reduce((a, b) =>
+      new Date(a.date).getTime() >= new Date(b.date).getTime() ? a : b
+    );
+  }, [sleepRecords]);
+
+  // ✅ モチベ：並び順に依存しない
+  const latestMotivation = useMemo(() => {
+    if (!motivationRecords || motivationRecords.length === 0) return null;
+    return motivationRecords.reduce((a, b) =>
+      new Date(a.date).getTime() >= new Date(b.date).getTime() ? a : b
+    );
+  }, [motivationRecords]);
+
+  // ✅ 練習：並び順に依存しない
+  const latestTraining = useMemo(() => {
+    if (!trainingRecords || trainingRecords.length === 0) return null;
+    return trainingRecords.reduce((a, b) =>
+      new Date(a.date).getTime() >= new Date(b.date).getTime() ? a : b
+    );
+  }, [trainingRecords]);
+
 
   const getWeightTrend = () => {
     if (weightRecords.length < 2) return null;
@@ -246,29 +287,32 @@ export function ConsolidatedOverviewDashboard({
   const predictedNextPeriod = getPredictedNextPeriod();
   const showCycleCard = userGender === 'female';
 
-  const latest = weightRecords?.[0];
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() - 30);
+  // 30日変化：30日前以前の「一番近い過去データ」と比較（記録頻度が毎日じゃなくてもOK）
+  const diff30 = useMemo(() => {
+    const latest = weightRecords?.[0];
+    if (!latest?.date || latest.weight_kg == null) return null;
 
-  
+    const latestDate = new Date(latest.date);
+    const targetDate = new Date(latestDate);
+    targetDate.setDate(targetDate.getDate() - 30);
 
-  // 30日前以前のレコードのうち、一番新しいもの（=30日前に一番近い過去データ）
-  const past30 = weightRecords
-  ?.filter(r => new Date(r.date) <= targetDate)
-  ?.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    const past30 = (weightRecords ?? [])
+      .filter((r) => r?.date && new Date(r.date) <= targetDate && r.weight_kg != null)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
-  const diff30 =
-  latest?.weight_kg != null && past30?.weight_kg != null
-    ? Number(latest.weight_kg) - Number(past30.weight_kg)
-    : null;
+    if (!past30) return null;
 
-  <p className="text-lg font-bold text-green-800 dark:text-green-300">
-    {diff30 !== null ? `${diff30.toFixed(1)}kg` : '-'}
-  </p>
+    return Number(latest.weight_kg) - Number(past30.weight_kg);
+  }, [weightRecords]);
 
-  // Debug log
-  console.log('[ConsolidatedOverview] Gender:', userGender, 'Show cycle card:', showCycleCard, 'Cycles:', menstrualCycles?.length);
-
+  // Debug log（変更時だけ）
+  React.useEffect(() => {
+    console.log("[ConsolidatedOverview]", {
+      gender: userGender,
+      showCycleCard,
+      cyclesLen: menstrualCycles?.length ?? 0,
+    });
+  }, [userGender, showCycleCard, menstrualCycles?.length]);
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 rounded-2xl shadow-lg p-6 text-white">
@@ -415,7 +459,7 @@ export function ConsolidatedOverviewDashboard({
               <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 mb-3">
                 <p className="text-xs text-green-700 dark:text-green-400 mb-1">30日間の変化</p>
                 <p className="text-lg font-bold text-green-800 dark:text-green-300">
-                  {weightRecords.length >= 2 ? `${((Number(weightRecords[0].weight_kg) - Number(weightRecords[Math.min(29, weightRecords.length - 1)].weight_kg))).toFixed(1)}kg` : '-'}
+                  {diff30 !== null ? `${diff30.toFixed(1)}kg` : '-'}
                 </p>
               </div>
 

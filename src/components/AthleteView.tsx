@@ -49,10 +49,12 @@ import { getTodayEnergySummary } from '../lib/getTodayEnergySummary';
 // ✅ 栄養カードはこれだけ残す
 import { NutritionCard } from './NutritionCard';
 import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
-import AthleteNutritionDashboardView from './views/AthleteNutritionDashboardView';
-import NutritionOverview from "../components/NutritionOverview";
+import NutritionOverview from "./NutritionOverview";
 import { buildDailyTargets } from "../lib/nutritionCalc";
 import { FTTCheck } from './FTTCheck';
+import {AthleteGamificationView} from "./views/AthleteGamificationView";
+import { AthleteNutritionView } from "./views/AthleteNutritionView";
+import { AthleteCycleView } from "./views/AthleteCycleView";
 
 
 import {
@@ -79,13 +81,14 @@ import {
 } from 'lucide-react';
 
 import { useDarkMode } from '../hooks/useDarkMode';
-import { MenstrualCycleForm } from './MenstrualCycleForm';
-import { BasalBodyTemperatureForm } from './BasalBodyTemperatureForm';
-import { MenstrualCycleChart } from './MenstrualCycleChart';
-import { MenstrualCycleCalendar } from './MenstrualCycleCalendar';
-import { CyclePerformanceCorrelation } from './CyclePerformanceCorrelation';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
+
+const AthleteNutritionDashboardView = lazy(() =>
+  import("./views/AthleteNutritionDashboardView").then((m) => ({
+    default: m.default,
+  }))
+);
 
 // Lazy load heavy components
 const ExportPanel = lazy(() => import('./ExportPanel').then((m) => ({ default: m.ExportPanel })));
@@ -135,9 +138,15 @@ export function AthleteView({
     });
   }, [user.id, user.role, user.gender, user.team_id]);
 
-  if (import.meta.env.DEV) {
-    console.count('[AthleteView] render');
-  }
+  const renderLoggedRef = useRef(false);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (renderLoggedRef.current) return;
+
+    console.log('[AthleteView] first render');
+    renderLoggedRef.current = true;
+  }, []);
 
   const today = useMemo(() => getTodayJSTString(), []);
 
@@ -147,14 +156,38 @@ export function AthleteView({
   const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
  
   const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [cycleViewMode, setCycleViewMode] = useState<'calendar' | 'chart'>('calendar');
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<
-    'unified' | 'overview' | 'weight' | 'insights' |'nutrition'|'ftt'| 'performance' | 'conditioning' | 'cycle' | 'gamification' | 'settings' | 'messages'
-  >('unified');
-  
+    type ActiveTab =
+    | 'unified'
+    | 'overview'
+    | 'weight'
+    | 'insights'
+    | 'nutrition'
+    | 'ftt'
+    | 'performance'
+    | 'conditioning'
+    | 'cycle'
+    | 'gamification'
+    | 'settings'
+    | 'messages';
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('unified');
   const canUseFTT = !!(user as any).ftt_enabled;
+  const canUseNutrition = !!(user as any).nutrition_enabled;
+
+  
+
+  const safeSetActiveTab = useCallback(
+    (tab: ActiveTab) => {
+      if (tab === 'ftt' && !canUseFTT) return;
+      if (tab === 'nutrition' && !canUseNutrition) return;
+      setActiveTab(tab);
+    },
+    [canUseFTT, canUseNutrition]
+  );
+  
+ 
 
   useEffect(() => {
     if (!canUseFTT && activeTab === 'ftt') {
@@ -164,7 +197,7 @@ export function AthleteView({
 
 
   //② nutrition_enabled を見て表示制御
-  const canUseNutrition = !!(user as any).nutrition_enabled;
+ 
   // ③ もし nutrition_enabled=false なのに nutrition タブへ行こうとしたら戻す
   useEffect(() => {
     if (!canUseNutrition && activeTab === 'nutrition') {
@@ -185,20 +218,27 @@ export function AthleteView({
   // =========================
   // ✅ gender 正規化（useMemo）
   // =========================
+  const normalizedGenderBinary: 'female' | 'male' | null = useMemo(() => {
+    return user.gender === 'female' || user.gender === 'male' ? user.gender : null;
+  }, [user.gender]);
+
   const normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null = useMemo(() => {
     return user.gender === 'female' || user.gender === 'male' || user.gender === 'other' || user.gender === 'prefer_not_to_say'
       ? user.gender
       : null;
   }, [user.gender]);
 
-  const normalizedGenderBinary: 'female' | 'male' | null = useMemo(() => {
-    return user.gender === 'female' || user.gender === 'male' ? user.gender : null;
-  }, [user.gender]);
-
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     console.log('[gender check]', { raw: user.gender, binary: normalizedGenderBinary, full: normalizedGenderFull });
   }, [user.gender, normalizedGenderBinary, normalizedGenderFull]);
+
+  // ✅ cycleタブガード（female以外は入れない）
+  useEffect(() => {
+    if (activeTab === 'cycle' && normalizedGenderBinary !== 'female') {
+      setActiveTab('unified');
+    }
+  }, [activeTab, normalizedGenderBinary])
 
   // =========================
   // ✅ Hooks（データ）
@@ -781,7 +821,7 @@ export function AthleteView({
               {canUseNutrition && (
                 <button
                   onClick={() => {
-                    setActiveTab('nutrition');
+                    safeSetActiveTab('nutrition');
                     setMenuOpen(false);
                   }}
                   className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
@@ -936,7 +976,9 @@ export function AthleteView({
                 if (section === 'training') setActiveTab('overview');
                 else if (section === 'weight') setActiveTab('weight');
                 else if (section === 'conditioning') setActiveTab('conditioning');
-                else if (section === 'cycle') setActiveTab('cycle');
+                else if (section === 'cycle') {
+                  if (normalizedGenderBinary === 'female') setActiveTab('cycle');
+                }
               }}
               onQuickAdd={() => setShowUnifiedCheckIn(true)}
             />
@@ -996,18 +1038,33 @@ export function AthleteView({
               </div>
             )}
           </>
-        ) : activeTab === 'nutrition' ? (
+
+  
+        ) : activeTab === "nutrition" ? (
           canUseNutrition ? (
-            <AthleteNutritionDashboardView
-              user={user}
-              date={today}
-              nutritionLogs={nutritionLogsToday}
-              nutritionTotals={nutritionTotalsToday}
-              nutritionLoading={nutritionLoading}
-              nutritionError={nutritionError}
-              onBackHome={() => setActiveTab('unified')}
-            />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+                </div>
+              }
+            >
+              <AthleteNutritionDashboardView
+                user={user}
+                date={today}
+                nutritionLogs={nutritionLogsToday}
+                nutritionTotals={nutritionTotalsToday}
+                nutritionLoading={nutritionLoading}
+                nutritionError={nutritionError}
+                onBackHome={() => setActiveTab("unified")}
+
+                // 任意：あるなら渡す（無ければこの2行ごと消してOK）
+                latestInbody={latestInbody ?? null}
+                trainingRecords={records ?? []}
+              />
+            </Suspense>
           ) : null
+
         ) : activeTab === 'ftt' ? (
           canUseFTT ? (
             <FTTCheck
@@ -1508,63 +1565,14 @@ export function AthleteView({
               </div>
             </div>
           </div>
-        ) : activeTab === 'cycle' ? (
-          normalizedGenderBinary === 'female' ? (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <MenstrualCycleForm userId={user.id} />
-                <BasalBodyTemperatureForm userId={user.id} />
-              </div>
+       ) : activeTab === 'cycle' ? (
+        <AthleteCycleView userId={user.id} gender={normalizedGenderBinary} />
 
-              <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">周期の表示形式</h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCycleViewMode('calendar')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      cycleViewMode === 'calendar'
-                        ? 'bg-pink-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    カレンダー
-                  </button>
-                  <button
-                    onClick={() => setCycleViewMode('chart')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      cycleViewMode === 'chart'
-                        ? 'bg-pink-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    グラフ
-                  </button>
-                </div>
-              </div>
-
-              {cycleViewMode === 'calendar' ? <MenstrualCycleCalendar userId={user.id} /> : <MenstrualCycleChart userId={user.id} days={90} />}
-
-              <CyclePerformanceCorrelation userId={user.id} />
-            </div>
-          ) : (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
-              <Droplets className="w-12 h-12 text-yellow-600 dark:text-yellow-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">この機能は女性ユーザー専用です</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                プロフィール設定で性別を「女性」に設定すると、月経周期トラッキング機能が利用できます。
-              </p>
-            </div>
-          )
         ) : activeTab === 'gamification' ? (
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-              </div>
-            }
-          >
-            <GamificationView userId={user.id} userTeamId={user.team_id} />
-          </Suspense>
+            <AthleteGamificationView
+            user={user}
+          />
+          
         ) : activeTab === 'messages' ? (
           <Suspense
             fallback={
