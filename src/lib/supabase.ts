@@ -1,9 +1,12 @@
-// lib/supabase.ts
+// src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// ✅ Realtime ON/OFF
+const ENABLE_REALTIME = import.meta.env.VITE_ENABLE_REALTIME === "true";
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error("[supabase] URL or ANON KEY is missing");
@@ -18,10 +21,17 @@ export const supabase =
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      // storage は指定しなくても localStorage になることが多いけど、
-      // PWA/一部ブラウザで事故る時は明示すると安定する
       storage: typeof window !== "undefined" ? window.localStorage : undefined,
     },
+
+    // ✅ ここで Realtime を制御
+    realtime: ENABLE_REALTIME
+      ? {}
+      : {
+          params: {
+            eventsPerSecond: 0,
+          },
+        },
   }));
 
 /**
@@ -44,7 +54,6 @@ export async function recoverFromInvalidRefreshToken(err: unknown) {
     } catch (_) {}
 
     try {
-      // Supabase v2 は localStorage に "sb-<project-ref>-auth-token" を作る
       const keys = Object.keys(window.localStorage);
       for (const k of keys) {
         if (k.startsWith("sb-") && k.endsWith("-auth-token")) {
@@ -53,7 +62,6 @@ export async function recoverFromInvalidRefreshToken(err: unknown) {
       }
     } catch (_) {}
 
-    // これで“壊れた状態の無限refresh”を止める
     window.location.reload();
   }
 }

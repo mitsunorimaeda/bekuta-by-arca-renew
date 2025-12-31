@@ -2,6 +2,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
+const ENABLE_REALTIME = import.meta.env.VITE_ENABLE_REALTIME === 'true';
+// ↑ NetlifyのEnvに VITE_ENABLE_REALTIME=false を入れたら realtime完全停止
+
 export function useBadges(userId: string) {
   const [allBadges, setAllBadges] = useState<any[]>([]);
   const [userBadges, setUserBadges] = useState<any[]>([]);
@@ -10,6 +13,18 @@ export function useBadges(userId: string) {
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const badgesLoadedRef = useRef(false);
+  const inflightRef = useRef(false); // 連打/多重取得ガード
+
+  const cleanupChannel = useCallback(() => {
+    if (channelRef.current) {
+      try {
+        supabase.removeChannel(channelRef.current);
+      } catch (e) {
+        // removeChannelが例外を投げても落とさない
+      }
+      channelRef.current = null;
+    }
+  }, []);
 
   const fetchBadges = useCallback(async () => {
     const { data, error } = await supabase.from('badges').select('*').order('sort_order');
@@ -20,21 +35,30 @@ export function useBadges(userId: string) {
   const fetchUserBadges = useCallback(async () => {
     if (!userId) return;
 
-    const { data, error } = await supabase
-      .from('user_badges')
-      .select(`*, badge:badges(*)`)
-      .eq('user_id', userId)
-      .order('earned_at', { ascending: false });
+    // DBが重いとき、realtimeイベントで連続呼び出しされるのを抑止
+    if (inflightRef.current) return;
+    inflightRef.current = true;
 
-    if (error) throw error;
+    try {
+      const { data, error } = await supabase
+        .from('user_badges')
+        .select(`*, badge:badges(*)`)
+        .eq('user_id', userId)
+        .order('earned_at', { ascending: false });
 
-    setUserBadges(data ?? []);
-    setError(null);
+      if (error) throw error;
+
+      setUserBadges(data ?? []);
+      setError(null);
+    } finally {
+      inflightRef.current = false;
+    }
   }, [userId]);
 
   useEffect(() => {
     if (!userId) {
       setLoading(false);
+      cleanupChannel();
       return;
     }
 
@@ -44,7 +68,10 @@ export function useBadges(userId: string) {
       try {
         setLoading(true);
 
-        // badges は全員共通：初回だけ（必要なら外してOK）
+        // 既存チャンネルを確実に破棄（ユーザー切替や再マウント時）
+        cleanupChannel();
+
+        // badges は全員共通：初回だけ
         if (!badgesLoadedRef.current) {
           await fetchBadges();
           badgesLoadedRef.current = true;
@@ -53,32 +80,34 @@ export function useBadges(userId: string) {
         await fetchUserBadges();
         if (cancelled) return;
 
-        // 既存チャンネルを確実に破棄
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
-        }
+        // ✅ Realtime 無効なら、ここで終了（チャンネルを作らない）
+        if (!ENABLE_REALTIME) return;
 
         const channel = supabase
-          .channel(`user-badges:${userId}`) // ★固定名
+          .channel(`user-badges:${userId}`)
           .on(
             'postgres_changes',
             {
-              event: '*', // ★ INSERTだけでなく更新/削除も拾うなら
+              event: '*',
               schema: 'public',
               table: 'user_badges',
               filter: `user_id=eq.${userId}`,
             },
             () => {
-              // 変化が来たら再取得（必要なら payload で差分反映でもOK）
+              // 変化が来たら再取得（inflightRefで暴発抑止済み）
               fetchUserBadges();
             }
           )
           .subscribe((status) => {
             if (import.meta.env.DEV) console.log('[useBadges] status', status);
+
+            // ✅ ここが超重要：失敗したら即終了して、無限リトライさせない
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              // ここで警告だけ（自動再購読はsupabase側がやることが多い）
               console.warn('[useBadges] realtime issue:', status);
+              try {
+                channel.unsubscribe();
+              } catch (e) {}
+              cleanupChannel();
             }
           });
 
@@ -95,12 +124,9 @@ export function useBadges(userId: string) {
 
     return () => {
       cancelled = true;
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      cleanupChannel();
     };
-  }, [userId, fetchBadges, fetchUserBadges]);
+  }, [userId, fetchBadges, fetchUserBadges, cleanupChannel]);
 
   return {
     allBadges,

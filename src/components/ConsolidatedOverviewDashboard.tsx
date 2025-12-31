@@ -287,26 +287,34 @@ export function ConsolidatedOverviewDashboard({
   const predictedNextPeriod = getPredictedNextPeriod();
   const showCycleCard = userGender === 'female';
 
-  // 30日変化：30日前以前の「一番近い過去データ」と比較（記録頻度が毎日じゃなくてもOK）
-  const diff30 = useMemo(() => {
-    const latest = weightRecords?.[0];
-    if (!latest?.date || latest.weight_kg == null) return null;
 
-    const latestDate = new Date(latest.date);
-    const targetDate = new Date(latestDate);
-    targetDate.setDate(targetDate.getDate() - 30);
+// 体重を日付降順に整列（常に [0] が最新になる）
+const sortedWeightsDesc = useMemo(() => {
+  return [...(weightRecords ?? [])].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}, [weightRecords]);
 
-    const past30 = (weightRecords ?? [])
-      .filter((r) => r?.date && new Date(r.date) <= targetDate && r.weight_kg != null)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+// 30日変化：30日前以前の「一番近い過去データ」と比較
+const diff30 = useMemo(() => {
+  const latest = sortedWeightsDesc[0];
+  if (!latest?.date || latest.weight_kg == null) return null;
 
-    if (!past30) return null;
+  const latestDate = new Date(latest.date);
+  const targetDate = new Date(latestDate);
+  targetDate.setDate(targetDate.getDate() - 30);
 
-    return Number(latest.weight_kg) - Number(past30.weight_kg);
-  }, [weightRecords]);
+  const past30 = sortedWeightsDesc.find(
+    (r) => r?.date && new Date(r.date) <= targetDate && r.weight_kg != null
+  );
 
-  // Debug log（変更時だけ）
+  if (!past30) return null;
+
+  return Number(latest.weight_kg) - Number(past30.weight_kg);
+}, [sortedWeightsDesc]);
+
   React.useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[ConsolidatedOverview]", {
       gender: userGender,
       showCycleCard,
