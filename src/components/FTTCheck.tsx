@@ -1,10 +1,15 @@
 // src/components/FTTCheck.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Timer, Hand, Save, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
+import { Timer, Hand, Save, RotateCcw, ShieldAlert, Sparkles, ArrowLeft } from "lucide-react";
 
 type Screen = "standby" | "measure" | "result";
 type ConditionResult = "good" | "fatigue" | "danger" | "stop" | "calibrating";
+
+type Props = {
+  userId: string;
+  onBackHome?: () => void;
+};
 
 const DURATION_MS = 10_000;
 
@@ -51,7 +56,6 @@ function conditionLabel(c: ConditionResult) {
 }
 
 function conditionBadgeClass(c: ConditionResult) {
-  // Bekutaっぽく「淡い背景＋輪郭＋上品な文字」
   switch (c) {
     case "good":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
@@ -66,7 +70,7 @@ function conditionBadgeClass(c: ConditionResult) {
   }
 }
 
-export function FTTCheck() {
+export function FTTCheck({ userId, onBackHome }: Props) {
   const [screen, setScreen] = useState<Screen>("standby");
 
   const isActiveRef = useRef(false);
@@ -91,16 +95,17 @@ export function FTTCheck() {
   const rafRef = useRef<number | null>(null);
 
   const tapAreaRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ その「測定1回」を識別するID（eventsに紐づける）
   const eventIdRef = useRef<string | null>(null);
 
   const progress = useMemo(() => {
-    // 0..1（測定中にのみ意味がある）
     const p = 1 - remainingMs / DURATION_MS;
     return clamp(p, 0, 1);
   }, [remainingMs]);
 
   // ===== state reset =====
-  function reset() {
+  function resetLocal() {
     setIsActive(false);
     isActiveRef.current = false;
 
@@ -112,14 +117,16 @@ export function FTTCheck() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
 
+    // ここは「今回測定の」eventIdを捨てる（過去のeventsはDBに残る）
     eventIdRef.current = null;
+
     setDidSave(false);
     setSaveBusy(false);
     setSaveStatus("");
   }
 
   function start() {
-    reset();
+    resetLocal();
     setScreen("measure");
 
     setIsActive(true);
@@ -154,7 +161,6 @@ export function FTTCheck() {
     tapsRef.current.push(now);
     setTapCount(tapsRef.current.length);
 
-    // Bekutaっぽい柔らかい ripple
     ripple(e);
   }
 
@@ -171,7 +177,7 @@ export function FTTCheck() {
     circle.style.height = "54px";
     circle.style.left = `${e.clientX - rect.left - 27}px`;
     circle.style.top = `${e.clientY - rect.top - 27}px`;
-    circle.style.background = "rgba(59,130,246,.20)"; // blue-500淡
+    circle.style.background = "rgba(59,130,246,.20)";
     circle.style.transform = "scale(0)";
     circle.style.transition = "transform 420ms ease, opacity 420ms ease";
     el.appendChild(circle);
@@ -183,16 +189,21 @@ export function FTTCheck() {
     setTimeout(() => circle.remove(), 450);
   }
 
+  /**
+   * ✅ 合意仕様の核
+   * 測定が終わった時点で「測定した事実」を必ず残す（未保存ログ）
+   * → ftt_events.insert({ user_id, did_save:false })
+   * 返ってきた id を eventIdRef に保持し、
+   * SAVE 成功時にそのイベントだけ did_save=true にする
+   */
   async function writeFTTEventDidNotSave() {
-    try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      const user = userRes?.user;
-      if (userErr || !user) return;
+    if (!userId) return;
 
+    try {
       const { data, error } = await supabase
         .from("ftt_events")
         .insert({
-          user_id: user.id,
+          user_id: userId,
           did_save: false,
         })
         .select("id")
@@ -202,6 +213,7 @@ export function FTTCheck() {
         console.error("[FTT events insert error]", error);
         return;
       }
+
       eventIdRef.current = data?.id ?? null;
     } catch (e) {
       console.error("[FTT events insert exception]", e);
@@ -209,33 +221,32 @@ export function FTTCheck() {
   }
 
   async function finish() {
-    // ✅ 先に result へ（これが肝）
+    // ✅ 先に result へ
     setScreen("result");
-  
+
     setIsActive(false);
     isActiveRef.current = false;
-  
+
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
-  
+
     const taps = tapsRef.current;
     const count = taps.length;
-  
+
     const intervals: number[] = [];
     for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1]);
-  
+
     const sd = stddev(intervals);
-  
+
     setResultCount(count);
     setResultSD(sd);
     setResultIntervals(intervals);
-  
-    // 判定
+
     const evaluated = await evaluateWithBaseline(count, sd);
     setCondition(evaluated.condition);
     setMessage(evaluated.message);
-  
-    // events 軽量保存
+
+    // ✅ 軽量ログは必ず残す（未保存ログ）
     await writeFTTEventDidNotSave();
   }
 
@@ -248,11 +259,9 @@ export function FTTCheck() {
     const speedDropRatio = 0.9; // -10%
     const sdWorseRatio = 0.25; // +25%
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes?.user) {
-      return { condition: "calibrating", message: "ログイン情報が取得できませんでした。" };
+    if (!userId) {
+      return { condition: "calibrating", message: "ユーザー情報が取得できませんでした。" };
     }
-    const userId = userRes.user.id;
 
     const { data, error } = await supabase
       .from("ftt_records")
@@ -297,23 +306,20 @@ export function FTTCheck() {
 
   async function handleSave() {
     if (saveBusy || didSave) return;
+    if (!userId) {
+      setSaveStatus("ユーザー情報が取得できませんでした。");
+      return;
+    }
 
     setSaveBusy(true);
     setSaveStatus("送信キュー待機中…（負荷分散）");
 
+    // 軽いジッター（同時保存のスパイクを避ける）
     const jitter = Math.floor(Math.random() * 5000);
     await sleep(jitter);
 
     try {
       setSaveStatus("クラウドに保存中…");
-
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      const user = userRes?.user;
-      if (userErr || !user) {
-        setSaveStatus("ログイン情報が取得できませんでした。");
-        setSaveBusy(false);
-        return;
-      }
 
       const date = getTodayJST();
 
@@ -325,11 +331,12 @@ export function FTTCheck() {
         condition_result: condition,
       };
 
+      // ✅ 1日1件（UNIQUE(user_id,date)）
       const { error: recErr } = await supabase
         .from("ftt_records")
         .upsert(
           {
-            user_id: user.id,
+            user_id: userId,
             date,
             duration_sec: payload.duration_sec,
             total_count: payload.total_count,
@@ -339,6 +346,7 @@ export function FTTCheck() {
             meta: {
               ua: typeof navigator !== "undefined" ? navigator.userAgent : null,
               tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              source: "ftt_check",
             },
           },
           { onConflict: "user_id,date" }
@@ -351,13 +359,14 @@ export function FTTCheck() {
         return;
       }
 
+      // ✅ その測定（event）だけ did_save=true にする
       const eventId = eventIdRef.current;
       if (eventId) {
         const { error: evErr } = await supabase
           .from("ftt_events")
           .update({ did_save: true })
           .eq("id", eventId)
-          .eq("user_id", user.id);
+          .eq("user_id", userId);
 
         if (evErr) console.error("[FTT events update error]", evErr);
       }
@@ -393,14 +402,26 @@ export function FTTCheck() {
       <div className="mx-auto max-w-md px-4 py-8">
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 flex items-center justify-center">
-              <TimeIcon className="h-5 w-5 text-slate-700" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 flex items-center justify-center">
+                <TimeIcon className="h-5 w-5 text-slate-700" />
+              </div>
+              <div>
+                <div className="text-xl font-extrabold tracking-tight">FTT Check</div>
+                <div className="text-sm text-slate-500">{headerSubtitle}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xl font-extrabold tracking-tight">FTT Check</div>
-              <div className="text-sm text-slate-500">{headerSubtitle}</div>
-            </div>
+
+            {onBackHome && (
+              <button
+                onClick={onBackHome}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="text-sm font-medium">戻る</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -450,7 +471,7 @@ export function FTTCheck() {
                 </button>
 
                 <div className="text-xs text-slate-500 leading-relaxed">
-                  ※ 計測中は画面をタップするだけ。結果画面で保存できます。
+                  ※ 基本は1日1回。ミスったらRETRYでやり直せます（測定ログは残ります）。
                 </div>
               </div>
             )}
@@ -461,9 +482,7 @@ export function FTTCheck() {
                 {/* Timer */}
                 <div className="flex items-end justify-between">
                   <div>
-                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-                      Remaining
-                    </div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Remaining</div>
                     <div className="text-4xl font-extrabold tracking-tight tabular-nums">
                       {(remainingMs / 1000).toFixed(2)}
                     </div>
@@ -476,10 +495,7 @@ export function FTTCheck() {
 
                 {/* Progress bar */}
                 <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200">
-                  <div
-                    className="h-full rounded-full bg-blue-500 transition-[width]"
-                    style={{ width: `${progress * 100}%` }}
-                  />
+                  <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${progress * 100}%` }} />
                 </div>
 
                 {/* Tap area */}
@@ -499,29 +515,21 @@ export function FTTCheck() {
                   </div>
 
                   <div className="h-full flex flex-col items-center justify-center gap-3 select-none">
-                  {/* タップターゲット */}
-                  <div className="relative h-24 w-24 flex items-center justify-center">
-                    {/* ripple */}
-                    <span className="absolute h-full w-full rounded-full border border-slate-300/40 animate-ftt-ripple" />
-                    <span className="absolute h-full w-full rounded-full border border-slate-300/30 animate-ftt-ripple delay-300" />
-                    <span className="absolute h-full w-full rounded-full border border-slate-300/20 animate-ftt-ripple delay-600" />
+                    <div className="relative h-24 w-24 flex items-center justify-center">
+                      <span className="absolute h-full w-full rounded-full border border-slate-300/40 animate-ftt-ripple" />
+                      <span className="absolute h-full w-full rounded-full border border-slate-300/30 animate-ftt-ripple delay-300" />
+                      <span className="absolute h-full w-full rounded-full border border-slate-300/20 animate-ftt-ripple delay-600" />
+                      <span className="relative z-10 h-3 w-3 rounded-full bg-slate-800 shadow-[0_0_0_6px_rgba(15,23,42,0.08)]" />
+                    </div>
 
-                    {/* center dot */}
-                    <span className="relative z-10 h-3 w-3 rounded-full bg-slate-800 shadow-[0_0_0_6px_rgba(15,23,42,0.08)]" />
+                    <div className="text-sm font-extrabold tracking-widest text-slate-800">TAP FAST</div>
+                    <div className="text-xs text-slate-500">人差し指1本で</div>
                   </div>
-
-                  <div className="text-sm font-extrabold tracking-widest text-slate-800">
-                    TAP FAST
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    人差し指1本で
-                  </div>
-                </div>
                 </div>
 
                 <button
                   onClick={() => {
-                    reset();
+                    resetLocal();
                     setScreen("standby");
                   }}
                   className="w-full rounded-2xl bg-white ring-1 ring-slate-200 py-3 font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.99] transition flex items-center justify-center gap-2"
@@ -538,18 +546,12 @@ export function FTTCheck() {
                 {/* Summary */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-                      Speed (Total)
-                    </div>
-                    <div className="mt-1 text-3xl font-extrabold tabular-nums">
-                      {resultCount}
-                    </div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Speed (Total)</div>
+                    <div className="mt-1 text-3xl font-extrabold tabular-nums">{resultCount}</div>
                   </div>
 
                   <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-                      Stability (SD)
-                    </div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Stability (SD)</div>
                     <div className="mt-1 text-3xl font-extrabold tabular-nums">
                       {resultSD.toFixed(1)}
                       <span className="text-sm font-bold text-slate-500 ml-1">ms</span>
@@ -570,16 +572,12 @@ export function FTTCheck() {
                         <div className="text-sm font-extrabold tracking-wide">{meta.title}</div>
                         <div className="text-xs opacity-80">{meta.sub}</div>
                       </div>
-                      <div className="text-xs font-bold opacity-80 tabular-nums">
-                        intervals: {resultIntervals.length}
-                      </div>
+                      <div className="text-xs font-bold opacity-80 tabular-nums">intervals: {resultIntervals.length}</div>
                     </div>
                   );
                 })()}
 
-                <div className="text-sm text-slate-700 leading-relaxed">
-                  {message}
-                </div>
+                <div className="text-sm text-slate-700 leading-relaxed">{message}</div>
 
                 {/* Save button */}
                 <button
@@ -609,13 +607,13 @@ export function FTTCheck() {
                 </div>
 
                 <div className="text-xs text-slate-500 leading-relaxed">
-                  ※ 計測終了時点では「未保存」の記録（ftt_events）だけを軽く保存し、
-                  保存ボタンで重い保存（ftt_records）を行います。
+                  ※ 計測終了時点で「未保存ログ（ftt_events）」が残ります。
+                  保存ボタンで「その日の正式データ（ftt_records）」として採用されます。
                 </div>
 
                 <button
                   onClick={() => {
-                    reset();
+                    resetLocal();
                     setScreen("standby");
                   }}
                   className="w-full rounded-2xl bg-white ring-1 ring-slate-200 py-3 font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.99] transition flex items-center justify-center gap-2"

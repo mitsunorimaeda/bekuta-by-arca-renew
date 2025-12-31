@@ -38,9 +38,9 @@ import { TermsOfService } from './pages/TermsOfService';
 import { CommercialTransactions } from './pages/CommercialTransactions';
 import { HelpPage } from './pages/HelpPage';
 import { TeamAchievementNotification } from './components/TeamAchievementNotification';
-import { supabase } from './lib/supabase';
 import type { AppRole } from './lib/roles';          // ← 型（TypeScript用）
 import { isGlobalAdmin } from './lib/permissions';
+import { supabase, recoverFromInvalidRefreshToken } from './lib/supabase';
 
 function App() {
   const {
@@ -54,6 +54,48 @@ function App() {
     acceptTerms,
     refreshUserProfile, 
   } = useAuth();
+
+  // ✅ セッション健全性チェック + auth state 監視（まとめ）
+  React.useEffect(() => {
+    let mounted = true;
+
+    // ① 起動直後：壊れた refresh_token を握ってたら自動回復
+    (async () => {
+      const { error } = await supabase.auth.getSession();
+      if (!mounted) return;
+
+      if (error) {
+        await recoverFromInvalidRefreshToken(error);
+      }
+    })();
+
+    // ② 以後：タブ間/復元/自動更新で auth 状態が変わったら追従
+    const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      // 参考：必要ならログ
+      // console.log('[auth]', event, !!session);
+
+      // 明示的に sign out されたら、URL/ページ状態もリセットしたい場合（任意）
+      // if (event === 'SIGNED_OUT') {
+      //   window.history.replaceState({}, '', '/');
+      // }
+
+      // 一部環境で refresh 失敗がここに出ることがあるので、保険で拾う
+      // (Supabaseのイベント自体にerrorが載らないこともあるが、念のため)
+      if (!session && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
+        // session が無いのに “更新/サインイン” 系イベントが来るのは怪しい
+        // getSession 再確認 → error なら回復
+        const { error } = await supabase.auth.getSession();
+        if (error) await recoverFromInvalidRefreshToken(error);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
 
   useRealtimeHub(userProfile?.id ?? '');
 
@@ -86,6 +128,7 @@ function App() {
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
+
 
   React.useEffect(() => {
     setRequiresPasswordChange(authRequiresPasswordChange);

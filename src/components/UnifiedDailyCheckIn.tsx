@@ -4,6 +4,8 @@ import { X, CheckCircle, Activity, Scale, Moon, Heart, Zap, Calendar } from 'luc
 import { TrainingRecord, WeightRecord, SleepRecord, MotivationRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
+import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
+import { CycleSection } from './checkin/CycleSection';
 
 // ✅ 追加：矢印/電波 UI
 import { VectorArrowPicker } from './VectorArrowPicker';
@@ -23,6 +25,7 @@ type WeightRecordForm = { weight_kg: number; date: string; notes?: string | null
 interface UnifiedDailyCheckInProps {
   userId: string;
   userGender?: 'male' | 'female' | null;
+  enableCycle?: boolean | null;
 
   // training（arrow/signal 含む）
   onTrainingSubmit: (data: {
@@ -64,8 +67,9 @@ interface UnifiedDailyCheckInProps {
   onMotivationCheckExisting: (date: string) => Promise<MotivationRecord | null>;
   onMotivationUpdate: (id: string, data: any) => Promise<void>;
 
-  // cycle
-  onCycleSubmit: (data: {
+
+  // ✅ cycle：移行期間モードなので「任意」にする
+  onCycleSubmit?: (data: {
     cycle_start_date: string;
     period_duration_days?: number;
     cycle_length_days?: number;
@@ -73,7 +77,8 @@ interface UnifiedDailyCheckInProps {
     flow_intensity?: string;
     notes?: string;
   }) => Promise<any>;
-  onCycleUpdate: (
+
+  onCycleUpdate?: (
     id: string,
     data: {
       period_duration_days?: number;
@@ -82,7 +87,7 @@ interface UnifiedDailyCheckInProps {
       flow_intensity?: string;
       notes?: string;
     }
-  ) => Promise<any>;
+  ) => Promise<any>
 
   onClose: () => void;
 
@@ -96,6 +101,7 @@ interface UnifiedDailyCheckInProps {
 export function UnifiedDailyCheckIn({
   userId,
   userGender,
+  enableCycle,
   onTrainingSubmit,
   onTrainingCheckExisting,
   onTrainingUpdate,
@@ -118,10 +124,31 @@ export function UnifiedDailyCheckIn({
 }: UnifiedDailyCheckInProps) {
   const today = getTodayJSTString();
 
+  // ✅ cycle は「移行期間モード」：props があればそれを使う / なければ hook を使う
+  const cycleEnabled = (enableCycle ?? (userGender === 'female')) === true;
+
+
+  const updateCycle =
+    onCycleUpdate ??
+    (async (
+      id: string,
+      data: {
+        period_duration_days?: number;
+        cycle_length_days?: number;
+        symptoms?: string[];
+        flow_intensity?: string;
+        notes?: string;
+      }
+    ) => {
+      return await cycleHook.updateCycle(id, data);
+    });
+
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [activeSection, setActiveSection] = useState<'training' | 'weight' | 'conditioning' | 'cycle'>(
     'training'
   );
+
+ 
 
   // ✅ 0 を潰さないために「||」ではなく「??」
   const [rpe, setRpe] = useState<number>(lastTrainingRecord?.rpe ?? 5);
@@ -272,14 +299,14 @@ export function UnifiedDailyCheckIn({
 
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
 
-        if (userGender === 'female') {
+        if (cycleEnabled) {
           setActiveSection('cycle');
         } else {
           setTimeout(() => onClose(), 500);
         }
       } else if (section === 'cycle') {
         if (periodStart) {
-          await onCycleSubmit({
+          await SubmitCycle({
             cycle_start_date: selectedDate,
             period_duration_days: periodDuration,
             cycle_length_days: cycleLength,
@@ -539,10 +566,10 @@ export function UnifiedDailyCheckIn({
             </div>
 
             <div className="flex space-x-2">
-              {(userGender === 'female'
-                ? (['training', 'weight', 'conditioning', 'cycle'] as const)
-                : (['training', 'weight', 'conditioning'] as const)
-              ).map((section) => {
+              {(cycleEnabled
+                  ? (['training', 'weight', 'conditioning', 'cycle'] as const)
+                  : (['training', 'weight', 'conditioning'] as const)
+                ).map((section) => {
                 const Icon = getSectionIcon(section);
                 const isActive = activeSection === section;
                 const isCompleted = completedSections.has(section);
@@ -889,58 +916,33 @@ export function UnifiedDailyCheckIn({
                 </div>
               </div>
             )}
-
-            {activeSection === 'cycle' && userGender === 'female' && (
-              <>
-                {/* ✅ ここに cycle 部分の既存コードを “丸ごと” コピペで差し込んでください */}
-              </>
-            )}
-
-            {error && (
+            
+            {error && activeSection !== 'cycle' && (
               <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
               </div>
             )}
 
-            {activeSection !== 'cycle' && (
-              <div className="flex space-x-3 mt-6">
-                {activeSection !== 'training' && (
-                  <button
-                    onClick={() => {
-                      if (activeSection === 'weight') setActiveSection('training');
-                      else if (activeSection === 'conditioning') setActiveSection('weight');
-                    }}
-                    className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition-colors"
-                    type="button"
-                  >
-                    戻る
-                  </button>
-                )}
 
-                <button
-                  onClick={() => handleSectionComplete(activeSection)}
-                  disabled={submitting || (activeSection === 'weight' && !weight)}
-                  className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${
-                    activeSection === 'training'
-                      ? 'bg-blue-600 hover:bg-blue-700'
-                      : activeSection === 'weight'
-                      ? 'bg-green-600 hover:bg-green-700'
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  } text-white disabled:opacity-50 disabled:cursor-not-allowed`}
-                  type="button"
-                >
-                  {submitting ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    </div>
-                  ) : activeSection === 'conditioning' && userGender !== 'female' ? (
-                    '完了'
-                  ) : (
-                    '次へ'
-                  )}
-                </button>
-              </div>
-            )}
+
+            {activeSection === 'cycle' && cycleEnabled && (
+              <CycleSection
+                selectedDate={selectedDate}
+                periodStart={periodStart}
+                setPeriodStart={setPeriodStart}
+                flowIntensity={flowIntensity}
+                setFlowIntensity={setFlowIntensity}
+                symptoms={symptoms}
+                setSymptoms={setSymptoms}
+                cycleNotes={cycleNotes}
+                setCycleNotes={setCycleNotes}
+                periodDuration={periodDuration}
+                setPeriodDuration={setPeriodDuration}
+                cycleLength={cycleLength}
+                setCycleLength={setCycleLength}
+                error={error || null}
+              />
+            )} 
 
             <div className="mt-4 flex justify-center">
               <button
