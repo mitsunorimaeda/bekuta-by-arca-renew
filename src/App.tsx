@@ -42,7 +42,29 @@ import { supabase } from './lib/supabase';
 import type { AppRole } from './lib/roles';          // ← 型（TypeScript用）
 import { isGlobalAdmin } from './lib/permissions';
 
+ // App.tsx の function App() の先頭付近に追加（useAuthより前でもOK）
+ const MAINTENANCE = import.meta.env.VITE_MAINTENANCE_MODE === "true";
+
+
 function App() {
+
+  if (MAINTENANCE) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow p-6 space-y-3">
+          <h1 className="text-xl font-bold">現在メンテナンス中です</h1>
+          <p className="text-sm text-gray-600">
+            Supabase側の障害により、ログイン/データ取得が不安定になっています。
+            復旧次第、通常運用に戻します。
+          </p>
+          <p className="text-xs text-gray-500">
+            （エラー: 522 / Auth endpoint timeout）
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const {
     user,
     userProfile,
@@ -56,6 +78,10 @@ function App() {
   } = useAuth();
 
   useRealtimeHub(userProfile?.id ?? '');
+
+ 
+  
+  
 
   const effectiveRole: AppRole =
   userProfile?.role === 'staff' ||
