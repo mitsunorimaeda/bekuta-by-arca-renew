@@ -17,7 +17,8 @@ import InviteExpired from './pages/InviteExpired';
 import { GlobalHeader } from './components/GlobalHeader';
 import { ProfileGate } from "./components/ProfileGate";
 
-
+// ✅ 追加：メンテページ
+import MaintenancePage from "./pages/MaintenancePage";
 
 const OrganizationAdminView = lazy(() =>
   import('./components/OrganizationAdminView').then((m) => ({
@@ -53,7 +54,7 @@ function App() {
     signOut,
     changePassword,
     acceptTerms,
-    refreshUserProfile, 
+    refreshUserProfile,
   } = useAuth();
 
   // ✅ セッション健全性チェック + auth state 監視（まとめ）
@@ -74,19 +75,8 @@ function App() {
     const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      // 参考：必要ならログ
-      // console.log('[auth]', event, !!session);
-
-      // 明示的に sign out されたら、URL/ページ状態もリセットしたい場合（任意）
-      // if (event === 'SIGNED_OUT') {
-      //   window.history.replaceState({}, '', '/');
-      // }
-
       // 一部環境で refresh 失敗がここに出ることがあるので、保険で拾う
-      // (Supabaseのイベント自体にerrorが載らないこともあるが、念のため)
       if (!session && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
-        // session が無いのに “更新/サインイン” 系イベントが来るのは怪しい
-        // getSession 再確認 → error なら回復
         const { error } = await supabase.auth.getSession();
         if (error) await recoverFromInvalidRefreshToken(error);
       }
@@ -98,12 +88,12 @@ function App() {
     };
   }, []);
 
-const effectiveRole: AppRole =
-  userProfile?.role === "staff" ||
-  userProfile?.role === "global_admin" ||
-  userProfile?.role === "athlete"
-    ? (userProfile.role as AppRole)
-    : "athlete";
+  const effectiveRole: AppRole =
+    userProfile?.role === "staff" ||
+    userProfile?.role === "global_admin" ||
+    userProfile?.role === "athlete"
+      ? (userProfile.role as AppRole)
+      : "athlete";
 
   const [requiresPasswordChange, setRequiresPasswordChange] = React.useState(false);
   const { isOrganizationAdmin, getOrganizationAdminRoles } = useOrganizationRole(userProfile?.id);
@@ -127,7 +117,6 @@ const effectiveRole: AppRole =
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
-
 
   React.useEffect(() => {
     setRequiresPasswordChange(authRequiresPasswordChange);
@@ -213,6 +202,22 @@ const effectiveRole: AppRole =
     );
   }
 
+  // ✅ メンテナンスモード（ログイン・プロフィール取得に入る前に止める）
+  const MAINTENANCE_MODE =
+    String(import.meta.env.VITE_MAINTENANCE_MODE || "false") === "true";
+
+  // auth/callback は通す（任意。今の分岐で上でreturnしてるので二重ガード）
+  const pathnameNow = window.location.pathname;
+  const isAuthCallback = pathnameNow.startsWith("/auth/callback");
+
+  if (MAINTENANCE_MODE && !isAuthCallback) {
+    return (
+      <MaintenancePage
+        etaText="（安定化を確認中です。しばらくしてから再度お試しください）"
+      />
+    );
+  }
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -239,18 +244,28 @@ const effectiveRole: AppRole =
 
   if (!user) return <LoginForm onLogin={signIn} />;
 
-// userはいるが userProfile がまだ無い → “エラー画面”ではなく Gate 表示
-if (!userProfile) {
-  return (
-    <ProfileGate
-      onRetry={refreshUserProfile}
-      onLogout={signOut}
-      // 任意：何秒かごとに自動リトライするなら ProfileGate 側で setInterval でもOK
-      title="Bekuta"
-      message="プロフィールを読み込んでいます…"
-    />
-  );
-}
+  // userはいるが userProfile が取れない（or 取れない状態が続く）
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="space-y-3 text-center">
+          <div>プロフィール読み込みに失敗しました</div>
+          <button
+            className="px-4 py-2 rounded bg-blue-600 text-white"
+            onClick={refreshUserProfile}
+          >
+            再読み込み
+          </button>
+          <button
+            className="px-4 py-2 rounded bg-gray-200"
+            onClick={signOut}
+          >
+            ログアウト
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (requiresPasswordChange) {
     return (
@@ -290,25 +305,25 @@ if (!userProfile) {
   return (
     <TutorialProvider userId={userProfile.id} role={effectiveRole}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <GlobalHeader
-        effectiveRole={effectiveRole}
-        userProfile={{ id: userProfile.id, name: userProfile.name, email: userProfile.email }}
-        alertsLoading={alertsLoading}
-        unreadCount={unreadCount}
-        hasHighPriorityAlerts={hasHighPriorityAlerts}
-        onOpenAlertPanel={() => setShowAlertPanel(true)}
-        onLogout={handleLogout}
-        onHome={() => {
-          console.log('🏠 Bekuta logo clicked');
-          setCurrentPage('app');
-          setDashboardMode('staff');
-          setShowAlertPanel(false);
-        }}
-        onNavigateToPrivacy={() => setCurrentPage('privacy')}
-        onNavigateToTerms={() => setCurrentPage('terms')}
-        onNavigateToCommercial={() => setCurrentPage('commercial')}
-        onNavigateToHelp={() => setCurrentPage('help')}
-      />
+        <GlobalHeader
+          effectiveRole={effectiveRole}
+          userProfile={{ id: userProfile.id, name: userProfile.name, email: userProfile.email }}
+          alertsLoading={alertsLoading}
+          unreadCount={unreadCount}
+          hasHighPriorityAlerts={hasHighPriorityAlerts}
+          onOpenAlertPanel={() => setShowAlertPanel(true)}
+          onLogout={handleLogout}
+          onHome={() => {
+            console.log('🏠 Bekuta logo clicked');
+            setCurrentPage('app');
+            setDashboardMode('staff');
+            setShowAlertPanel(false);
+          }}
+          onNavigateToPrivacy={() => setCurrentPage('privacy')}
+          onNavigateToTerms={() => setCurrentPage('terms')}
+          onNavigateToCommercial={() => setCurrentPage('commercial')}
+          onNavigateToHelp={() => setCurrentPage('help')}
+        />
 
         {/* Main Content */}
         <div className="relative">
