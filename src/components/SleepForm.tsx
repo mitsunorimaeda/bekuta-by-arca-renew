@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Moon, Star } from 'lucide-react';
+import { Moon, Star, Loader2 } from 'lucide-react';
 import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 import type { SleepRecordForm } from '../lib/normalizeRecords';
+import { Toast } from './ui/Toast'; // ✅ パスはあなたの構成に合わせて調整（例: ../components/ui/Toast）
 
 interface SleepFormProps {
   onSubmit: (data: {
@@ -15,7 +16,6 @@ interface SleepFormProps {
 
   onCheckExisting: (date: string) => Promise<SleepRecord | null>;
 
-  // ✅ any じゃなくて最低限の型にする（Sleep側はこれで十分）
   onUpdate: (
     id: string,
     data: {
@@ -47,13 +47,33 @@ export function SleepForm({
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [existingRecord, setExistingRecord] = useState<SleepRecord | null>(null);
 
-  // ✅ pendingData も any をやめて型を揃える
   const [pendingData, setPendingData] = useState<{
     sleep_hours: number;
     date: string;
     sleep_quality?: number;
     notes?: string;
   } | null>(null);
+
+  // ✅ 手応え用：フォーム内で saving を持つ（親の loading と別）
+  const [saving, setSaving] = useState(false);
+
+  // ✅ Toast
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (type: 'success' | 'error', msg: string) => {
+    setToastType(type);
+    setToastMsg(msg);
+    setToastOpen(true);
+  };
+
+  const resetForm = () => {
+    setSleepHours('');
+    setDate(getTodayJSTString());
+    setSleepQuality(3);
+    setNotes('');
+  };
 
   // ✅ 前回記録が変わったときに初期値を前回値に合わせる
   useEffect(() => {
@@ -67,15 +87,23 @@ export function SleepForm({
     }
   }, [lastRecord]);
 
+  const validate = () => {
+    const hours = parseFloat(sleepHours);
+    if (isNaN(hours) || hours < 0 || hours > 24) {
+      setError('睡眠時間は0〜24時間の範囲で入力してください');
+      return null;
+    }
+    return hours;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const hours = parseFloat(sleepHours);
-    if (isNaN(hours) || hours < 0 || hours > 24) {
-      setError('睡眠時間は0〜24時間の範囲で入力してください');
-      return;
-    }
+    if (saving || loading) return; // ✅ 二重押し防止
+
+    const hours = validate();
+    if (hours == null) return;
 
     const data = {
       sleep_hours: hours,
@@ -84,46 +112,52 @@ export function SleepForm({
       notes: notes || undefined,
     };
 
-    // 既存レコードチェック
-    const existing = await onCheckExisting(date);
-    if (existing) {
-      setExistingRecord(existing);
-      setPendingData(data);
-      setShowDuplicateModal(true);
-      return;
-    }
-
+    setSaving(true);
     try {
+      // 既存レコードチェック
+      const existing = await onCheckExisting(date);
+      if (existing) {
+        setExistingRecord(existing);
+        setPendingData(data);
+        setShowDuplicateModal(true);
+        return; // ✅ ここでは saving を finally で戻す
+      }
+
       await onSubmit(data);
 
-      // フォームリセット（デフォルト値に戻す）
-      setSleepHours('');
-      setDate(getTodayJSTString());
-      setSleepQuality(3);
-      setNotes('');
-    } catch (err) {
+      resetForm();
+      showToast('success', '記録しました ✅');
+    } catch (err: any) {
       setError('睡眠記録の追加に失敗しました');
       console.error('Error submitting sleep record:', err);
+      showToast('error', `保存に失敗しました：${err?.message ?? '不明なエラー'}`);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
+    if (saving || loading) return;
 
     setShowDuplicateModal(false);
+    setSaving(true);
+    setError('');
 
     try {
       await onUpdate(existingRecord.id, pendingData);
 
-      setSleepHours('');
-      setDate(getTodayJSTString());
-      setSleepQuality(3);
-      setNotes('');
+      resetForm();
       setExistingRecord(null);
       setPendingData(null);
-    } catch (err) {
+
+      showToast('success', '上書きして記録しました ✅');
+    } catch (err: any) {
       setError('記録の更新に失敗しました');
       console.error('Error updating record:', err);
+      showToast('error', `上書きに失敗しました：${err?.message ?? '不明なエラー'}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -154,8 +188,18 @@ export function SleepForm({
     );
   };
 
+  const isBusy = loading || saving;
+
   return (
     <>
+      {/* ✅ Toast */}
+      <Toast
+        open={toastOpen}
+        type={toastType}
+        message={toastMsg}
+        onClose={() => setToastOpen(false)}
+      />
+
       <GenericDuplicateModal
         isOpen={showDuplicateModal}
         onClose={handleCancelOverwrite}
@@ -191,10 +235,11 @@ export function SleepForm({
             onChange={(e) => setDate(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             required
+            disabled={isBusy}
           />
         </div>
 
-        {/* 睡眠時間（前回値のチラ見せ付き） */}
+        {/* 睡眠時間 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             睡眠時間（時間）
@@ -214,11 +259,12 @@ export function SleepForm({
             placeholder="例: 7.5"
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             required
+            disabled={isBusy}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">推奨: 7-9時間</p>
         </div>
 
-        {/* 睡眠の質（前回値のチラ見せ＋星） */}
+        {/* 睡眠の質 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             睡眠の質
@@ -249,21 +295,29 @@ export function SleepForm({
             placeholder="夜中に目が覚めた、寝つきが悪かった など..."
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+            disabled={isBusy}
           />
         </div>
 
-        {/* 送信ボタン */}
+        {/* 送信ボタン：手応え付き */}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+          disabled={isBusy}
+          className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
+            isBusy
+              ? 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+          }`}
         >
-          {loading ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+          {isBusy ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              保存中…
+            </span>
           ) : (
             <>
               <Moon className="w-5 h-5 mr-2" />
-              睡眠記録を追加
+              睡眠を記録する
             </>
           )}
         </button>

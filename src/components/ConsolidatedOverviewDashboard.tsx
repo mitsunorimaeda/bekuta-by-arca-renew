@@ -338,7 +338,9 @@ const diff30 = useMemo(() => {
           <div className="bg-white/10 rounded-lg p-3">
             <Activity className="w-5 h-5 mb-1" />
             <div className="text-xs text-blue-100">ACWR</div>
-            <div className="text-lg font-bold">{latestACWR?.acwr || '-'}</div>
+            <div className="text-lg font-bold">
+              {typeof latestACWR?.acwr === 'number' ? latestACWR.acwr.toFixed(2) : '-'}
+            </div>
           </div>
           <div className="bg-white/10 rounded-lg p-3">
             <Scale className="w-5 h-5 mb-1" />
@@ -380,9 +382,9 @@ const diff30 = useMemo(() => {
             <>
               <div className="mb-4">
                 <div className="flex items-baseline space-x-2">
-                  <span className={`text-3xl font-bold ${getRiskColor(latestACWR.riskLevel)}`}>
-                    {latestACWR.acwr}
-                  </span>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-300">
+                  {typeof latestACWR?.acwr === 'number' ? latestACWR.acwr.toFixed(2) : '不明'}
+                </div>
                   <span className="text-sm text-gray-500 dark:text-gray-400">ACWR</span>
                 </div>
                 <div className="flex items-center space-x-2 mt-1">

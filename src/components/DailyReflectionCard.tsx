@@ -626,10 +626,10 @@ export function DailyReflectionCard({ userId }: DailyReflectionCardProps) {
                     px-3 py-1 rounded-full text-xs border transition
                     ${active
                       ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
+                      : 'bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200'}
                     dark:${active
                       ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-gray-800 text-white border-gray-600 hover:bg-gray-700'}
+                      : 'bg-slate-700 text-slate-100 border-slate-600 hover:bg-slate-600'}
                   `}
                 >
                   {tag}

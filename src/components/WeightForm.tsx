@@ -3,6 +3,7 @@ import { Scale, Calendar, AlertCircle, FileText } from 'lucide-react';
 import { WeightRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
+import { Toast } from './ui/Toast'; // ✅ パスは環境に合わせて調整
 
 interface WeightFormProps {
   onSubmit: (data: { weight_kg: number; date: string; notes?: string }) => Promise<void>;
@@ -15,19 +16,37 @@ interface WeightFormProps {
 export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastRecord }: WeightFormProps) {
   const today = useMemo(() => getTodayJSTString(), []);
 
-  const [weight, setWeight] = useState<string>(''); // ★ lastRecordは後から入るのでここは空でOK
+  const [weight, setWeight] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
+
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [existingRecord, setExistingRecord] = useState<WeightRecord | null>(null);
   const [pendingData, setPendingData] = useState<{ weight_kg: number; date: string; notes?: string } | null>(null);
 
+  // ✅ Toast
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (type: 'success' | 'error', msg: string) => {
+    setToastType(type);
+    setToastMsg(msg);
+    setToastOpen(true);
+  };
+
+  const resetForm = () => {
+    setWeight('');
+    setNotes('');
+    setSelectedDate(today);
+  };
+
   // ✅ lastRecordが後から来たときに初期値を入れる（ユーザーが入力してなければ）
   useEffect(() => {
     if (!lastRecord) return;
-    if (weight.trim() !== '') return; // すでに入力があるなら上書きしない
+    if (weight.trim() !== '') return;
     setWeight(String(lastRecord.weight_kg ?? ''));
   }, [lastRecord, weight]);
 
@@ -35,34 +54,54 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
   useEffect(() => {
     const run = async () => {
       setError('');
-      const existing = await onCheckExisting(selectedDate);
-      setExistingRecord(existing);
+      try {
+        const existing = await onCheckExisting(selectedDate);
+        setExistingRecord(existing);
 
-      if (existing) {
-        setWeight(String(existing.weight_kg ?? ''));
-        setNotes((existing as any).notes ?? ''); // notes列がある前提。無いなら消してOK
-      } else {
-        // その日が未記録なら、フォームは空（もしくは lastRecord を入れたいならここで入れる）
-        setNotes('');
-        // setWeight(''); // ←「毎回空にする」ならこれ。今は現状維持で触らない方が安全。
+        if (existing) {
+          setWeight(String(existing.weight_kg ?? ''));
+          setNotes((existing as any).notes ?? '');
+          // ✅ 日付切り替え時に「既にある」ことも気づけると安心
+          showToast('success', 'この日の体重記録は既にあります（編集できます）');
+        } else {
+          setNotes('');
+          // setWeight(''); // ← 毎回空にしたい場合は有効化
+        }
+      } catch (err) {
+        console.error('Error checking existing weight record:', err);
+        setExistingRecord(null);
+        setError('既存データの確認に失敗しました');
+        showToast('error', '既存データの確認に失敗しました');
       }
     };
+
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting || loading) return; // ✅ 二重送信ガード
     setError('');
 
     const weightNum = parseFloat(weight);
     if (isNaN(weightNum) || weightNum <= 0 || weightNum >= 500) {
       setError('体重は0〜500kgの範囲で入力してください。');
+      showToast('error', '入力内容を確認してください（体重の範囲）');
       return;
     }
 
-    // Check for existing record
-    const existing = await onCheckExisting(selectedDate);
+    // ✅ 既存チェック（try/catch）
+    let existing: WeightRecord | null = null;
+    try {
+      existing = await onCheckExisting(selectedDate);
+    } catch (err) {
+      console.error('Error checking existing weight record:', err);
+      setError('既存データの確認に失敗しました');
+      showToast('error', '既存データの確認に失敗しました');
+      return;
+    }
+
     if (existing) {
       setExistingRecord(existing);
       setPendingData({
@@ -82,12 +121,13 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
         notes: notes.trim() || undefined,
       });
 
-      setWeight('');
-      setNotes('');
-      setSelectedDate(today);
-    } catch (error) {
-      console.error('Error submitting weight record:', error);
-      setError(error instanceof Error ? error.message || '記録の追加に失敗しました。' : '記録の追加に失敗しました。');
+      showToast('success', '体重記録を保存しました ✅');
+      resetForm();
+    } catch (err) {
+      console.error('Error submitting weight record:', err);
+      const msg = err instanceof Error ? err.message || '記録の追加に失敗しました。' : '記録の追加に失敗しました。';
+      setError(msg);
+      showToast('error', msg);
     } finally {
       setSubmitting(false);
     }
@@ -95,9 +135,11 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
+    if (submitting || loading) return;
 
     setSubmitting(true);
     setShowDuplicateModal(false);
+    setError('');
 
     try {
       await onUpdate(existingRecord.id, {
@@ -105,14 +147,15 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
         notes: pendingData.notes,
       });
 
-      setWeight('');
-      setNotes('');
-      setSelectedDate(today);
+      showToast('success', '上書きして保存しました ✅');
+      resetForm();
+
       setExistingRecord(null);
       setPendingData(null);
-    } catch (error) {
-      console.error('Error updating record:', error);
+    } catch (err) {
+      console.error('Error updating record:', err);
       setError('記録の更新に失敗しました');
+      showToast('error', '記録の更新に失敗しました');
     } finally {
       setSubmitting(false);
     }
@@ -126,6 +169,9 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
 
   return (
     <>
+      {/* ✅ Toast */}
+      <Toast open={toastOpen} type={toastType} message={toastMsg} onClose={() => setToastOpen(false)} />
+
       <GenericDuplicateModal
         isOpen={showDuplicateModal}
         onClose={handleCancelOverwrite}
@@ -148,7 +194,8 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             max={today}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
+            disabled={submitting || loading}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white disabled:opacity-60"
             style={{ fontSize: '16px' }}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -168,7 +215,8 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
             max="499"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
+            disabled={submitting || loading}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white disabled:opacity-60"
             placeholder="65.5"
             required
             style={{ fontSize: '16px' }}
@@ -190,7 +238,8 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white resize-none"
+            disabled={submitting || loading}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white resize-none disabled:opacity-60"
             placeholder="体調や食事の記録など..."
             rows={3}
             maxLength={500}

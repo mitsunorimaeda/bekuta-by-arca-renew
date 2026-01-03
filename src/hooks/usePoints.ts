@@ -1,246 +1,275 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+// src/hooks/usePoints.ts
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabase";
+import { useRealtimeHub } from "./useRealtimeHub";
 
-export interface UserPoints {
-  id: string;
-  user_id: string;
-  total_points: number;
-  current_level: number;
-  points_to_next_level: number;
-  rank_title: string;
-  created_at: string;
-  updated_at: string;
-}
+const ENABLE_REALTIME = import.meta.env.VITE_ENABLE_REALTIME === "true";
 
-export interface PointTransaction {
-  id: string;
-  user_id: string;
-  points: number;
-  reason: string;
-  category: 'record' | 'streak' | 'achievement' | 'goal' | 'social' | 'bonus';
-  metadata: any;
-  created_at: string;
-}
+// 必要ならあなたの型に置換してOK
+export type UserPoints = any;
+export type PointTransaction = any;
 
-const calcLevelInfo = (totalPoints: number) => {
-  let level = 1;
-  let nextLevelPoints = 100;
-
-  while (totalPoints >= nextLevelPoints) {
-    level += 1;
-    nextLevelPoints += level * 50;
-  }
-
-  return { level, nextLevelPoints };
+type Options = {
+  includeTransactions?: boolean; // 初回で履歴も取るか（デフォ false）
+  transactionsLimit?: number; // 例: 50
 };
 
-const calcLevelProgress = (totalPoints: number) => {
-  const { level, nextLevelPoints } = calcLevelInfo(totalPoints);
-  const currentLevelStartPoints = nextLevelPoints - level * 50;
+export function usePoints(userId: string | null | undefined, options: Options = {}) {
+  const includeTransactions = options.includeTransactions ?? false;
+  const transactionsLimit = options.transactionsLimit ?? 50;
 
-  const into = totalPoints - currentLevelStartPoints;
-  const span = nextLevelPoints - currentLevelStartPoints;
-
-  const progress = span > 0 ? (into / span) * 100 : 0;
-  return Math.min(100, Math.max(0, progress));
-};
-
-export function usePoints(userId: string) {
   const [userPoints, setUserPoints] = useState<UserPoints | null>(null);
   const [transactions, setTransactions] = useState<PointTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ hookインスタンス固有ID（タブ内での衝突回避）
+  // ✅ 「一度でも履歴を取ったか」を state でも持つ（UI/分岐に使える）
+  const [hasLoadedTransactions, setHasLoadedTransactions] = useState(false);
+
+  const { state } = useRealtimeHub();
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const instanceIdRef = useRef(
-    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
   );
 
-  // ✅ effect再実行ごとにユニークなrunIdを採番（subscribe二重呼びを構造的に防ぐ）
-  const runSeqRef = useRef(0);
+  const pointsChannelRef = useRef<RealtimeChannel | null>(null);
+  const txChannelRef = useRef<RealtimeChannel | null>(null);
 
-  // ✅ チャンネル参照（1本に統合）
-  const channelRef = useRef<any>(null);
+  const fetchedTxOnceRef = useRef(false);
+  const inflightPointsRef = useRef(false);
+  const inflightTxRef = useRef(false);
 
-  const fetchUserPoints = useCallback(async () => {
-    if (!userId) return;
+  const cleanupPointsRealtime = useCallback(() => {
+    const ch = pointsChannelRef.current;
+    if (!ch) return;
+    try { ch.unsubscribe?.(); } catch (_) {}
+    try { supabase.removeChannel(ch); } catch (_) {}
+    pointsChannelRef.current = null;
+  }, []);
 
-    try {
-      const { data, error } = await supabase
-        .from('user_points')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
+  const cleanupTxRealtime = useCallback(() => {
+    const ch = txChannelRef.current;
+    if (!ch) return;
+    try { ch.unsubscribe?.(); } catch (_) {}
+    try { supabase.removeChannel(ch); } catch (_) {}
+    txChannelRef.current = null;
+  }, []);
 
-      if (error) throw error;
+  const fetchUserPoints = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId) return;
+      if (inflightPointsRef.current) return;
+      inflightPointsRef.current = true;
 
-      setUserPoints(data ?? null);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching user points:', err);
-      setError(err instanceof Error ? err.message : 'ポイントの取得に失敗しました');
-    }
-  }, [userId]);
+      const silent = opts?.silent ?? false;
 
-  const fetchTransactions = useCallback(async () => {
-    if (!userId) return;
+      try {
+        if (!silent && mountedRef.current) setLoading(true);
 
-    try {
-      const { data, error } = await supabase
-        .from('point_transactions')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(50);
+        const res = await supabase
+          .from("user_points")
+          .select("*")
+          .eq("user_id", userId)
+          .maybeSingle();
 
-      if (error) throw error;
+        if (res.error) throw res.error;
 
-      setTransactions(data || []);
-    } catch (err) {
-      console.error('Error fetching transactions:', err);
-    }
-  }, [userId]);
+        if (!mountedRef.current) return;
+        setUserPoints(res.data ?? null);
+        setError(null);
+      } catch (e: any) {
+        if (!mountedRef.current) return;
+        console.error("[usePoints] fetch user_points error:", e);
+        setError(e?.message ?? "ポイント情報の取得に失敗しました");
+      } finally {
+        inflightPointsRef.current = false;
+        if (!silent && mountedRef.current) setLoading(false);
+      }
+    },
+    [userId]
+  );
 
+  const fetchTransactions = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId) return;
+      if (inflightTxRef.current) return;
+      inflightTxRef.current = true;
+
+      const silent = opts?.silent ?? false;
+
+      try {
+        if (!silent && mountedRef.current) setTransactionsLoading(true);
+
+        // ✅ ここが400の原因になりやすいので、存在するカラムだけを列挙（あなたの一覧に合わせ済み）
+        const res = await supabase
+          .from("point_transactions")
+          .select("id,user_id,points,reason,category,metadata,created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(transactionsLimit);
+
+        if (res.error) throw res.error;
+
+        if (!mountedRef.current) return;
+        setTransactions((res.data ?? []) as PointTransaction[]);
+        setError(null);
+
+        fetchedTxOnceRef.current = true;
+        setHasLoadedTransactions(true);
+      } catch (e: any) {
+        if (!mountedRef.current) return;
+        console.error("[usePoints] fetch point_transactions error:", e);
+        setError(e?.message ?? "ポイント履歴の取得に失敗しました");
+      } finally {
+        inflightTxRef.current = false;
+        if (!silent && mountedRef.current) setTransactionsLoading(false);
+      }
+    },
+    [userId, transactionsLimit]
+  );
+
+  // ✅ 外部から「必要なときだけ」呼ぶ用
+  const loadTransactions = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      await fetchTransactions({ silent: opts?.silent ?? false });
+    },
+    [fetchTransactions]
+  );
+
+  // 初期ロード：user_points は必須 / transactions は任意
   useEffect(() => {
-    let cancelled = false;
+    cleanupPointsRealtime();
+    cleanupTxRealtime();
 
-    const setup = async () => {
-      if (!userId) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-
-      await Promise.all([fetchUserPoints(), fetchTransactions()]);
-      if (cancelled) return;
-
+    if (!userId) {
       setLoading(false);
+      setTransactions([]);
+      setHasLoadedTransactions(false);
+      fetchedTxOnceRef.current = false;
+      return;
+    }
 
-      // ✅ 既存チャンネルがあれば確実に閉じる（unsubscribe → remove）
-      if (channelRef.current) {
-        try {
-          // unsubscribe は Promise を返すことがある
-          await channelRef.current.unsubscribe?.();
-        } catch (e) {
-          // ここは握りつぶしてOK（removeで最終回収）
-        }
-        try {
-          supabase.removeChannel(channelRef.current);
-        } catch (e) {
-          // noop
-        }
-        channelRef.current = null;
+    void fetchUserPoints({ silent: false });
+
+    if (includeTransactions) {
+      void fetchTransactions({ silent: false });
+    } else {
+      setTransactions([]);
+      setHasLoadedTransactions(false);
+      fetchedTxOnceRef.current = false;
+    }
+  }, [
+    userId,
+    includeTransactions,
+    fetchUserPoints,
+    fetchTransactions,
+    cleanupPointsRealtime,
+    cleanupTxRealtime,
+  ]);
+
+  // Realtime：user_points
+  useEffect(() => {
+    cleanupPointsRealtime();
+
+    const canUseRealtime = !!userId && ENABLE_REALTIME && state.canRealtime;
+    if (!canUseRealtime) return;
+
+    const chName = `user-points:${userId}:${instanceIdRef.current}`;
+    const ch = supabase
+      .channel(chName)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_points", filter: `user_id=eq.${userId}` },
+        () => { void fetchUserPoints({ silent: true }); }
+      );
+
+    pointsChannelRef.current = ch;
+
+    ch.subscribe((status) => {
+      if (import.meta.env.DEV) console.log("[usePoints] realtime status", chName, status);
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.warn("[usePoints] realtime issue:", chName, status);
+        cleanupPointsRealtime();
       }
+    });
 
-      // ✅ 今回のrunId（毎回変わる）
-      runSeqRef.current += 1;
-      const runId = runSeqRef.current;
+    return () => cleanupPointsRealtime();
+  }, [userId, state.canRealtime, fetchUserPoints, cleanupPointsRealtime]);
 
-      // ✅ userId + instanceId + runId で「絶対に同名にならない」
-      const chName = `points:${userId}:${instanceIdRef.current}:${runId}`;
+  // Realtime：transactions は「一度でも読み込んだ後」だけ購読
+  useEffect(() => {
+    cleanupTxRealtime();
 
-      const ch = supabase
-        .channel(chName)
-        // user_points: INSERT/UPDATE/DELETE どれでも拾う
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'user_points', filter: `user_id=eq.${userId}` },
-          () => {
-            fetchUserPoints();
-          }
-        )
-        // point_transactions: INSERTだけ拾う
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'point_transactions', filter: `user_id=eq.${userId}` },
-          () => {
-            fetchTransactions();
-          }
-        );
+    const canUseRealtime =
+      !!userId &&
+      ENABLE_REALTIME &&
+      state.canRealtime &&
+      fetchedTxOnceRef.current;
 
-      channelRef.current = ch;
+    if (!canUseRealtime) return;
 
-      // ✅ subscribe は必ず1回。状態もログできる
-      ch.subscribe((status: string) => {
-        // SUBSCRIBED / TIMED_OUT / CLOSED / CHANNEL_ERROR
-        // console.log('[usePoints] channel status:', chName, status);
-        if (status === 'CHANNEL_ERROR') {
-          console.warn('[usePoints] Realtime channel error:', chName);
-        }
-      });
-    };
+    const chName = `point-tx:${userId}:${instanceIdRef.current}`;
+    const ch = supabase
+      .channel(chName)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "point_transactions", filter: `user_id=eq.${userId}` },
+        () => { void fetchTransactions({ silent: true }); }
+      );
 
-    setup();
+    txChannelRef.current = ch;
 
-    return () => {
-      cancelled = true;
-
-      // cleanup時も回収（非同期でOK）
-      const ch = channelRef.current;
-      if (ch) {
-        try {
-          ch.unsubscribe?.();
-        } catch (e) {
-          // noop
-        }
-        try {
-          supabase.removeChannel(ch);
-        } catch (e) {
-          // noop
-        }
-        channelRef.current = null;
+    ch.subscribe((status) => {
+      if (import.meta.env.DEV) console.log("[usePoints] tx realtime status", chName, status);
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.warn("[usePoints] tx realtime issue:", chName, status);
+        cleanupTxRealtime();
       }
-    };
-  }, [userId, fetchUserPoints, fetchTransactions]);
+    });
 
-  const awardPoints = async (
-    points: number,
-    reason: string,
-    category: PointTransaction['category'],
-    metadata: any = {}
-  ) => {
-    try {
-      const { error } = await supabase.rpc('award_points', {
-        p_user_id: userId,
-        p_points: points,
-        p_reason: reason,
-        p_category: category,
-        p_metadata: metadata,
-      });
+    return () => cleanupTxRealtime();
+  }, [userId, state.canRealtime, fetchTransactions, cleanupTxRealtime]);
 
+  const getLevelProgress = useCallback(() => {
+    const p = (userPoints as any)?.current_points ?? 0;
+    const next = (userPoints as any)?.points_to_next ?? 0;
+    if (!next) return 0;
+    return Math.max(0, Math.min(100, Math.round((p / next) * 100)));
+  }, [userPoints]);
+
+  const awardPoints = useCallback(
+    async (payload: any) => {
+      const { error } = await supabase.rpc("award_points", payload);
       if (error) throw error;
 
-      await Promise.all([fetchUserPoints(), fetchTransactions()]);
-      return true;
-    } catch (err) {
-      console.error('Error awarding points:', err);
-      return false;
-    }
-  };
-
-  const getLevelProgress = () => {
-    if (!userPoints) return 0;
-    return calcLevelProgress(userPoints.total_points);
-  };
-
-  const getRecentTransactions = (limit: number = 10) => transactions.slice(0, limit);
-
-  const getTotalPointsByCategory = (category: PointTransaction['category']) => {
-    return transactions
-      .filter((t) => t.category === category)
-      .reduce((sum, t) => sum + t.points, 0);
-  };
+      await fetchUserPoints({ silent: true });
+      if (fetchedTxOnceRef.current) {
+        await fetchTransactions({ silent: true });
+      }
+    },
+    [fetchUserPoints, fetchTransactions]
+  );
 
   return {
     userPoints,
     transactions,
     loading,
+    transactionsLoading,
     error,
-    awardPoints,
+
     getLevelProgress,
-    getRecentTransactions,
-    getTotalPointsByCategory,
-    refresh: fetchUserPoints,
+    awardPoints,
+
+    loadTransactions,
+    hasLoadedTransactions,
   };
 }

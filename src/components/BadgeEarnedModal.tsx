@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
-import confettiImport from 'canvas-confetti';
-import { Award, Star, X } from 'lucide-react';
-import type { Badge } from '../lib/gamification';
+import React, { useEffect, useCallback } from "react";
+import confettiImport from "canvas-confetti";
+import { Award, Star, X } from "lucide-react";
+import type { Badge } from "../lib/gamification";
 
 interface BadgeEarnedModalProps {
   badge: Badge;
@@ -12,22 +12,44 @@ const confetti = ((confettiImport as unknown as { default?: any })?.default ?? c
 
 export function BadgeEarnedModal({ badge, onClose }: BadgeEarnedModalProps) {
   useEffect(() => {
-    // confetti 互換対策（本番で default import が崩れることがある）
-    if (typeof confetti === 'function') {
+    if (typeof confetti === "function") {
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 },
       });
     }
-  }, []);
+  }, [badge?.id]);
+
+  const handleClose = useCallback(() => {
+    // async handlerが来ても安全に（呼ぶ側で async でもOK）
+    onClose();
+  }, [onClose]);
+
+  // ESCで閉じる
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleClose]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full shadow-2xl relative">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={handleClose} // 背景クリックで閉じる
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full shadow-2xl relative"
+        onClick={(e) => e.stopPropagation()} // 中身クリックで閉じない
+      >
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          aria-label="閉じる"
         >
           <X className="w-6 h-6" />
         </button>
@@ -49,12 +71,10 @@ export function BadgeEarnedModal({ badge, onClose }: BadgeEarnedModalProps) {
             <Star className="w-5 h-5 text-yellow-500" />
           </div>
 
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
-            {badge.description}
-          </p>
+          <p className="text-gray-600 dark:text-gray-400 mb-8">{badge.description}</p>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 px-8 rounded-xl transition-colors"
           >
             やった！

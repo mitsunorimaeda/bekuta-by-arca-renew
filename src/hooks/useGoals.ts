@@ -1,117 +1,217 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
-import { normalizeGoalMetadata } from '../lib/goalMetadata';
-import { getGoalProgress } from '../lib/goalUtils';
+// src/hooks/useGoals.ts
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabase";
+import { normalizeGoalMetadata } from "../lib/goalMetadata";
+import { getGoalProgress } from "../lib/goalUtils";
+import { useRealtimeHub } from "./useRealtimeHub";
+
+const ENABLE_REALTIME = import.meta.env.VITE_ENABLE_REALTIME === "true";
 
 export interface Goal {
   id: string;
   user_id: string;
-  goal_type: 'performance' | 'weight' | 'streak' | 'habit' | 'custom';
+  goal_type: "performance" | "weight" | "streak" | "habit" | "custom";
   title: string;
   description: string | null;
   target_value: number | null;
   current_value: number;
   unit: string | null;
   deadline: string | null;
-  status: 'active' | 'completed' | 'failed' | 'abandoned';
+  status: "active" | "completed" | "failed" | "abandoned";
   completed_at: string | null;
   metadata: any;
   created_at: string;
   updated_at: string;
 }
 
-export function useGoals(userId: string) {
+type Options = {
+  enabled?: boolean;
+  pollMs?: number;            // realtime無効時のポーリング間隔（例: 300000）
+  pauseWhenHidden?: boolean;  // trueならタブ非表示で止める
+};
+
+export function useGoals(userId: string, options: Options = {}) {
+  const enabled = options.enabled ?? true;
+  const pollMs = options.pollMs ?? 0;
+  const pauseWhenHidden = options.pauseWhenHidden ?? true;
+
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ hookインスタンス固有ID（同じuserIdで複数回呼ばれても衝突しない）
+  const { state, registerPollJob } = useRealtimeHub();
+
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  // hookインスタンス固有ID（衝突回避）
   const instanceIdRef = useRef(
-    (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
   );
 
-  // ✅ Realtime channel の参照
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const unregisterPollRef = useRef<null | (() => void)>(null);
+  const inflightRef = useRef(false);
 
-  const fetchGoals = useCallback(async () => {
-    if (!userId) return;
+  const cleanupRealtime = useCallback(() => {
+    const ch = channelRef.current;
+    if (!ch) return;
+    try { ch.unsubscribe?.(); } catch (_) {}
+    try { supabase.removeChannel(ch); } catch (_) {}
+    channelRef.current = null;
+  }, []);
 
-    try {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from('user_goals')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const normalized = (data || []).map((g: any) => ({
-        ...g,
-        metadata: normalizeGoalMetadata(g.metadata),
-      }));
-
-      setGoals(normalized);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError('目標の取得に失敗しました');
-    } finally {
-      setLoading(false);
+  const cleanupPoll = useCallback(() => {
+    if (unregisterPollRef.current) {
+      unregisterPollRef.current();
+      unregisterPollRef.current = null;
     }
-  }, [userId]);
+  }, []);
 
+  const fetchGoals = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId || !enabled) return;
+      if (inflightRef.current) return;
+      inflightRef.current = true;
+
+      const silent = opts?.silent ?? false;
+
+      try {
+        if (!silent && mountedRef.current) setLoading(true);
+
+        const { data, error } = await supabase
+          .from("user_goals")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        const normalized = (data ?? []).map((g: any) => ({
+          ...g,
+          metadata: normalizeGoalMetadata(g.metadata),
+        }));
+
+        if (!mountedRef.current) return;
+        setGoals(normalized as Goal[]);
+        setError(null);
+      } catch (e: any) {
+        if (!mountedRef.current) return;
+        console.error("[useGoals] fetch error:", e);
+        setError(e?.message ?? "目標の取得に失敗しました");
+      } finally {
+        inflightRef.current = false;
+        if (!silent && mountedRef.current) setLoading(false);
+      }
+    },
+    [userId, enabled]
+  );
+
+  // -----------------------------
+  // 初期ロード（ユーザー切替/無効化に強い）
+  // -----------------------------
   useEffect(() => {
-    if (!userId) return;
-
-    fetchGoals();
-
-    // ✅ 既存channelが残ってたら必ず破棄
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+    cleanupRealtime();
+    cleanupPoll();
+  
+    if (!userId || !enabled) {
+      setLoading(false);
+      return;
     }
+  
+    void fetchGoals({ silent: false });
+  }, [userId, enabled, fetchGoals, cleanupRealtime, cleanupPoll]);
 
-    // ✅ userId + instanceId で完全ユニーク化
-    const channel = supabase
-      .channel(`goals:${userId}:${instanceIdRef.current}`)
+  // -----------------------------
+  // ✅ Realtime（Hub許可のときだけ）
+  // -----------------------------
+  useEffect(() => {
+    cleanupRealtime();
+
+    const canUseRealtime =
+      !!userId && enabled && ENABLE_REALTIME && state.canRealtime;
+
+    if (!canUseRealtime) return;
+
+    const chName = `goals:${userId}:${instanceIdRef.current}`;
+
+    const ch = supabase
+      .channel(chName)
       .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_goals',
-          filter: `user_id=eq.${userId}`,
-        },
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_goals", filter: `user_id=eq.${userId}` },
         () => {
-          fetchGoals();
+          void fetchGoals({ silent: true });
         }
       );
 
-    // ✅ subscribeは1回だけ（コールバック無しでOK）
-    channel.subscribe();
+    channelRef.current = ch;
 
-    channelRef.current = channel;
-
-    // ✅ cleanup
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+    ch.subscribe((status) => {
+      if (import.meta.env.DEV) console.log("[useGoals] realtime status", chName, status);
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.warn("[useGoals] realtime issue:", status);
+        cleanupRealtime();
       }
-    };
-  }, [userId, fetchGoals]);
+    });
 
+    return () => cleanupRealtime();
+  }, [userId, enabled, state.canRealtime, fetchGoals, cleanupRealtime]);
+
+  // -----------------------------
+  // ✅ Hubポーリング（Realtimeが使えない時だけ）
+  // -----------------------------
+  useEffect(() => {
+    cleanupPoll();
+
+    const shouldPoll =
+      !!userId &&
+      enabled &&
+      pollMs > 0 &&
+      (!ENABLE_REALTIME || !state.canRealtime);
+
+    if (!shouldPoll) return;
+
+    const key = `goals:${userId}:${instanceIdRef.current}`;
+    const unregister = registerPollJob({
+      key,
+      intervalMs: pollMs,
+      run: async () => {
+        await fetchGoals({ silent: true });
+      },
+      enabled: true,
+      requireVisible: pauseWhenHidden,
+      requireOnline: true,
+      immediate: false, // 初回は上のuseEffectで取得済み
+    });
+
+    unregisterPollRef.current = unregister;
+
+    return () => cleanupPoll();
+  }, [
+    userId,
+    enabled,
+    pollMs,
+    pauseWhenHidden,
+    state.canRealtime,
+    registerPollJob,
+    fetchGoals,
+    cleanupPoll,
+  ]);
+
+  // -----------------------------
+  // CRUD
+  // -----------------------------
   const createGoal = async (goalData: Partial<Goal>) => {
     try {
       const { data, error } = await supabase
-        .from('user_goals')
+        .from("user_goals")
         .insert({
           user_id: userId,
           ...goalData,
           current_value: goalData.current_value ?? 0,
-          status: 'active',
+          status: "active",
           metadata: normalizeGoalMetadata(goalData.metadata),
         })
         .select()
@@ -119,47 +219,44 @@ export function useGoals(userId: string) {
 
       if (error) throw error;
 
-      await fetchGoals();
+      await fetchGoals({ silent: true });
       return { data, error: null };
     } catch (err) {
       console.error(err);
-      return { data: null, error: '目標の作成に失敗しました' };
+      return { data: null, error: "目標の作成に失敗しました" };
     }
   };
 
   const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
     try {
       const { error } = await supabase
-        .from('user_goals')
+        .from("user_goals")
         .update({
           ...updates,
           metadata: updates.metadata ? normalizeGoalMetadata(updates.metadata) : undefined,
         })
-        .eq('id', goalId)
-        .eq('user_id', userId);
+        .eq("id", goalId)
+        .eq("user_id", userId);
 
       if (error) throw error;
 
-      await fetchGoals();
+      await fetchGoals({ silent: true });
       return { error: null };
     } catch {
-      return { error: '目標の更新に失敗しました' };
+      return { error: "目標の更新に失敗しました" };
     }
   };
 
   const updateGoalProgress = async (goalId: string, currentValue: number) => {
     const goal = goals.find((g) => g.id === goalId);
-    if (!goal) return { error: '目標が見つかりません' };
+    if (!goal) return { error: "目標が見つかりません" };
 
     const progress = getGoalProgress({ ...goal, current_value: currentValue });
 
     const updates: Partial<Goal> = {
       current_value: currentValue,
       ...(progress.is_completed
-        ? {
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-          }
+        ? { status: "completed", completed_at: new Date().toISOString() }
         : {}),
     };
 
@@ -169,22 +266,22 @@ export function useGoals(userId: string) {
   const deleteGoal = async (goalId: string) => {
     try {
       const { error } = await supabase
-        .from('user_goals')
+        .from("user_goals")
         .delete()
-        .eq('id', goalId)
-        .eq('user_id', userId);
+        .eq("id", goalId)
+        .eq("user_id", userId);
 
       if (error) throw error;
 
-      await fetchGoals();
+      await fetchGoals({ silent: true });
       return { error: null };
     } catch {
-      return { error: '目標の削除に失敗しました' };
+      return { error: "目標の削除に失敗しました" };
     }
   };
 
   function getActiveGoals() {
-    return goals.filter((g) => g.status === 'active');
+    return goals.filter((g) => g.status === "active");
   }
 
   function calculateGoalProgress(goal: Goal) {
@@ -201,12 +298,12 @@ export function useGoals(userId: string) {
 
   function isGoalOverdue(goal: Goal) {
     if (!goal.deadline) return false;
-    return new Date(goal.deadline) < new Date() && goal.status !== 'completed';
+    return new Date(goal.deadline) < new Date() && goal.status !== "completed";
   }
 
   async function completeGoal(goalId: string) {
     return await updateGoal(goalId, {
-      status: 'completed',
+      status: "completed",
       completed_at: new Date().toISOString(),
     });
   }
@@ -219,7 +316,9 @@ export function useGoals(userId: string) {
     updateGoal,
     updateGoalProgress,
     deleteGoal,
-    refresh: fetchGoals,
+    refresh: async () => {
+      await fetchGoals({ silent: false });
+    },
     getActiveGoals,
     getGoalProgress: calculateGoalProgress,
     getDaysUntilDeadline,

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Zap, AlertCircle } from 'lucide-react';
+import { Heart, Zap, AlertCircle, Loader2 } from 'lucide-react';
 import { getTodayJSTString } from '../lib/date';
 import { DuplicateRecordModal, ExistingMotivationRecord } from "./DuplicateRecordModal";
+import { Toast } from './ui/Toast'; // ✅ パスは構成に合わせて調整
 
 interface LastRecordInfo {
   date: string;
@@ -19,8 +20,8 @@ interface MotivationFormProps {
     notes?: string;
   }) => Promise<void>;
 
-  // ✅ 追加：既存チェック + 上書き更新
-  onCheckExisting?: (date: string) => Promise<(ExistingMotivationRecord) | null>;
+  // ✅ 既存チェック + 上書き更新
+  onCheckExisting?: (date: string) => Promise<ExistingMotivationRecord | null>;
   onUpdate?: (
     id: string,
     data: {
@@ -49,6 +50,20 @@ export function MotivationForm({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [initializedFromLast, setInitializedFromLast] = useState(false);
+
+  // ✅ 手応え用：フォーム内 saving（親loadingと別）
+  const [saving, setSaving] = useState(false);
+
+  // ✅ Toast
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (type: 'success' | 'error', msg: string) => {
+    setToastType(type);
+    setToastMsg(msg);
+    setToastOpen(true);
+  };
 
   // ✅ 上書きモーダル用
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -79,9 +94,13 @@ export function MotivationForm({
     setInitializedFromLast(false);
   };
 
+  const isBusy = loading || saving;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (isBusy) return; // ✅ 二重押し防止
 
     const payload = {
       motivation_level: motivationLevel,
@@ -91,6 +110,7 @@ export function MotivationForm({
       notes: notes || undefined,
     };
 
+    setSaving(true);
     try {
       // ✅ 既存チェック（あればモーダルへ）
       if (onCheckExisting) {
@@ -99,24 +119,31 @@ export function MotivationForm({
           setExistingRecord(existing);
           setPendingData(payload);
           setShowDuplicateModal(true);
-          return; // ← ここで送信は止める（リセットもしない）
+          return; // ✅ ここで送信止める（finallyで saving解除）
         }
       }
 
       await onSubmit(payload);
       resetForm();
-    } catch (err) {
+      showToast('success', '記録しました ✅');
+    } catch (err: any) {
       setError('モチベーション記録の追加に失敗しました');
       console.error('Error submitting motivation record:', err);
+      showToast('error', `保存に失敗しました：${err?.message ?? '不明なエラー'}`);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
+    if (isBusy) return;
+
+    setError('');
+    setShowDuplicateModal(false);
+    setSaving(true);
 
     try {
-      setError('');
-
       // ✅ update が渡されているなら update を優先（idで更新）
       if (onUpdate) {
         await onUpdate(existingRecord.id, {
@@ -126,17 +153,20 @@ export function MotivationForm({
           notes: pendingData.notes,
         });
       } else {
-        // fallback（あまり推奨しないが壊れないように）
+        // fallback
         await onSubmit(pendingData);
       }
 
-      setShowDuplicateModal(false);
       setExistingRecord(null);
       setPendingData(null);
       resetForm();
-    } catch (err) {
+      showToast('success', '上書きして記録しました ✅');
+    } catch (err: any) {
       setError('上書きに失敗しました');
       console.error('Error overwriting motivation record:', err);
+      showToast('error', `上書きに失敗しました：${err?.message ?? '不明なエラー'}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -147,51 +177,64 @@ export function MotivationForm({
     icon: React.ReactNode,
     lowLabel: string,
     highLabel: string,
-    color: string,
-    previousValue?: number
-  ) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-        {icon}
-        {label}
-      </label>
+    colorTextClass: string,
+    previousValue?: number,
+    accentHex?: string
+  ) => {
+    // ✅ 線形グラデ（つまみ位置まで色を出す）
+    const pct = (value - 1) * 11.11; // 1〜10 を 0〜100 に近似
+    const active = accentHex ?? '#3b82f6';
+    const inactive = '#9ca3af';
 
-      {previousValue !== undefined && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
-          前回: <span className="font-semibold">{previousValue}</span> / 10
-          {lastRecord?.date && <span className="ml-1">（{lastRecord.date}）</span>}
-        </p>
-      )}
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {icon}
+          {label}
+        </label>
 
-      <div className="flex items-center space-x-3">
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12">{lowLabel}</span>
-        <input
-          type="range"
-          min="1"
-          max="10"
-          value={value}
-          onChange={(e) => onChange(parseInt(e.target.value))}
-          className={`flex-1 h-2 rounded-lg appearance-none cursor-pointer ${color}`}
-          style={{
-            background: `linear-gradient(to right, ${
-              color.includes('blue') ? '#3b82f6' : color.includes('green') ? '#10b981' : '#ef4444'
-            } 0%, ${
-              color.includes('blue') ? '#3b82f6' : color.includes('green') ? '#10b981' : '#ef4444'
-            } ${(value - 1) * 11.11}%, #9ca3af ${(value - 1) * 11.11}%, #9ca3af 100%)`,
-          }}
-        />
-        <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right">{highLabel}</span>
+        {previousValue !== undefined && (
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+            前回: <span className="font-semibold">{previousValue}</span> / 10
+            {lastRecord?.date && <span className="ml-1">（{lastRecord.date}）</span>}
+          </p>
+        )}
+
+        <div className="flex items-center space-x-3">
+          <span className="text-xs text-gray-500 dark:text-gray-400 w-12">{lowLabel}</span>
+          <input
+            type="range"
+            min="1"
+            max="10"
+            value={value}
+            onChange={(e) => onChange(parseInt(e.target.value))}
+            disabled={isBusy}
+            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{
+              background: `linear-gradient(to right, ${active} 0%, ${active} ${pct}%, ${inactive} ${pct}%, ${inactive} 100%)`,
+            }}
+          />
+          <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right">{highLabel}</span>
+        </div>
+
+        <div className="text-center mt-2">
+          <span className={`text-2xl font-bold ${colorTextClass}`}>{value}</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400"> / 10</span>
+        </div>
       </div>
-
-      <div className="text-center mt-2">
-        <span className={`text-2xl font-bold ${color}`}>{value}</span>
-        <span className="text-sm text-gray-500 dark:text-gray-400"> / 10</span>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
+      {/* ✅ Toast */}
+      <Toast
+        open={toastOpen}
+        type={toastType}
+        message={toastMsg}
+        onClose={() => setToastOpen(false)}
+      />
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
@@ -207,6 +250,7 @@ export function MotivationForm({
             onChange={(e) => setDate(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             required
+            disabled={isBusy}
           />
         </div>
 
@@ -218,7 +262,8 @@ export function MotivationForm({
           '低い',
           '高い',
           'text-blue-500',
-          lastRecord?.motivation_level
+          lastRecord?.motivation_level,
+          '#3b82f6'
         )}
 
         {renderSlider(
@@ -229,7 +274,8 @@ export function MotivationForm({
           '疲労',
           '充実',
           'text-green-500',
-          lastRecord?.energy_level
+          lastRecord?.energy_level,
+          '#10b981'
         )}
 
         {renderSlider(
@@ -240,7 +286,8 @@ export function MotivationForm({
           'リラックス',
           '高ストレス',
           'text-red-500',
-          lastRecord?.stress_level
+          lastRecord?.stress_level,
+          '#ef4444'
         )}
 
         <div>
@@ -250,21 +297,29 @@ export function MotivationForm({
             onChange={(e) => setNotes(e.target.value)}
             placeholder="今日の出来事や気持ちを記録..."
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+            disabled={isBusy}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none disabled:opacity-60"
           />
         </div>
 
         <button
           type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+          disabled={isBusy}
+          className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
+            isBusy
+              ? 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
         >
-          {loading ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+          {isBusy ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              保存中…
+            </span>
           ) : (
             <>
               <Heart className="w-5 h-5 mr-2" />
-              モチベーション記録を追加
+              モチベーションを記録する
             </>
           )}
         </button>
@@ -274,7 +329,12 @@ export function MotivationForm({
       {existingRecord && pendingData && (
         <DuplicateRecordModal
           isOpen={showDuplicateModal}
-          onClose={() => setShowDuplicateModal(false)}
+          onClose={() => {
+            setShowDuplicateModal(false);
+            // ✅ 閉じる時に状態を戻す（次回に残さない）
+            setExistingRecord(null);
+            setPendingData(null);
+          }}
           onCancel={() => {
             setShowDuplicateModal(false);
             setExistingRecord(null);

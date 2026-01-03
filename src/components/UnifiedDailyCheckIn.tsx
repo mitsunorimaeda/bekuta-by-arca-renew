@@ -188,10 +188,15 @@ export function UnifiedDailyCheckIn({
   // Duplicate detection states
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateType, setDuplicateType] = useState<
-    'training' | 'weight' | 'sleep' | 'motivation' | 'cycle' | null
+    'training' | 'weight' |'conditioning' | 'cycle' | null
   >(null);
   const [existingRecord, setExistingRecord] = useState<any>(null);
   const [pendingData, setPendingData] = useState<any>(null);
+  // ✅ 次へボタンの表示文言（最後だけ「完了」）
+  const getNextLabel = () => {
+    const isLast = cycleEnabled ? activeSection === "cycle" : activeSection === "conditioning";
+    return isLast ? "完了" : "次へ";
+  };
 
   const handleSectionComplete = async (section: 'training' | 'weight' | 'conditioning' | 'cycle') => {
     setSubmitting(true);
@@ -200,7 +205,7 @@ export function UnifiedDailyCheckIn({
     try {
       if (section === 'training') {
         const existing = await onTrainingCheckExisting(selectedDate);
-
+    
         if (existing) {
           setDuplicateType('training');
           setExistingRecord(existing);
@@ -215,7 +220,7 @@ export function UnifiedDailyCheckIn({
           setSubmitting(false);
           return;
         }
-
+    
         await onTrainingSubmit({
           rpe,
           duration_min: duration,
@@ -223,12 +228,16 @@ export function UnifiedDailyCheckIn({
           arrow_score: arrowScore ?? 50,
           signal_score: signalScore ?? 50,
         });
-
+    
         setCompletedSections((prev) => new Set(prev).add('training'));
         setActiveSection('weight');
-      } else if (section === 'weight') {
+        return;
+      }
+    
+      if (section === 'weight') {
         if (weight) {
           const existing = await onWeightCheckExisting(selectedDate);
+    
           if (existing) {
             setDuplicateType('weight');
             setExistingRecord(existing);
@@ -241,54 +250,58 @@ export function UnifiedDailyCheckIn({
             setSubmitting(false);
             return;
           }
-
+    
           await onWeightSubmit({
             weight_kg: Number(weight),
             date: selectedDate,
             notes: weightNotes || undefined,
           });
+    
           setCompletedSections((prev) => new Set(prev).add('weight'));
         }
+    
         setActiveSection('conditioning');
-      } else if (section === 'conditioning') {
-        const existingSleep = await onSleepCheckExisting(selectedDate);
-        if (existingSleep) {
-          setDuplicateType('sleep');
-          setExistingRecord(existingSleep);
+        return;
+      }
+    
+      if (section === 'conditioning') {
+        const [existingSleep, existingMotivation] = await Promise.all([
+          onSleepCheckExisting(selectedDate),
+          onMotivationCheckExisting(selectedDate),
+        ]);
+    
+        // ✅ どっちか既存があれば「1回だけ」上書き確認
+        if (existingSleep || existingMotivation) {
+          setDuplicateType('conditioning');
+          setExistingRecord({ sleep: existingSleep, motivation: existingMotivation });
           setPendingData({
-            sleep_hours: sleepHours,
-            sleep_quality: sleepQuality,
-            date: selectedDate,
-            notes: sleepNotes || undefined,
+            sleep: {
+              sleep_hours: sleepHours,
+              sleep_quality: sleepQuality,
+              date: selectedDate,
+              notes: sleepNotes || undefined,
+            },
+            motivation: {
+              motivation_level: motivationLevel,
+              energy_level: energyLevel,
+              stress_level: stressLevel,
+              date: selectedDate,
+              notes: conditioningNotes || undefined,
+            },
           });
           setShowDuplicateModal(true);
           setSubmitting(false);
           return;
         }
-
-        const existingMotivation = await onMotivationCheckExisting(selectedDate);
-        if (existingMotivation) {
-          setDuplicateType('motivation');
-          setExistingRecord(existingMotivation);
-          setPendingData({
-            motivation_level: motivationLevel,
-            energy_level: energyLevel,
-            stress_level: stressLevel,
-            date: selectedDate,
-            notes: conditioningNotes || undefined,
-          });
-          setShowDuplicateModal(true);
-          setSubmitting(false);
-          return;
-        }
-
+    
+        // ✅ 既存なし → 保存
         await onSleepSubmit({
           sleep_hours: sleepHours,
           sleep_quality: sleepQuality,
           date: selectedDate,
           notes: sleepNotes || undefined,
         });
-
+    
         await onMotivationSubmit({
           motivation_level: motivationLevel,
           energy_level: energyLevel,
@@ -296,17 +309,23 @@ export function UnifiedDailyCheckIn({
           date: selectedDate,
           notes: conditioningNotes || undefined,
         });
-
+    
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
-
+    
+        // ✅ 女性ならcycleへ
         if (cycleEnabled) {
           setActiveSection('cycle');
         } else {
           setTimeout(() => onClose(), 500);
         }
-      } else if (section === 'cycle') {
+        return;
+      }
+    
+      if (section === 'cycle') {
         if (periodStart) {
-          await SubmitCycle({
+          if (!onCycleSubmit) throw new Error('onCycleSubmit が未設定です');
+    
+          await onCycleSubmit({
             cycle_start_date: selectedDate,
             period_duration_days: periodDuration,
             cycle_length_days: cycleLength,
@@ -315,9 +334,12 @@ export function UnifiedDailyCheckIn({
             notes: cycleNotes || undefined,
           });
         }
+    
         setCompletedSections((prev) => new Set(prev).add('cycle'));
         setTimeout(() => onClose(), 500);
-      }
+        return;
+      }    
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '不明なエラー';
       setError(
@@ -359,41 +381,25 @@ export function UnifiedDailyCheckIn({
         });
         setCompletedSections((prev) => new Set(prev).add('weight'));
         setActiveSection('conditioning');
-      } else if (duplicateType === 'sleep') {
-        await onSleepUpdate(existingRecord.id, pendingData);
-
-        const existingMotivation = await onMotivationCheckExisting(selectedDate);
-        if (existingMotivation) {
-          setDuplicateType('motivation');
-          setExistingRecord(existingMotivation);
-          setPendingData({
-            motivation_level: motivationLevel,
-            energy_level: energyLevel,
-            stress_level: stressLevel,
-            date: selectedDate,
-            notes: conditioningNotes || undefined,
-          });
-          setShowDuplicateModal(true);
-          setSubmitting(false);
-          return;
-        }
-
-        await onMotivationSubmit({
-          motivation_level: motivationLevel,
-          energy_level: energyLevel,
-          stress_level: stressLevel,
-          date: selectedDate,
-          notes: conditioningNotes || undefined,
-        });
-
+      } else if (duplicateType === 'conditioning') {
+        const ex = existingRecord as { sleep: any | null; motivation: any | null };
+        const pd = pendingData as { sleep: any; motivation: any };
+    
+        // sleep
+        if (ex.sleep) await onSleepUpdate(ex.sleep.id, pd.sleep);
+        else await onSleepSubmit(pd.sleep);
+    
+        // motivation
+        if (ex.motivation) await onMotivationUpdate(ex.motivation.id, pd.motivation);
+        else await onMotivationSubmit(pd.motivation);
+    
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
-        setTimeout(() => onClose(), 500);
-      } else if (duplicateType === 'motivation') {
-        await onMotivationUpdate(existingRecord.id, pendingData);
-        setCompletedSections((prev) => new Set(prev).add('conditioning'));
-        setTimeout(() => onClose(), 500);
+    
+        // ✅ 上書き後も女性ならcycleへ
+        if (cycleEnabled) setActiveSection('cycle');
+        else setTimeout(() => onClose(), 500);
       }
-
+    
       setExistingRecord(null);
       setPendingData(null);
       setDuplicateType(null);
@@ -446,10 +452,8 @@ export function UnifiedDailyCheckIn({
         return '練習記録';
       case 'weight':
         return '体重記録';
-      case 'sleep':
-        return '睡眠記録';
-      case 'motivation':
-        return 'モチベーション記録';
+      case 'conditioning':
+        return 'コンディション';
       default:
         return '';
     }
@@ -480,30 +484,26 @@ export function UnifiedDailyCheckIn({
           existing: [{ label: '体重', value: `${existingRecord.weight_kg || 0} kg` }],
           pending: [{ label: '体重', value: `${pendingData.weight_kg || 0} kg` }],
         };
-      case 'sleep':
-        return {
-          existing: [
-            { label: '睡眠時間', value: `${existingRecord.sleep_hours || 0}時間` },
-            { label: '睡眠の質', value: `${existingRecord.sleep_quality || 0}/5` },
-          ],
-          pending: [
-            { label: '睡眠時間', value: `${pendingData.sleep_hours || 0}時間` },
-            { label: '睡眠の質', value: `${pendingData.sleep_quality || 0}/5` },
-          ],
-        };
-      case 'motivation':
-        return {
-          existing: [
-            { label: 'モチベーション', value: `${existingRecord.motivation_level || 0}/10` },
-            { label: 'エネルギー', value: `${existingRecord.energy_level || 0}/10` },
-            { label: 'ストレス', value: `${existingRecord.stress_level || 0}/10` },
-          ],
-          pending: [
-            { label: 'モチベーション', value: `${pendingData.motivation_level || 0}/10` },
-            { label: 'エネルギー', value: `${pendingData.energy_level || 0}/10` },
-            { label: 'ストレス', value: `${pendingData.stress_level || 0}/10` },
-          ],
-        };
+        case 'conditioning': {
+          const ex = existingRecord as { sleep: any | null; motivation: any | null };
+          return {
+            existing: [
+              { label: '睡眠時間', value: ex.sleep ? `${ex.sleep.sleep_hours ?? 0}時間` : '—' },
+              { label: '睡眠の質', value: ex.sleep ? `${ex.sleep.sleep_quality ?? 0}/5` : '—' },
+              { label: 'モチベ', value: ex.motivation ? `${ex.motivation.motivation_level ?? 0}/10` : '—' },
+              { label: 'エネルギー', value: ex.motivation ? `${ex.motivation.energy_level ?? 0}/10` : '—' },
+              { label: 'ストレス', value: ex.motivation ? `${ex.motivation.stress_level ?? 0}/10` : '—' },
+            ],
+            pending: [
+              { label: '睡眠時間', value: `${pendingData.sleep.sleep_hours ?? 0}時間` },
+              { label: '睡眠の質', value: `${pendingData.sleep.sleep_quality ?? 0}/5` },
+              { label: 'モチベ', value: `${pendingData.motivation.motivation_level ?? 0}/10` },
+              { label: 'エネルギー', value: `${pendingData.motivation.energy_level ?? 0}/10` },
+              { label: 'ストレス', value: `${pendingData.motivation.stress_level ?? 0}/10` },
+            ],
+          };
+        }
+        
       default:
         return { existing: [], pending: [] };
     }
@@ -943,6 +943,21 @@ export function UnifiedDailyCheckIn({
                 error={error || null}
               />
             )} 
+            {/* ✅ 追加：保存して次へ進むボタン */}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => void handleSectionComplete(activeSection)}
+                disabled={submitting}
+                className={`w-full py-3 rounded-xl font-semibold transition-colors ${
+                  submitting
+                    ? "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {submitting ? "保存中..." : getNextLabel()}
+              </button>
+            </div>
 
             <div className="mt-4 flex justify-center">
               <button

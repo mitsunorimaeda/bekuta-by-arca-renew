@@ -40,7 +40,7 @@ import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusButton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
-import { getRiskLabel, getRiskColor } from '../lib/riskUtils';
+import { getRiskLabel, getRiskColor } from '../lib/acwr';
 import { useLastRecords } from '../hooks/useLastRecords';
 import { useInbodyData } from '../hooks/useInbodyData';
 import { InBodyLatestCard } from './InBodyLatestCard';
@@ -55,6 +55,7 @@ import { FTTCheck } from './FTTCheck';
 import {AthleteGamificationView} from "./views/AthleteGamificationView";
 import { AthleteNutritionView } from "./views/AthleteNutritionView";
 import { AthleteCycleView } from "./views/AthleteCycleView";
+
 
 
 import {
@@ -83,6 +84,8 @@ import {
 import { useDarkMode } from '../hooks/useDarkMode';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
+
+
 
 const AthleteNutritionDashboardView = lazy(() =>
   import("./views/AthleteNutritionDashboardView").then((m) => ({

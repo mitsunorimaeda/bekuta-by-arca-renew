@@ -1,15 +1,20 @@
+// src/components/TeamAchievementNotification.tsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Trophy, X, Users, Award, TrendingUp } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import confetti from "canvas-confetti";
+import { useRealtimeHub } from "../hooks/useRealtimeHub";
+
+const ENABLE_REALTIME = import.meta.env.VITE_ENABLE_REALTIME === "true";
+const POLL_MS = 120_000; // 120秒
 
 interface TeamAchievement {
   id: string;
   team_id: string;
   achievement_type: string;
   title: string;
-  description: string;
-  achieved_at: string;
+  description: string | null;
+  achieved_at: string | null;
   metadata: any;
   celebrated: boolean;
 }
@@ -21,7 +26,7 @@ interface TeamAchievementNotificationRow {
   achievement_id: string;
   is_read: boolean;
   created_at: string;
-  team_achievements: TeamAchievement;
+  achievement: TeamAchievement | null;
 }
 
 interface Props {
@@ -29,39 +34,91 @@ interface Props {
 }
 
 export function TeamAchievementNotification({ userId }: Props) {
+  const { state, registerPollJob } = useRealtimeHub();
+
   const [notifications, setNotifications] = useState<TeamAchievementNotificationRow[]>([]);
   const [showNotification, setShowNotification] = useState(false);
   const [currentNotification, setCurrentNotification] =
     useState<TeamAchievementNotificationRow | null>(null);
 
-  const channelRef = useRef<any>(null);
+  // ✅ hookインスタンス固有（job key / channel名衝突回避）
+  const instanceIdRef = useRef(
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  );
+
+  // ✅ WS channel
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // ✅ Poll unregister
+  const unregisterPollRef = useRef<null | (() => void)>(null);
+
+  // ✅ realtime が死んだら poll fallback に落とす
+  const [realtimeFailed, setRealtimeFailed] = useState(false);
+
+  const removeChannelSafe = useCallback(() => {
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    try {
+      ch.unsubscribe?.();
+    } catch (_) {}
+
+    try {
+      supabase.removeChannel(ch);
+    } catch (_) {}
+
+    channelRef.current = null;
+  }, []);
 
   const loadUnreadNotifications = useCallback(async () => {
     if (!userId) return;
 
     const { data, error } = await supabase
       .from("team_achievement_notifications")
-      .select(`*, team_achievements:achievement_id (*)`)
+      .select(
+        `
+        id, team_id, user_id, achievement_id, is_read, created_at,
+        achievement:team_achievements (
+          id, team_id, achievement_type, title, description, achieved_at, metadata, celebrated
+        )
+      `
+      )
       .eq("user_id", userId)
       .eq("is_read", false)
       .order("created_at", { ascending: true });
 
-    if (!error && data) setNotifications(data as any[]);
+    if (error) {
+      console.error("[team_achievement_notifications] load error:", error);
+      return;
+    }
+    if (!data) return;
+
+    // achievement null を除外（RLS/欠損でも落ちない）
+    const safe = (data as any[]).filter((n) => n.achievement);
+    setNotifications(safe as TeamAchievementNotificationRow[]);
   }, [userId]);
 
+  // ✅ visible/online に戻ったタイミングで 1回同期（Hubのstateに乗る）
   useEffect(() => {
     if (!userId) return;
+    if (!state.canRun) return;
+    void loadUnreadNotifications();
+  }, [userId, state.canRun, loadUnreadNotifications]);
 
-    loadUnreadNotifications();
+  // ✅ Realtime：Hub許可のときだけ接続（＝visible & online）
+  useEffect(() => {
+    // 先に掃除
+    removeChannelSafe();
 
-    // ✅ 既存channelを破棄（同名channel再利用対策）
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
+    if (!userId) return;
+
+    const canUseRealtime =
+      ENABLE_REALTIME && state.canRealtime && !realtimeFailed;
+
+    if (!canUseRealtime) return;
 
     const channel = supabase
-      .channel(`team-achievements:${userId}`)
+      .channel(`team-achievements:${userId}:${instanceIdRef.current}`)
       .on(
         "postgres_changes",
         {
@@ -71,21 +128,82 @@ export function TeamAchievementNotification({ userId }: Props) {
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          loadUnreadNotifications();
+          void loadUnreadNotifications();
         }
       );
 
-    channel.subscribe(); // ✅ 1回だけ
-
     channelRef.current = channel;
 
+    channel.subscribe((status) => {
+      if (import.meta.env.DEV) console.log("[TeamAchievementNotification] rt", status);
+
+      if (status === "SUBSCRIBED") {
+        void loadUnreadNotifications();
+      }
+
+      // ✅ 失敗したら poll fallback に切替
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.warn("[TeamAchievementNotification] realtime issue:", status);
+        setRealtimeFailed(true);
+        removeChannelSafe();
+      }
+    });
+
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      removeChannelSafe();
+    };
+  }, [userId, state.canRealtime, realtimeFailed, loadUnreadNotifications, removeChannelSafe]);
+
+  // ✅ Polling：Realtimeが使えない時だけ Hub に登録（中央制御）
+  useEffect(() => {
+    // 前回job解除
+    if (unregisterPollRef.current) {
+      unregisterPollRef.current();
+      unregisterPollRef.current = null;
+    }
+
+    if (!userId) return;
+
+    // Realtimeが完全OFF、または Realtimeが死んだときだけ poll fallback
+    const pollEnabled = !ENABLE_REALTIME || realtimeFailed;
+
+    if (!pollEnabled) return;
+
+    const key = `team_achievements:${userId}:${instanceIdRef.current}`;
+
+    const unregister = registerPollJob({
+      key,
+      intervalMs: POLL_MS,
+      run: async () => {
+        await loadUnreadNotifications();
+      },
+      enabled: true,
+      requireVisible: true, // ✅ 背景は止める
+      requireOnline: true,  // ✅ offline は止める
+      immediate: true,      // ✅ poll fallbackに入った瞬間は即同期
+    });
+
+    unregisterPollRef.current = unregister;
+
+    return () => {
+      if (unregisterPollRef.current) {
+        unregisterPollRef.current();
+        unregisterPollRef.current = null;
       }
     };
-  }, [userId, loadUnreadNotifications]);
+  }, [userId, realtimeFailed, registerPollJob, loadUnreadNotifications]);
+
+  // ✅ Realtime が復活できる状態に戻ったら、次回の可視/オンラインで再挑戦
+  useEffect(() => {
+    if (!ENABLE_REALTIME) return;
+    if (!userId) return;
+    if (!state.canRealtime) return;
+
+    // “失敗フラグ”は、visible&onlineになったタイミングで一旦解除して再接続を許可
+    if (realtimeFailed) {
+      setRealtimeFailed(false);
+    }
+  }, [userId, state.canRealtime, realtimeFailed]);
 
   useEffect(() => {
     if (notifications.length > 0 && !showNotification) {
@@ -98,7 +216,6 @@ export function TeamAchievementNotification({ userId }: Props) {
   const triggerConfetti = () => {
     const duration = 2500;
     const end = Date.now() + duration;
-
     const defaults = { startVelocity: 25, spread: 360, ticks: 60, zIndex: 9999 };
 
     const interval: any = setInterval(() => {
@@ -114,9 +231,10 @@ export function TeamAchievementNotification({ userId }: Props) {
   const handleClose = async () => {
     if (!currentNotification) return;
 
-    await supabase.rpc("mark_team_notification_read", {
+    const { error } = await supabase.rpc("mark_team_notification_read", {
       p_notification_id: currentNotification.id,
     });
+    if (error) console.error("[mark_team_notification_read] error:", error);
 
     setShowNotification(false);
     setNotifications((prev) => prev.filter((n) => n.id !== currentNotification.id));
@@ -126,12 +244,15 @@ export function TeamAchievementNotification({ userId }: Props) {
   const getAchievementIcon = (type: string) => {
     switch (type) {
       case "team_streak":
+      case "streak_7":
         return Users;
       case "team_personal_best":
+      case "pb":
         return Award;
       case "team_acwr_safe":
         return TrendingUp;
       case "team_goals_complete":
+      case "goal":
         return Trophy;
       default:
         return Trophy;
@@ -140,7 +261,9 @@ export function TeamAchievementNotification({ userId }: Props) {
 
   if (!showNotification || !currentNotification) return null;
 
-  const achievement = currentNotification.team_achievements;
+  const achievement = currentNotification.achievement;
+  if (!achievement) return null;
+
   const Icon = getAchievementIcon(achievement.achievement_type);
 
   return (
@@ -160,15 +283,15 @@ export function TeamAchievementNotification({ userId }: Props) {
             <Icon className="w-10 h-10 text-white" />
           </div>
 
-          <h2 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">
-            チーム達成！
-          </h2>
+          <h2 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">チーム達成！</h2>
 
           <div className="mb-4">
             <h3 className="text-xl font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
               {achievement.title}
             </h3>
-            <p className="text-gray-700 dark:text-gray-300">{achievement.description}</p>
+            {achievement.description ? (
+              <p className="text-gray-700 dark:text-gray-300">{achievement.description}</p>
+            ) : null}
           </div>
 
           <button

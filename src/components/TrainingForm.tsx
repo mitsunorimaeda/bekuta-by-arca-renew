@@ -7,30 +7,27 @@ import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { VectorArrowPicker } from '../components/VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
 import type { TrainingRecordForm } from '../lib/normalizeRecords';
+import { Toast } from './ui/Toast'; // ✅ パスは構成に合わせて調整
 
 interface TrainingFormProps {
   userId: string;
 
-  // ✅ arrow_score / signal_score を受け取る形に変更
   onSubmit: (data: {
     rpe: number;
     duration_min: number;
     date: string;
-    arrow_score: number ;
-    signal_score: number ;
+    arrow_score: number;
+    signal_score: number;
   }) => Promise<void>;
 
   onCheckExisting: (date: string) => Promise<TrainingRecord | null>;
 
-  // ✅ update も arrow_score / signal_score を受け取る形に変更
   onUpdate: (
     recordId: string,
-    data: { rpe: number; duration_min: number; arrow_score: number ; signal_score: number }
+    data: { rpe: number; duration_min: number; arrow_score: number; signal_score: number }
   ) => Promise<void>;
 
   loading: boolean;
-
-  // ✅ ここを差し替え（型を統一）
   lastRecord?: TrainingRecordForm | null;
 
   weeklyAverage?: { rpe: number; duration: number; load: number } | null;
@@ -48,7 +45,7 @@ const getTodayLocalDateString = () => {
 };
 
 export function TrainingForm({
-  userId, // ✅ 受け取る（今は未使用でもOK。将来ログ等で使える）
+  userId,
   onSubmit,
   onCheckExisting,
   onUpdate,
@@ -61,10 +58,9 @@ export function TrainingForm({
   const today = getTodayLocalDateString();
 
   const [rpe, setRpe] = useState<number>(0); // 0 = 休養日
-  const [duration, setDuration] = useState<number>(0); // 休養日初期値 0 分
+  const [duration, setDuration] = useState<number>(0);
   const [selectedDate, setSelectedDate] = useState<string>(today);
 
-  // ✅ 追加：矢印（成長実感）/ 電波（意図理解）0〜100
   const [arrowScore, setArrowScore] = useState<number>(50);
   const [signalScore, setSignalScore] = useState<number>(50);
 
@@ -83,32 +79,72 @@ export function TrainingForm({
     signal_score: number;
   } | null>(null);
 
+  // ✅ Toast
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (type: 'success' | 'error', msg: string) => {
+    setToastType(type);
+    setToastMsg(msg);
+    setToastOpen(true);
+  };
+
+  const resetForm = () => {
+    setRpe(0);
+    setDuration(0);
+    setArrowScore(50);
+    setSignalScore(50);
+    setSelectedDate(today);
+  };
+
+  const applySuccessEffects = () => {
+    // ストリーク用：休養日でも「1日入力した」とみなす
+    const feedback = getDataEntryFeedback(daysWithData + 1, consecutiveDays + 1);
+    if (feedback) {
+      setSuccessFeedback(feedback);
+      if (feedback.showConfetti) {
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting || loading) return; // ✅ 二重送信ガード
     setError('');
 
     // 入力バリデーション（休養日のルール）
     if (rpe === 0 && duration > 0) {
       setError('RPE 0（休養日）の場合は、時間も 0 分にしてください。');
+      showToast('error', '入力内容を確認してください（休養日のルール）');
       return;
     }
     if (rpe > 0 && duration === 0) {
       setError('RPE が 1 以上のときは、練習時間も 1 分以上を入力してください。');
+      showToast('error', '入力内容を確認してください（時間が 0 分）');
       return;
     }
 
     // 既存記録チェック
-    const existing = await onCheckExisting(selectedDate);
-    if (existing) {
-      setExistingRecord(existing);
-      setPendingData({
-        rpe,
-        duration_min: duration,
-        date: selectedDate,
-        arrow_score: arrowScore,
-        signal_score: signalScore,
-      });
-      setShowDuplicateModal(true);
+    try {
+      const existing = await onCheckExisting(selectedDate);
+      if (existing) {
+        setExistingRecord(existing);
+        setPendingData({
+          rpe,
+          duration_min: duration,
+          date: selectedDate,
+          arrow_score: arrowScore,
+          signal_score: signalScore,
+        });
+        setShowDuplicateModal(true);
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking existing training record:', err);
+      setError('既存データの確認に失敗しました');
+      showToast('error', '既存データの確認に失敗しました');
       return;
     }
 
@@ -123,35 +159,26 @@ export function TrainingForm({
         signal_score: signalScore,
       });
 
-      // ストリーク用：休養日でも「1日入力した」とみなす
-      const feedback = getDataEntryFeedback(daysWithData + 1, consecutiveDays + 1);
-      if (feedback) {
-        setSuccessFeedback(feedback);
-        if (feedback.showConfetti) {
-          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        }
-      }
+      applySuccessEffects();
 
-      // 成功後リセット
-      setRpe(0);
-      setDuration(0);
-      setArrowScore(50);
-      setSignalScore(50);
-      setSelectedDate(today);
+      // ✅ 成功Toast（これが“手応え”）
+      showToast('success', '練習記録を保存しました ✅');
+
+      resetForm();
     } catch (error) {
       console.error('Error submitting training record:', error);
       if (error instanceof Error) {
         if (error.message.includes('duplicate key value violates unique constraint')) {
-          setError(
-            `${new Date(selectedDate).toLocaleDateString(
-              'ja-JP'
-            )}の記録は既に存在します。既存の記録を編集してください。`
-          );
+          const msg = `${new Date(selectedDate).toLocaleDateString('ja-JP')}の記録は既に存在します。`;
+          setError(msg);
+          showToast('error', msg);
         } else {
           setError(error.message || '記録の追加に失敗しました。');
+          showToast('error', error.message || '記録の追加に失敗しました');
         }
       } else {
         setError('記録の追加に失敗しました。');
+        showToast('error', '記録の追加に失敗しました');
       }
     } finally {
       setSubmitting(false);
@@ -160,9 +187,11 @@ export function TrainingForm({
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
+    if (submitting || loading) return;
 
     setSubmitting(true);
     setShowDuplicateModal(false);
+    setError('');
 
     try {
       await onUpdate(existingRecord.id, {
@@ -172,25 +201,19 @@ export function TrainingForm({
         signal_score: pendingData.signal_score,
       });
 
-      const feedback = getDataEntryFeedback(daysWithData + 1, consecutiveDays + 1);
-      if (feedback) {
-        setSuccessFeedback(feedback);
-        if (feedback.showConfetti) {
-          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        }
-      }
+      applySuccessEffects();
 
-      setRpe(0);
-      setDuration(0);
-      setArrowScore(50);
-      setSignalScore(50);
-      setSelectedDate(today);
+      // ✅ 上書き成功Toast
+      showToast('success', '上書きして保存しました ✅');
+
+      resetForm();
 
       setExistingRecord(null);
       setPendingData(null);
     } catch (error) {
       console.error('Error updating record:', error);
       setError('記録の更新に失敗しました');
+      showToast('error', '記録の更新に失敗しました');
     } finally {
       setSubmitting(false);
     }
@@ -255,6 +278,9 @@ export function TrainingForm({
 
   return (
     <>
+      {/* ✅ Toast */}
+      <Toast open={toastOpen} type={toastType} message={toastMsg} onClose={() => setToastOpen(false)} />
+
       <GenericDuplicateModal
         isOpen={showDuplicateModal}
         onClose={handleCancelOverwrite}
@@ -331,8 +357,8 @@ export function TrainingForm({
           </div>
         )}
 
-              {/* 日付 */}
-              <div>
+        {/* 日付 */}
+        <div>
           <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Calendar className="w-4 h-4 mr-2" />
             日付
@@ -341,7 +367,8 @@ export function TrainingForm({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            disabled={submitting || loading}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60"
           />
         </div>
 
@@ -358,12 +385,11 @@ export function TrainingForm({
             max="10"
             value={rpe}
             onChange={handleRpeChange}
+            disabled={submitting || loading}
             className="w-full"
           />
 
-          <div className="mt-2 text-sm text-gray-700 dark:text-gray-200">
-            {rpeLabels[rpe]}
-          </div>
+          <div className="mt-2 text-sm text-gray-700 dark:text-gray-200">{rpeLabels[rpe]}</div>
         </div>
 
         {/* 時間（分） */}
@@ -378,21 +404,18 @@ export function TrainingForm({
             max="480"
             value={duration}
             onChange={handleDurationChange}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            disabled={submitting || loading}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60"
             style={{ fontSize: '16px' }}
           />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            ※ 休養日は「RPE=0 / 時間=0」
-          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">※ 休養日は「RPE=0 / 時間=0」</p>
         </div>
 
         {/* 負荷 */}
         <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600 dark:text-gray-300">今日の負荷</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
-              {loadValue}
-            </span>
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">{loadValue}</span>
           </div>
         </div>
 
@@ -412,8 +435,6 @@ export function TrainingForm({
             </div>
           </div>
         </div>
-
-        
 
         {/* warning / error */}
         {warning && (
@@ -439,7 +460,6 @@ export function TrainingForm({
           <Plus className="w-4 h-4 mr-2" />
           {submitting ? '保存中...' : '記録する'}
         </button>
-
       </form>
     </>
   );

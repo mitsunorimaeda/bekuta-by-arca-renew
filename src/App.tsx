@@ -12,10 +12,11 @@ import { AthleteView } from './components/AthleteView';
 import { StaffView } from './components/StaffView';
 import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
-import { useRealtimeHub } from './hooks/useRealtimeHub';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import InviteExpired from './pages/InviteExpired';
 import { GlobalHeader } from './components/GlobalHeader';
+import { ProfileGate } from "./components/ProfileGate";
+
 
 
 const OrganizationAdminView = lazy(() =>
@@ -97,14 +98,12 @@ function App() {
     };
   }, []);
 
-  useRealtimeHub(userProfile?.id ?? '');
-
-  const effectiveRole: AppRole =
-  userProfile?.role === 'staff' ||
-  userProfile?.role === 'global_admin' ||
-  userProfile?.role === 'athlete'
+const effectiveRole: AppRole =
+  userProfile?.role === "staff" ||
+  userProfile?.role === "global_admin" ||
+  userProfile?.role === "athlete"
     ? (userProfile.role as AppRole)
-    : 'athlete';
+    : "athlete";
 
   const [requiresPasswordChange, setRequiresPasswordChange] = React.useState(false);
   const { isOrganizationAdmin, getOrganizationAdminRoles } = useOrganizationRole(userProfile?.id);
@@ -240,28 +239,18 @@ function App() {
 
   if (!user) return <LoginForm onLogin={signIn} />;
 
-  // userはいるが userProfile が取れない（or 取れない状態が続く）
-  if (!userProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="space-y-3 text-center">
-          <div>プロフィール読み込みに失敗しました</div>
-          <button
-            className="px-4 py-2 rounded bg-blue-600 text-white"
-            onClick={refreshUserProfile}
-          >
-            再読み込み
-          </button>
-          <button
-            className="px-4 py-2 rounded bg-gray-200"
-            onClick={signOut}
-          >
-            ログアウト
-          </button>
-        </div>
-      </div>
-    );
-  }
+// userはいるが userProfile がまだ無い → “エラー画面”ではなく Gate 表示
+if (!userProfile) {
+  return (
+    <ProfileGate
+      onRetry={refreshUserProfile}
+      onLogout={signOut}
+      // 任意：何秒かごとに自動リトライするなら ProfileGate 側で setInterval でもOK
+      title="Bekuta"
+      message="プロフィールを読み込んでいます…"
+    />
+  );
+}
 
   if (requiresPasswordChange) {
     return (
