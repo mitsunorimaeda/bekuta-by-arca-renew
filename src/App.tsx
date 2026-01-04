@@ -251,17 +251,20 @@ function App() {
         <div className="space-y-3 text-center">
           <div>プロフィール読み込みに失敗しました</div>
           <button
-            className="px-4 py-2 rounded bg-blue-600 text-white"
-            onClick={refreshUserProfile}
-          >
-            再読み込み
-          </button>
-          <button
-            className="px-4 py-2 rounded bg-gray-200"
-            onClick={signOut}
-          >
-            ログアウト
-          </button>
+              type="button"
+              className="px-4 py-2 rounded bg-blue-600 text-white"
+              onClick={refreshUserProfile}
+            >
+              再読み込み
+            </button>
+
+            <button
+              type="button"
+              className="px-4 py-2 rounded bg-gray-200"
+              onClick={signOut}
+            >
+              ログアウト
+            </button>
         </div>
       </div>
     );
@@ -360,28 +363,32 @@ function App() {
                 <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 transition-colors sticky top-0 z-30">
                   <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
                     <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 max-w-md">
-                      <button
-                        onClick={() => setDashboardMode('staff')}
-                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                          dashboardMode === 'staff'
-                            ? 'bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm'
-                            : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                        }`}
+                    <button
+                      type="button"
+                      onClick={() => setDashboardMode('staff')}
+                      className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
+                        dashboardMode === 'staff'
+                          ? 'bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
                       >
-                        <Users className="w-4 h-4" />
-                        <span>コーチ</span>
+                      <Users className="w-4 h-4" />
+                      <span>コーチ</span>
                       </button>
+
                       <button
-                        onClick={() => setDashboardMode('org-admin')}
-                        className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                          dashboardMode === 'org-admin'
-                            ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                            : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                        }`}
+                      type="button"
+                      onClick={() => setDashboardMode('org-admin')}
+                      className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
+                        dashboardMode === 'org-admin'
+                          ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
                       >
-                        <Building2 className="w-4 h-4" />
-                        <span>組織管理</span>
+                      <Building2 className="w-4 h-4" />
+                      <span>組織管理</span>
                       </button>
+                 
                     </div>
                   </div>
                 </div>
