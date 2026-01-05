@@ -29,14 +29,14 @@ function toNumber(v: any): number | null {
 }
 
 function toYMD(input: string) {
-  // "2025-12-22" / "2025-12-22T..." / ISO string 両対応で YYYY-MM-DD を抜く
+  // "2026-01-05" / "2026-01-05T..." / ISO string 両対応で YYYY-MM-DD を抜く
   if (!input) return null;
   const m = String(input).match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : null;
 }
 
 function jstDayRangeISO(ymd: string) {
-  // ymd = "2025-12-22"
+  // ymd = "2026-01-05"
   const startJST = new Date(`${ymd}T00:00:00+09:00`);
   const endJST = new Date(`${ymd}T23:59:59.999+09:00`);
   return {
@@ -71,6 +71,28 @@ function toACWRDateKey(dbDate: any): string | null {
   return ymd ?? null;
 }
 
+function sortByDateAsc(a: any, b: any) {
+  // date は "YYYY-MM-DD" or ISO を想定。文字列比較でOK
+  const ad = String(a?.date ?? '');
+  const bd = String(b?.date ?? '');
+  return ad.localeCompare(bd);
+}
+
+function upsertLocalTrainingRecord(prev: TrainingRecord[], row: TrainingRecord) {
+  const next = [...(prev || [])];
+  const idx = next.findIndex((r) => r.id === row.id);
+  if (idx >= 0) next[idx] = row;
+  else next.push(row);
+  next.sort(sortByDateAsc);
+  return next;
+}
+
+function removeLocalTrainingRecord(prev: TrainingRecord[], recordId: string) {
+  const next = (prev || []).filter((r) => r.id !== recordId);
+  next.sort(sortByDateAsc);
+  return next;
+}
+
 export function useTrainingData(userId: string) {
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([]);
@@ -97,14 +119,25 @@ export function useTrainingData(userId: string) {
     [userId]
   );
 
+  const DEBUG_FETCH = true;
+
   const fetchAll = useCallback(async () => {
     if (!userId) return;
 
+    if (DEBUG_FETCH) {
+      console.log('[useTrainingData] fetchAll called', {
+        userId,
+        at: new Date().toISOString(),
+        stack: new Error().stack,
+      });
+    }
+  
     setLoading(true);
     try {
       const [trainingRes, weightRes] = await Promise.all([
         supabase
           .from('training_records')
+          // ✅ 必要なら '*' を絞って軽量化してOK
           .select('*')
           .eq('user_id', userId)
           .order('date', { ascending: true }),
@@ -152,8 +185,8 @@ export function useTrainingData(userId: string) {
             loadRaw != null
               ? loadRaw
               : rpe != null && duration != null
-                ? rpe * duration
-                : null;
+              ? rpe * duration
+              : null;
 
           return { date, load };
         })
@@ -206,6 +239,10 @@ export function useTrainingData(userId: string) {
     [userId]
   );
 
+  /**
+   * ✅ 追加：保存後に fetchAll() せず、返ってきた data で state を更新する
+   * これで「保存→GET連発」が止まります。
+   */
   const addTrainingRecord = useCallback(
     async (recordData: TrainingUpsertPayload) => {
       try {
@@ -231,6 +268,11 @@ export function useTrainingData(userId: string) {
 
         if (error) throw error;
 
+        // ✅ ローカル反映（GETしない）
+        setTrainingRecords((prev) =>
+          upsertLocalTrainingRecord(prev, data as TrainingRecord)
+        );
+
         await safeLogEvent('training_completed', {
           date: ymd, // ログはYYYY-MM-DDに統一
           rpe: recordData.rpe,
@@ -240,14 +282,13 @@ export function useTrainingData(userId: string) {
           overwrite: false,
         });
 
-        await fetchAll();
-        return data;
+        return data as TrainingRecord;
       } catch (error) {
         console.error('[useTrainingData] Error adding training record:', error);
         throw error;
       }
     },
-    [userId, fetchAll, safeLogEvent]
+    [userId, safeLogEvent]
   );
 
   const updateTrainingRecord = useCallback(
@@ -277,8 +318,12 @@ export function useTrainingData(userId: string) {
 
         if (error) throw error;
 
-        const eventYmd =
-          ymd ?? toACWRDateKey((data as any)?.date) ?? undefined;
+        // ✅ ローカル反映（GETしない）
+        setTrainingRecords((prev) =>
+          upsertLocalTrainingRecord(prev, data as TrainingRecord)
+        );
+
+        const eventYmd = ymd ?? toACWRDateKey((data as any)?.date) ?? undefined;
 
         await safeLogEvent('training_completed', {
           date: eventYmd,
@@ -289,14 +334,13 @@ export function useTrainingData(userId: string) {
           overwrite: true,
         });
 
-        await fetchAll();
-        return data;
+        return data as TrainingRecord;
       } catch (error) {
         console.error('[useTrainingData] Error updating training record:', error);
         throw error;
       }
     },
-    [userId, fetchAll, safeLogEvent]
+    [userId, safeLogEvent]
   );
 
   const deleteTrainingRecord = useCallback(
@@ -310,13 +354,14 @@ export function useTrainingData(userId: string) {
 
         if (error) throw error;
 
-        await fetchAll();
+        // ✅ ローカル反映（GETしない）
+        setTrainingRecords((prev) => removeLocalTrainingRecord(prev, recordId));
       } catch (error) {
         console.error('[useTrainingData] Error deleting training record:', error);
         throw error;
       }
     },
-    [userId, fetchAll]
+    [userId]
   );
 
   return {
@@ -324,6 +369,9 @@ export function useTrainingData(userId: string) {
     weightRecords,
     acwrData,
     loading,
+
+    // 既存API
+    fetchAll, // ← たまに手動更新したい時のために残しておく（UIにRefreshがあれば使える）
     checkExistingRecord,
     addTrainingRecord,
     updateTrainingRecord,

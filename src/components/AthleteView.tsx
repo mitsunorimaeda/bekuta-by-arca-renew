@@ -720,7 +720,7 @@ export function AthleteView({
           >
             <div className="p-2">
               {/* 🏠 ホーム */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('unified');
                   setMenuOpen(false);
@@ -736,7 +736,7 @@ export function AthleteView({
               </button>
 
               {/* 体重管理 */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('weight');
                   setMenuOpen(false);
@@ -752,7 +752,7 @@ export function AthleteView({
               </button>
 
               {/* コンディション管理 */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('conditioning');
                   setMenuOpen(false);
@@ -769,7 +769,7 @@ export function AthleteView({
 
               {/* 女性のみ：月経周期 */}
               {normalizedGenderBinary === 'female' && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setActiveTab('cycle');
                     setMenuOpen(false);
@@ -786,7 +786,7 @@ export function AthleteView({
               )}
 
               {/* 練習記録 */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('overview');
                   setMenuOpen(false);
@@ -803,7 +803,7 @@ export function AthleteView({
 
               {/*FTT計測*/}
               {canUseFTT && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setActiveTab('ftt');
                     setMenuOpen(false);
@@ -822,7 +822,7 @@ export function AthleteView({
 
               {/*栄養*/}
               {canUseNutrition && (
-                <button
+                <button type="button"
                   onClick={() => {
                     safeSetActiveTab('nutrition');
                     setMenuOpen(false);
@@ -839,7 +839,7 @@ export function AthleteView({
               )}
 
               {/* パフォーマンス */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('performance');
                   setMenuOpen(false);
@@ -855,7 +855,7 @@ export function AthleteView({
               </button>
 
               {/* ゲーミフィケーション */}
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('gamification');
                   setMenuOpen(false);
@@ -874,7 +874,7 @@ export function AthleteView({
               {/* 設定 */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
 
-              <button
+              <button type="button"
                 onClick={() => {
                   setActiveTab('settings');
                   setMenuOpen(false);
@@ -893,7 +893,7 @@ export function AthleteView({
               <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
 
               {onNavigateToHelp && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onNavigateToHelp();
@@ -906,7 +906,7 @@ export function AthleteView({
               )}
 
               {onNavigateToPrivacy && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onNavigateToPrivacy();
@@ -919,7 +919,7 @@ export function AthleteView({
               )}
 
               {onNavigateToTerms && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onNavigateToTerms();
@@ -932,7 +932,7 @@ export function AthleteView({
               )}
 
               {onNavigateToCommercial && (
-                <button
+                <button type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onNavigateToCommercial();
@@ -947,7 +947,7 @@ export function AthleteView({
               {onLogout && (
                 <>
                   <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
-                  <button
+                  <button type="button"
                     onClick={async () => {
                       setMenuOpen(false);
                       await onLogout();
@@ -1123,7 +1123,7 @@ export function AthleteView({
                           {Number(todayWeight.weight_kg).toFixed(1)} kg
                         </p>
                       </div>
-                      <button onClick={() => setActiveTab('weight')} className="text-sm text-green-600 dark:text-green-400 hover:underline">
+                      <button type="button" onClick={() => setActiveTab('weight')} className="text-sm text-green-600 dark:text-green-400 hover:underline">
                         体重管理へ →
                       </button>
                     </div>
@@ -1225,7 +1225,7 @@ export function AthleteView({
                       </p>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</p>
                     </div>
-                    <button onClick={() => setActiveTab('overview')} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                    <button type="button" onClick={() => setActiveTab('overview')} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
                       練習記録へ →
                     </button>
                   </div>
@@ -1382,7 +1382,7 @@ export function AthleteView({
               {/* Category Selection */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden transition-colors">
                 <div className="grid grid-cols-5 border-b border-gray-200 dark:border-gray-700">
-                  <button
+                  <button type="button"
                     onClick={() => setPerformanceCategory('jump')}
                     className={`py-3 px-2 text-xs sm:text-sm font-medium transition-colors ${
                       performanceCategory === 'jump'
@@ -1392,7 +1392,7 @@ export function AthleteView({
                   >
                     ジャンプ
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setPerformanceCategory('sprint')}
                     className={`py-3 px-2 text-xs sm:text-sm font-medium transition-colors ${
                       performanceCategory === 'sprint'
@@ -1402,7 +1402,7 @@ export function AthleteView({
                   >
                     スプリント
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setPerformanceCategory('agility')}
                     className={`py-3 px-2 text-xs sm:text-sm font-medium transition-colors ${
                       performanceCategory === 'agility'
@@ -1412,7 +1412,7 @@ export function AthleteView({
                   >
                     アジリティ
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setPerformanceCategory('endurance')}
                     className={`py-3 px-2 text-xs sm:text-sm font-medium transition-colors ${
                       performanceCategory === 'endurance'
@@ -1422,7 +1422,7 @@ export function AthleteView({
                   >
                     持久力
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setPerformanceCategory('strength')}
                     className={`py-3 px-2 text-xs sm:text-sm font-medium transition-colors ${
                       performanceCategory === 'strength'
