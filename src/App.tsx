@@ -218,13 +218,7 @@ function App() {
     );
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
+
 
   if (currentPage === 'invite-expired') {
     return <InviteExpired />;
@@ -244,226 +238,211 @@ function App() {
 
   if (!user) return <LoginForm onLogin={signIn} />;
 
-  // userはいるが userProfile が取れない（or 取れない状態が続く）
-  if (!userProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="space-y-3 text-center">
-          <div>プロフィール読み込みに失敗しました</div>
-          <button
-              type="button"
-              className="px-4 py-2 rounded bg-blue-600 text-white"
-              onClick={refreshUserProfile}
-            >
-              再読み込み
-            </button>
-
-            <button
-              type="button"
-              className="px-4 py-2 rounded bg-gray-200"
-              onClick={signOut}
-            >
-              ログアウト
-            </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (requiresPasswordChange) {
-    return (
-      <PasswordChangeForm
-        onPasswordChange={async (password) => {
-          await changePassword(password);
-          setRequiresPasswordChange(false);
-          window.history.replaceState({}, '', '/');
-        }}
-        userName={userProfile.name}
-      />
-    );
-  }
-
-  if (showConsentModal) {
-    return (
-      <ConsentModal
-        onAccept={async () => {
-          await acceptTerms();
-          setTermsAcceptedLocally(true);
-          setShowConsentModal(false);
-        }}
-        onDecline={signOut}
-      />
-    );
-  }
-
-  const hasHighPriorityAlerts = getAlertsByPriority('high').length > 0;
-
-  const handleLogout = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    await signOut();
-    setCurrentPage('app');
-    window.history.replaceState({}, '', '/');
-  };
-
   return (
-    <TutorialProvider userId={userProfile.id} role={effectiveRole}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-        <GlobalHeader
-          effectiveRole={effectiveRole}
-          userProfile={{ id: userProfile.id, name: userProfile.name, email: userProfile.email }}
-          alertsLoading={alertsLoading}
-          unreadCount={unreadCount}
-          hasHighPriorityAlerts={hasHighPriorityAlerts}
-          onOpenAlertPanel={() => setShowAlertPanel(true)}
-          onLogout={handleLogout}
-          onHome={() => {
-            console.log('🏠 Bekuta logo clicked');
-            setCurrentPage('app');
-            setDashboardMode('staff');
-            setShowAlertPanel(false);
-          }}
-          onNavigateToPrivacy={() => setCurrentPage('privacy')}
-          onNavigateToTerms={() => setCurrentPage('terms')}
-          onNavigateToCommercial={() => setCurrentPage('commercial')}
-          onNavigateToHelp={() => setCurrentPage('help')}
-        />
-
-        {/* Main Content */}
-        <div className="relative">
-          <BadgeModalController userId={userProfile.id} />
-
-          {effectiveRole === 'athlete' ? (
-            <AthleteView
-              user={userProfile}
-              alerts={alerts}
-              onLogout={signOut}
-              onUserUpdated={refreshUserProfile}
-              onHome={() => {
-                console.log('🏠 Athlete Bekuta home tapped');
-                window.location.assign('https://bekuta.netlify.app/');
+    <ProfileGate
+      loading={authLoading || (!!user && !userProfile)}
+      ready={!!user && !!userProfile}
+      onRetry={refreshUserProfile}
+    >
+      {(() => {
+        // ✅ ここで型を確定させる（赤線消える）
+        if (!userProfile) return null;
+  
+        if (requiresPasswordChange) {
+          return (
+            <PasswordChangeForm
+              onPasswordChange={async (password) => {
+                await changePassword(password);
+                setRequiresPasswordChange(false);
+                window.history.replaceState({}, "", "/");
               }}
-              onNavigateToPrivacy={() => setCurrentPage('privacy')}
-              onNavigateToTerms={() => setCurrentPage('terms')}
-              onNavigateToCommercial={() => setCurrentPage('commercial')}
-              onNavigateToHelp={() => setCurrentPage('help')}
+              userName={userProfile.name}
             />
-          ) : isGlobalAdmin(effectiveRole) ? (
-            <AdminView
-              user={userProfile}
-              alerts={alerts}
-              onNavigateToPrivacy={() => setCurrentPage('privacy')}
-              onNavigateToTerms={() => setCurrentPage('terms')}
-              onNavigateToCommercial={() => setCurrentPage('commercial')}
-              onNavigateToHelp={() => setCurrentPage('help')}
+          );
+        }
+  
+        if (showConsentModal) {
+          return (
+            <ConsentModal
+              onAccept={async () => {
+                await acceptTerms();
+                setTermsAcceptedLocally(true);
+                setShowConsentModal(false);
+              }}
+              onDecline={signOut}
             />
-          ) : (
-            <>
-              {/* Dashboard Mode Switcher for Staff who are also Org Admins */}
-              {isOrganizationAdmin() && (
-                <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 transition-colors sticky top-0 z-30">
-                  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-                    <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 max-w-md">
-                    <button
-                      type="button"
-                      onClick={() => setDashboardMode('staff')}
-                      className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                        dashboardMode === 'staff'
-                          ? 'bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                      >
-                      <Users className="w-4 h-4" />
-                      <span>コーチ</span>
-                      </button>
-
-                      <button
-                      type="button"
-                      onClick={() => setDashboardMode('org-admin')}
-                      className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
-                        dashboardMode === 'org-admin'
-                          ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                      >
-                      <Building2 className="w-4 h-4" />
-                      <span>組織管理</span>
-                      </button>
-                 
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {dashboardMode === 'staff' ? (
-                <StaffView
-                  user={userProfile}
-                  alerts={alerts}
-                  onNavigateToPrivacy={() => setCurrentPage('privacy')}
-                  onNavigateToTerms={() => setCurrentPage('terms')}
-                  onNavigateToCommercial={() => setCurrentPage('commercial')}
-                  onNavigateToHelp={() => setCurrentPage('help')}
-                />
-              ) : (
-                getOrganizationAdminRoles().length > 0 && (
-                  <Suspense
-                    fallback={
-                      <div className="flex items-center justify-center min-h-screen">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+          );
+        }
+  
+        const hasHighPriorityAlerts = getAlertsByPriority("high").length > 0;
+  
+        const handleLogout = async (e: React.MouseEvent<HTMLButtonElement>) => {
+          e.preventDefault();
+          await signOut();
+          setCurrentPage("app");
+          window.history.replaceState({}, "", "/");
+        };
+  
+        return (
+          <TutorialProvider userId={userProfile.id} role={effectiveRole}>
+            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+              <GlobalHeader
+                effectiveRole={effectiveRole}
+                userProfile={{
+                  id: userProfile.id,
+                  name: userProfile.name,
+                  email: userProfile.email,
+                }}
+                alertsLoading={alertsLoading}
+                unreadCount={unreadCount}
+                hasHighPriorityAlerts={hasHighPriorityAlerts}
+                onOpenAlertPanel={() => setShowAlertPanel(true)}
+                onLogout={handleLogout}
+                onHome={() => {
+                  console.log("🏠 Bekuta logo clicked");
+                  setCurrentPage("app");
+                  setDashboardMode("staff");
+                  setShowAlertPanel(false);
+                }}
+                onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                onNavigateToTerms={() => setCurrentPage("terms")}
+                onNavigateToCommercial={() => setCurrentPage("commercial")}
+                onNavigateToHelp={() => setCurrentPage("help")}
+              />
+  
+              {/* Main Content */}
+              <div className="relative">
+                <BadgeModalController userId={userProfile.id} />
+  
+                {effectiveRole === "athlete" ? (
+                  <AthleteView
+                    user={userProfile}
+                    alerts={alerts}
+                    onLogout={signOut}
+                    onUserUpdated={refreshUserProfile}
+                    onHome={() => {
+                      console.log("🏠 Athlete Bekuta home tapped");
+                      window.location.assign("https://bekuta.netlify.app/");
+                    }}
+                    onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                    onNavigateToTerms={() => setCurrentPage("terms")}
+                    onNavigateToCommercial={() => setCurrentPage("commercial")}
+                    onNavigateToHelp={() => setCurrentPage("help")}
+                  />
+                ) : isGlobalAdmin(effectiveRole) ? (
+                  <AdminView
+                    user={userProfile}
+                    alerts={alerts}
+                    onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                    onNavigateToTerms={() => setCurrentPage("terms")}
+                    onNavigateToCommercial={() => setCurrentPage("commercial")}
+                    onNavigateToHelp={() => setCurrentPage("help")}
+                  />
+                ) : (
+                  <>
+                    {isOrganizationAdmin() && (
+                      <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 transition-colors sticky top-0 z-30">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+                          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 max-w-md">
+                            <button
+                              type="button"
+                              onClick={() => setDashboardMode("staff")}
+                              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
+                                dashboardMode === "staff"
+                                  ? "bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm"
+                                  : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                              }`}
+                            >
+                              <Users className="w-4 h-4" />
+                              <span>コーチ</span>
+                            </button>
+  
+                            <button
+                              type="button"
+                              onClick={() => setDashboardMode("org-admin")}
+                              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
+                                dashboardMode === "org-admin"
+                                  ? "bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm"
+                                  : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                              }`}
+                            >
+                              <Building2 className="w-4 h-4" />
+                              <span>組織管理</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    }
-                  >
-                    <OrganizationAdminView
-                      user={userProfile}
-                      alerts={alerts}
-                      organizationId={getOrganizationAdminRoles()[0].organizationId}
-                      organizationName={getOrganizationAdminRoles()[0].organizationName}
-                      onNavigateToPrivacy={() => setCurrentPage('privacy')}
-                      onNavigateToTerms={() => setCurrentPage('terms')}
-                      onNavigateToCommercial={() => setCurrentPage('commercial')}
-                      onNavigateToHelp={() => setCurrentPage('help')}
-                    />
-                  </Suspense>
-                )
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Alert Panel */}
-        {showAlertPanel && !alertsLoading && (
-          <Suspense
-            fallback={
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
+                    )}
+  
+                    {dashboardMode === "staff" ? (
+                      <StaffView
+                        user={userProfile}
+                        alerts={alerts}
+                        onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                        onNavigateToTerms={() => setCurrentPage("terms")}
+                        onNavigateToCommercial={() => setCurrentPage("commercial")}
+                        onNavigateToHelp={() => setCurrentPage("help")}
+                      />
+                    ) : (
+                      getOrganizationAdminRoles().length > 0 && (
+                        <Suspense
+                          fallback={
+                            <div className="flex items-center justify-center min-h-screen">
+                              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+                            </div>
+                          }
+                        >
+                          <OrganizationAdminView
+                            user={userProfile}
+                            alerts={alerts}
+                            organizationId={getOrganizationAdminRoles()[0].organizationId}
+                            organizationName={getOrganizationAdminRoles()[0].organizationName}
+                            onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                            onNavigateToTerms={() => setCurrentPage("terms")}
+                            onNavigateToCommercial={() => setCurrentPage("commercial")}
+                            onNavigateToHelp={() => setCurrentPage("help")}
+                          />
+                        </Suspense>
+                      )
+                    )}
+                  </>
+                )}
               </div>
-            }
-          >
-            <AlertPanel
-              alerts={alerts}
-              onMarkAsRead={markAsRead}
-              onDismiss={dismissAlert}
-              onMarkAllAsRead={markAllAsRead}
-              onClose={() => setShowAlertPanel(false)}
-              userRole={effectiveRole}
-            />
-          </Suspense>
-        )}
-
-        {/* Team Achievement Notification */}
-        {userProfile && <TeamAchievementNotification userId={userProfile.id} />}
-
-        {/* Toast Notifications */}
-        <ToastContainer toasts={toasts} onClose={removeToast} />
-
-        {/* Footer */}
-        <Footer
-          onNavigateToPrivacy={() => setCurrentPage('privacy')}
-          onNavigateToTerms={() => setCurrentPage('terms')}
-          onNavigateToCommercial={() => setCurrentPage('commercial')}
-        />
-      </div>
-    </TutorialProvider>
+  
+              {/* Alert Panel */}
+              {showAlertPanel && !alertsLoading && (
+                <Suspense
+                  fallback={
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
+                    </div>
+                  }
+                >
+                  <AlertPanel
+                    alerts={alerts}
+                    onMarkAsRead={markAsRead}
+                    onDismiss={dismissAlert}
+                    onMarkAllAsRead={markAllAsRead}
+                    onClose={() => setShowAlertPanel(false)}
+                    userRole={effectiveRole}
+                  />
+                </Suspense>
+              )}
+  
+              {userProfile && <TeamAchievementNotification userId={userProfile.id} />}
+  
+              <ToastContainer toasts={toasts} onClose={removeToast} />
+  
+              <Footer
+                onNavigateToPrivacy={() => setCurrentPage("privacy")}
+                onNavigateToTerms={() => setCurrentPage("terms")}
+                onNavigateToCommercial={() => setCurrentPage("commercial")}
+              />
+            </div>
+          </TutorialProvider>
+        );
+      })()}
+    </ProfileGate>
   );
 }
-
 export default App;

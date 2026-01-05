@@ -1,3 +1,4 @@
+//components/BekutaSplash.tsx
 import React from "react";
 
 export function BekutaSplash({ subtitle }: { subtitle?: string }) {
