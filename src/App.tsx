@@ -201,11 +201,6 @@ function App() {
       />
     );
   }
-  console.log("[MAINTENANCE CHECK]", {
-    MODE: import.meta.env.MODE,
-    VITE_MAINTENANCE_MODE: import.meta.env.VITE_MAINTENANCE_MODE,
-    computed: String(import.meta.env.VITE_MAINTENANCE_MODE || "false") === "true",
-  });
 
   // ✅ メンテナンスモード（ログイン・プロフィール取得に入る前に止める）
   const MAINTENANCE_MODE =
