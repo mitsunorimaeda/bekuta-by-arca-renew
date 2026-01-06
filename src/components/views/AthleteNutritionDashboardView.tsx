@@ -102,7 +102,7 @@ export default function AthleteNutritionDashboardView({
             </div>
           </div>
 
-          <button
+          <button type="button"
             onClick={onBackHome}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >

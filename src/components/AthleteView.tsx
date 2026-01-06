@@ -53,6 +53,7 @@ import { AthleteCycleView } from "./views/AthleteCycleView";
 
 
 
+
 import {
   Activity,
   TrendingUp,
@@ -79,6 +80,8 @@ import {
 import { useDarkMode } from '../hooks/useDarkMode';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
+
+
 
 
 
@@ -142,6 +145,8 @@ export function AthleteView({
 
   const renderLoggedRef = useRef(false);
 
+  
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     if (renderLoggedRef.current) return;
@@ -149,6 +154,9 @@ export function AthleteView({
     console.log('[AthleteView] first render');
     renderLoggedRef.current = true;
   }, []);
+
+  
+
 
   const today = useMemo(() => getTodayJSTString(), []);
 
@@ -178,6 +186,46 @@ export function AthleteView({
   const canUseFTT = !!(user as any).ftt_enabled;
   const canUseNutrition = !!(user as any).nutrition_enabled;
 
+
+  // ✅ performance chunk prefetch（回線が良い&アイドル時だけ / 初回のみ）
+  useEffect(() => {
+  const conn = (navigator as any).connection;
+  const saveData = !!conn?.saveData;
+  const effectiveType = conn?.effectiveType as string | undefined;
+  const isSlow =
+    effectiveType === "slow-2g" || effectiveType === "2g" || effectiveType === "3g";
+
+  if (saveData || isSlow) return;
+
+  let cancelled = false;
+
+  const prefetch = () => {
+    import("./views/AthletePerformanceView");
+  };
+
+  if ("requestIdleCallback" in window) {
+    const id = (window as any).requestIdleCallback(
+      () => {
+        if (!cancelled) prefetch();
+      },
+      { timeout: 4000 }
+    );
+
+    return () => {
+      cancelled = true;
+      (window as any).cancelIdleCallback?.(id);
+    };
+  }
+
+  const t = setTimeout(() => {
+    if (!cancelled) prefetch();
+  }, 2500);
+
+  return () => {
+    cancelled = true;
+    clearTimeout(t);
+  };
+}, []);
   
 
   const safeSetActiveTab = useCallback(
@@ -189,8 +237,6 @@ export function AthleteView({
     [canUseFTT, canUseNutrition]
   );
   
- 
-
   useEffect(() => {
     if (!canUseFTT && activeTab === 'ftt') {
       setActiveTab('unified');
@@ -521,8 +567,8 @@ export function AthleteView({
 
 
   const recordDate = today; // ✅ subtitle用（recordDate未定義エラー回避）
-
-
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+ 
 
   // 📷 ファイル選択用（撮影 / ライブラリ）
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
@@ -1486,28 +1532,24 @@ export function AthleteView({
       )}
 
             {activeTab === 'unified' && (
-              <FloatingActionButton
-                onClick={() => setShowUnifiedCheckIn(true)}
-                onCameraClick={
-                  canUseNutrition
-                    ? () => libraryInputRef.current?.click()
-                    : undefined
-                }
-              />
+           <FloatingActionButton
+           onClick={() => setShowUnifiedCheckIn(true)}
+           onCameraClick={canUseNutrition ? () => galleryInputRef.current?.click() : undefined}
+         />
             )}
 
             {/* hidden input: photo picker */}
-              <input
-                ref={libraryInputRef}
-                type="file"
-                accept="image/*"
-                className={fileInputClass}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) handlePickPhoto(file);
-                }}
-              />
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              className={fileInputClass}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) handlePickPhoto(file);
+              }}
+            />
     </div>
   );
 }
