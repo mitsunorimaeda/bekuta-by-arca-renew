@@ -55,12 +55,16 @@ type Props = {
   onDeleted: (deletedId: string) => void;
 };
 
-export default function NutritionEditModal({ open, log, onClose, onSaved, onDeleted }: Props) {
+export default function NutritionEditModal({
+  open,
+  log,
+  onClose,
+  onSaved,
+  onDeleted,
+}: Props) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const [imgLoaded, setImgLoaded] = useState(false);
 
   const [cal, setCal] = useState<string>("0");
   const [p, setP] = useState<string>("0");
@@ -74,6 +78,34 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
     return `${formatMealLabel(String(log.meal_type), log.meal_slot)} の編集`;
   }, [log]);
 
+  // ✅ 背景スクロールを止める（open の時だけ）
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
+    // iOS系でガタつくことがあるのでスクロールバー幅分のpaddingを足す（PC用）
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [open]);
+
+  // ✅ ESCで閉じる
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  // ✅ log が変わったらフォームに反映
   useEffect(() => {
     if (!open || !log) return;
 
@@ -92,17 +124,11 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
     setAdvice(String(log.advice_markdown ?? ""));
   }, [open, log]);
 
-  useEffect(() => {
-    if (!open) return;
-    setImgLoaded(false);
-  }, [open, log?.id]);
-
   if (!open || !log) return null;
 
-
-    const handleSave = async () => {
-        setSaving(true);
-        setErr(null);
+  const handleSave = async () => {
+    setSaving(true);
+    setErr(null);
 
     try {
       const updatedPayload = {
@@ -165,14 +191,32 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      {/* overlay */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      {/* ✅ overlay：button にする（a11y警告回避） */}
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+        aria-label="閉じる"
+        disabled={saving || deleting}
+      />
 
       {/* modal */}
-      <div className="relative w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-          <div>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
+      <div
+        className="
+          relative w-full max-w-2xl
+          bg-white dark:bg-gray-900
+          rounded-2xl shadow-2xl
+          flex flex-col
+          max-h-[calc(100vh-2rem)]
+        "
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex-none">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{title}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {log.record_date} / status: {log.analysis_status ?? "-"}
               {log.is_edited ? "（編集済）" : ""}
@@ -182,7 +226,7 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex-none"
             aria-label="close"
             disabled={saving || deleting}
           >
@@ -190,31 +234,26 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
           </button>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-4">
+        {/* ✅ body：ここがスクロールする */}
+        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           {err && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
               <p className="text-sm text-red-700 dark:text-red-300">{err}</p>
             </div>
           )}
 
-        {log.image_url && (
-        <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
-            {!imgLoaded && (
-            <div className="w-full h-[320px] bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            )}
-
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-            src={log.image_url}
-            alt="meal"
-            className={`w-full max-h-[320px] object-cover ${imgLoaded ? "block" : "hidden"}`}
-            loading="eager"
-            decoding="async"
-            onLoad={() => setImgLoaded(true)}
-            onError={() => setImgLoaded(true)} // 失敗でもスケルトンが残り続けないように
-            />
-        </div>
-        )}
+          {log.image_url && (
+            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={log.image_url}
+                alt="meal"
+                className="w-full max-h-[320px] object-cover"
+                loading="eager"
+                decoding="async"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <label className="space-y-1">
@@ -293,7 +332,8 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+        {/* footer */}
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex-none">
           <button
             type="button"
             onClick={handleDelete}
