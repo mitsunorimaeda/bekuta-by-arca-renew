@@ -22,6 +22,7 @@ type Props = {
   // （任意）InBody/練習データがあるなら渡す（無ければ null/[] でOK）
   latestInbody?: any | null;
   trainingRecords?: any[] | null;
+  latestWeightKg?: number | null; // ✅追加
 
   // （任意）保存後に親側で再fetchしたい時に渡す
   onRefreshNutrition?: () => void;
@@ -37,6 +38,7 @@ export default function AthleteNutritionDashboardView({
   onBackHome,
   latestInbody = null,
   trainingRecords = [],
+  latestWeightKg = null,
   onRefreshNutrition,
 }: Props) {
   // 「進捗」だけはダッシュボードらしく残す（思想：評価しない / 見える化だけ）
@@ -122,8 +124,8 @@ export default function AthleteNutritionDashboardView({
         nutritionTotals={normalizedTotals}
         nutritionLoading={nutritionLoading}
         nutritionError={nutritionError}
+        latestWeightKg={latestWeightKg}
         onSaved={() => {
-          // Card内でもローカル即更新されるけど、親側も再fetchしたいならここで
           if (typeof onRefreshNutrition === "function") onRefreshNutrition();
         }}
       />

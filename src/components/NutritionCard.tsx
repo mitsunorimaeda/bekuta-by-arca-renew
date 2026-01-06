@@ -13,9 +13,23 @@ function toNum(v: any, fallback = 0) {
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
+function getTodayJstYmd() {
+  // "sv-SE" は YYYY-MM-DD を返す（超便利）
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function safeDateString(date: any) {
-  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-  return new Date().toISOString().slice(0, 10);
+  if (typeof date === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return date.replaceAll("/", "-");
+  }
+  // ✅ fallback は JST の今日
+  return getTodayJstYmd();
 }
 function formatMealLabel(mealType: string, mealSlot: any) {
   if (mealType === "補食") return `補食${Number(mealSlot ?? 1)}`;
@@ -184,6 +198,7 @@ function parseGeminiResultStrict(json: any) {
 export function NutritionCard({
   user,
   latestInbody,
+  latestWeightKg,
   date,
   trainingRecords,
 
@@ -206,7 +221,10 @@ export function NutritionCard({
   const [mealType, setMealType] = useState<MealType>("朝食");
   const [mealSlot, setMealSlot] = useState<number>(1);
 
-  const recordDate = safeDateString(date);
+  const recordDate =
+  toTokyoDateString(date) ??
+  toTokyoDateString(new Date()) ??
+  new Date().toISOString().slice(0, 10);
 
   // ✅ 表示を即更新するためのローカル状態（propsと同期）
   const [localLogs, setLocalLogs] = useState<any[]>(Array.isArray(nutritionLogs) ? nutritionLogs : []);
@@ -223,8 +241,12 @@ export function NutritionCard({
   const targetsAndGaps = useMemo(() => {
     const weightFromUser = toNum(user?.weight_kg, NaN);
     const weightFromInbody = toNum(latestInbody?.weight ?? latestInbody?.weight_kg, NaN);
+    const weightFromLatestWeight = toNum(latestWeightKg, NaN);
+
     const weightKg = Number.isFinite(weightFromInbody)
       ? weightFromInbody
+      : Number.isFinite(weightFromLatestWeight)
+      ? weightFromLatestWeight
       : Number.isFinite(weightFromUser)
       ? weightFromUser
       : NaN;

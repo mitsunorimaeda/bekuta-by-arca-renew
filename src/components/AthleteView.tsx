@@ -354,6 +354,17 @@ export function AthleteView({
     error: nutritionError,
   } = useTodayNutritionTotals(user.id, today);
 
+  // ✅ ここに追加（この場所！）
+  const normalizedNutritionTotalsToday = useMemo(() => {
+    const t = nutritionTotalsToday ?? {};
+    const cal =
+      Number((t as any)?.cal ?? (t as any)?.kcal ?? (t as any)?.calories ?? (t as any)?.total_calories ?? 0) || 0;
+    const p = Number((t as any)?.p ?? (t as any)?.protein_g ?? (t as any)?.protein ?? 0) || 0;
+    const f = Number((t as any)?.f ?? (t as any)?.fat_g ?? (t as any)?.fat ?? 0) || 0;
+    const c = Number((t as any)?.c ?? (t as any)?.carbs_g ?? (t as any)?.carbs ?? 0) || 0;
+    return { cal, p, f, c };
+  }, [nutritionTotalsToday]);
+
   // =========================
   // ✅ Derived（useMemoで参照安定化しやすい形へ）
   // =========================
@@ -1039,14 +1050,13 @@ export function AthleteView({
                 user={user}
                 date={today}
                 nutritionLogs={nutritionLogsToday}
-                nutritionTotals={nutritionTotalsToday}
+                nutritionTotals={normalizedNutritionTotalsToday}
                 nutritionLoading={nutritionLoading}
                 nutritionError={nutritionError}
                 onBackHome={() => setActiveTab("unified")}
-
-                // 任意：あるなら渡す（無ければこの2行ごと消してOK）
                 latestInbody={latestInbody ?? null}
                 trainingRecords={records ?? []}
+                latestWeightKg={latestWeight ?? []}
               />
             </Suspense>
           ) : null
