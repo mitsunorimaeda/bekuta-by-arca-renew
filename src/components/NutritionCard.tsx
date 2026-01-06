@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Flame, Camera, Loader2, CheckCircle2 } from "lucide-react";
 import { buildDailyTargets, calcGaps } from "../lib/nutritionCalc";
 import { supabase } from "../lib/supabase";
+import NutritionEditModal, { type NutritionLog } from "./NutritionEditModal";
 
 type MealType = "朝食" | "昼食" | "夕食" | "補食";
 
@@ -14,22 +15,12 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 function getTodayJstYmd() {
-  // "sv-SE" は YYYY-MM-DD を返す（超便利）
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-}
-
-function safeDateString(date: any) {
-  if (typeof date === "string") {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-    if (/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return date.replaceAll("/", "-");
-  }
-  // ✅ fallback は JST の今日
-  return getTodayJstYmd();
 }
 function formatMealLabel(mealType: string, mealSlot: any) {
   if (mealType === "補食") return `補食${Number(mealSlot ?? 1)}`;
@@ -85,8 +76,8 @@ function toTokyoDateString(anyDate: any) {
 function normalizeDurationMin(raw: any) {
   let v = Number(raw);
   if (!Number.isFinite(v) || v <= 0) return 0;
-  if (v > 600 && v % 60 === 0) v = v / 60; // 秒っぽい
-  v = Math.min(360, Math.max(0, v)); // 1回0-360分
+  if (v > 600 && v % 60 === 0) v = v / 60;
+  v = Math.min(360, Math.max(0, v));
   return Math.round(v);
 }
 function sumMinutesForDate(records: any[] | null | undefined, yyyyMmDd: string) {
@@ -146,7 +137,6 @@ function estimateExerciseKcal({
 
 /**
  * nutrition-gemini の返却を厳格にパース（必須キーが揃わない場合は throw）
- * 期待値（標準）: { result: { calories, protein, fat, carbs, menu_items, comment } } 等
  */
 function parseGeminiResultStrict(json: any) {
   const r = json?.result ?? json?.data ?? json ?? {};
@@ -161,18 +151,19 @@ function parseGeminiResultStrict(json: any) {
   const fN = Number(fat);
   const cN = Number(carbs);
 
-  // 必須：kcal と P/F/C が数値として取れないなら失敗扱い（0埋め事故を防ぐ）
   const ok =
-    Number.isFinite(calsN) && calsN >= 0 &&
-    Number.isFinite(pN) && pN >= 0 &&
-    Number.isFinite(fN) && fN >= 0 &&
-    Number.isFinite(cN) && cN >= 0;
+    Number.isFinite(calsN) &&
+    calsN >= 0 &&
+    Number.isFinite(pN) &&
+    pN >= 0 &&
+    Number.isFinite(fN) &&
+    fN >= 0 &&
+    Number.isFinite(cN) &&
+    cN >= 0;
 
   if (!ok) {
     const msg =
-      r?.error ??
-      r?.message ??
-      "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
+      r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
     const detail = JSON.stringify(
       { calories, protein, fat, carbs, keys: Object.keys(r ?? {}) },
       null,
@@ -193,6 +184,24 @@ function parseGeminiResultStrict(json: any) {
     advice_markdown: comment != null ? String(comment) : null,
     raw: json,
   };
+}
+
+function isDuplicateMealError(err: any) {
+  const code = err?.code ?? err?.details?.code;
+  const msg = String(err?.message ?? "");
+  const detail = String(err?.details ?? "");
+  const hint = String(err?.hint ?? "");
+  return (
+    code === "23505" ||
+    msg.includes("nutrition_logs_user_date_meal_slot_unique") ||
+    detail.includes("nutrition_logs_user_date_meal_slot_unique") ||
+    hint.includes("nutrition_logs_user_date_meal_slot_unique")
+  );
+}
+
+function duplicateMealMessage(mealType: MealType, mealSlot: number) {
+  const label = mealType === "補食" ? `補食${mealSlot}` : mealType;
+  return `すでに「${label}」は記録済みです。新規追加はできません。\n「今日の記録」から開いて編集してください。`;
 }
 
 export function NutritionCard({
@@ -222,12 +231,12 @@ export function NutritionCard({
   const [mealSlot, setMealSlot] = useState<number>(1);
 
   const recordDate =
-  toTokyoDateString(date) ??
-  toTokyoDateString(new Date()) ??
-  new Date().toISOString().slice(0, 10);
+    toTokyoDateString(date) ?? toTokyoDateString(new Date()) ?? new Date().toISOString().slice(0, 10);
 
   // ✅ 表示を即更新するためのローカル状態（propsと同期）
-  const [localLogs, setLocalLogs] = useState<any[]>(Array.isArray(nutritionLogs) ? nutritionLogs : []);
+  const [localLogs, setLocalLogs] = useState<NutritionLog[]>(
+    Array.isArray(nutritionLogs) ? nutritionLogs : []
+  );
   const [localTotals, setLocalTotals] = useState<any>(nutritionTotals ?? { cal: 0, p: 0, f: 0, c: 0 });
 
   useEffect(() => {
@@ -237,16 +246,29 @@ export function NutritionCard({
     setLocalTotals(nutritionTotals ?? { cal: 0, p: 0, f: 0, c: 0 });
   }, [nutritionTotals]);
 
-  // 体重（InBody優先）
+  // ✅ 編集モーダル
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingLog, setEditingLog] = useState<NutritionLog | null>(null);
+
+  const openEdit = (log: NutritionLog) => {
+    setEditingLog(log);
+    setEditOpen(true);
+  };
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditingLog(null);
+  };
+
+  // 体重（InBody優先 → 体重記録latestWeightKg → user.profile）
   const targetsAndGaps = useMemo(() => {
     const weightFromUser = toNum(user?.weight_kg, NaN);
     const weightFromInbody = toNum(latestInbody?.weight ?? latestInbody?.weight_kg, NaN);
-    const weightFromLatestWeight = toNum(latestWeightKg, NaN);
+    const weightFromLatest = toNum(latestWeightKg, NaN);
 
     const weightKg = Number.isFinite(weightFromInbody)
       ? weightFromInbody
-      : Number.isFinite(weightFromLatestWeight)
-      ? weightFromLatestWeight
+      : Number.isFinite(weightFromLatest)
+      ? weightFromLatest
       : Number.isFinite(weightFromUser)
       ? weightFromUser
       : NaN;
@@ -298,7 +320,7 @@ export function NutritionCard({
         tdeeKcal: res?.tdeeKcal ?? null,
       },
     };
-  }, [user, latestInbody, localTotals]);
+  }, [user, latestInbody, latestWeightKg, localTotals]);
 
   const weightKg = targetsAndGaps.weightKg ?? 0;
   const targets = targetsAndGaps.targets;
@@ -306,14 +328,8 @@ export function NutritionCard({
   const refs = targetsAndGaps.refs;
 
   // 練習消費
-  const trainingMinutes = useMemo(
-    () => sumMinutesForDate(trainingRecords, recordDate),
-    [trainingRecords, recordDate]
-  );
-  const trainingAvgRpe = useMemo(
-    () => avgRpeForDate(trainingRecords, recordDate),
-    [trainingRecords, recordDate]
-  );
+  const trainingMinutes = useMemo(() => sumMinutesForDate(trainingRecords, recordDate), [trainingRecords, recordDate]);
+  const trainingAvgRpe = useMemo(() => avgRpeForDate(trainingRecords, recordDate), [trainingRecords, recordDate]);
   const exerciseKcal = useMemo(() => {
     if (!weightKg || trainingMinutes <= 0 || trainingAvgRpe <= 0) return 0;
     return estimateExerciseKcal({ weightKg, minutes: trainingMinutes, avgRpe: trainingAvgRpe });
@@ -327,19 +343,12 @@ export function NutritionCard({
   const lastAdvice = useMemo(() => {
     if (!Array.isArray(localLogs) || localLogs.length === 0) return null;
     const last = localLogs[localLogs.length - 1];
-    return last?.advice_markdown ?? null;
+    return (last as any)?.advice_markdown ?? null;
   }, [localLogs]);
 
-  /**
-   * ✅ Supabase SDK経由で Functions を呼ぶ（CORS/URL/Token管理が安定）
-   * Edge側は Authorization Bearer を自動で付けてくれる構成が多い
-   */
   async function callNutritionGeminiViaInvoke(payload: any) {
-    const { data, error } = await supabase.functions.invoke("nutrition-gemini", {
-      body: payload,
-    });
+    const { data, error } = await supabase.functions.invoke("nutrition-gemini", { body: payload });
     if (error) {
-      // errorは object のことがあるので、できるだけ読みやすく
       const msg = (error as any)?.message ?? JSON.stringify(error);
       throw new Error(msg || "nutrition-gemini invoke error");
     }
@@ -349,17 +358,26 @@ export function NutritionCard({
   const handleSelectPhoto = async (file: File | null) => {
     if (!file) return;
 
+    // ✅ 先に重複チェック（朝/昼/夕=1回、補食も slot 単位で重複不可）
+    const safeSlot = normalizeMealSlot(mealType, mealSlot);
+    const exists = (Array.isArray(localLogs) ? localLogs : []).some(
+      (l: any) => String(l?.record_date) === String(recordDate) && l?.meal_type === mealType && Number(l?.meal_slot) === Number(safeSlot)
+    );
+    if (exists) {
+      setUploadErr(duplicateMealMessage(mealType, safeSlot));
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     setUploadErr(null);
     setSuccessMsg(null);
 
-    let insertedId: string | number | null = null;
+    let insertedId: string | null = null;
 
     try {
       const userId = user?.id;
       if (!userId) throw new Error("user.id が取れません");
-
-      const safeSlot = normalizeMealSlot(mealType, mealSlot);
 
       // 1) Storage upload
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
@@ -374,7 +392,7 @@ export function NutritionCard({
       const { data: pub } = supabase.storage.from("nutrition-images").getPublicUrl(path);
       const imageUrl = pub?.publicUrl ?? null;
 
-      // 2) INSERT（まずpendingで入れる）
+      // 2) INSERT（pending）
       const { data: inserted, error: insErr } = await supabase
         .from("nutrition_logs")
         .insert({
@@ -385,20 +403,24 @@ export function NutritionCard({
           image_path: path,
           image_url: imageUrl,
           image_meta: { original_name: file.name, size: file.size, type: file.type },
-
           analysis_status: "pending",
           analysis_error: null,
         })
         .select("*")
         .single();
 
-      if (insErr) throw insErr;
-      insertedId = inserted?.id;
+      if (insErr) {
+        // ✅ DBユニーク制約（既に記録がある）
+        if (isDuplicateMealError(insErr)) {
+          throw new Error(duplicateMealMessage(mealType, safeSlot));
+        }
+        throw insErr;
+      }
 
-      // 3) base64 -> nutrition-gemini analyze
+      insertedId = inserted?.id ?? null;
+
+      // 3) analyze
       const base64 = await fileToBase64(file);
-
-      // context（任意）：ざっくり補足。必要なら増やせる
       const context = `meal_type=${mealType}${mealType === "補食" ? ` slot=${safeSlot}` : ""}`;
 
       const geminiJson = await callNutritionGeminiViaInvoke({
@@ -409,10 +431,10 @@ export function NutritionCard({
 
       const parsed = parseGeminiResultStrict(geminiJson);
 
-      // 4) UPDATE nutrition_logs（success）
-   
+      // 4) UPDATE success
       const meta = geminiJson?.meta ?? null;
-        const { data: updated, error: updErr } = await supabase
+
+      const { data: updated, error: updErr } = await supabase
         .from("nutrition_logs")
         .update({
           total_calories: parsed.total_calories,
@@ -421,11 +443,10 @@ export function NutritionCard({
           c: parsed.c,
           menu_items: parsed.menu_items,
           advice_markdown: parsed.advice_markdown,
-      
+
           analysis_status: "success",
           analysis_error: null,
-      
-          // ★★★ ここを追加 ★★★
+
           analysis_meta: meta ?? {},
           analysis_model: meta?.used_model ?? null,
           analysis_reason: meta?.reason ?? null,
@@ -436,9 +457,9 @@ export function NutritionCard({
 
       if (updErr) throw updErr;
 
-      // 5) ✅ UI即更新（今日の記録 / 合計）
+      // 5) UI即更新
       setLocalLogs((prev) =>
-        [...(Array.isArray(prev) ? prev : []), updated].sort((a, b) => {
+        [...(Array.isArray(prev) ? prev : []), updated].sort((a: any, b: any) => {
           const at = new Date(a?.created_at ?? 0).getTime();
           const bt = new Date(b?.created_at ?? 0).getTime();
           return at - bt;
@@ -457,22 +478,21 @@ export function NutritionCard({
 
       setSuccessMsg("記録完了");
 
-      // 6) ✅ 親にも通知（親が再fetchするならここで）
+      // 6) 親にも通知（必要なら再fetch）
       if (typeof onSaved === "function") onSaved(updated);
     } catch (e: any) {
       console.error("[NutritionCard] photo/analyze error:", e);
       const msg = String(e?.message ?? e);
-
       setUploadErr(msg);
 
-      // ✅ DB側もfailedにする（残骸を“管理された残骸”にする）
+      // ✅ pending 作った場合は failed 記録
       if (insertedId != null) {
         try {
           await supabase
             .from("nutrition_logs")
             .update({
               analysis_status: "failed",
-              analysis_error: msg.slice(0, 2000), // DBのtextは長いけど、念のため適度に
+              analysis_error: msg.slice(0, 2000),
             })
             .eq("id", insertedId);
         } catch (markErr) {
@@ -482,6 +502,72 @@ export function NutritionCard({
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  // ✅ 編集で更新されたログを local state に反映（合計も差分更新）
+  const handleEditedSaved = (updated: NutritionLog) => {
+    setLocalLogs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const idx = list.findIndex((x: any) => x?.id === updated.id);
+      if (idx === -1) return list;
+      const next = [...list];
+      next[idx] = updated as any;
+      return next;
+    });
+
+    setLocalTotals((prev: any) => {
+      const base = prev ?? { cal: 0, p: 0, f: 0, c: 0 };
+      const before = (Array.isArray(localLogs) ? localLogs : []).find((x: any) => x?.id === updated.id) as any;
+
+      // before が取れないケースは安全に再計算（軽い）
+      if (!before) {
+        const sum = (Array.isArray(localLogs) ? localLogs : []).reduce(
+          (acc: any, l: any) => {
+            acc.cal += toNum(l?.total_calories, 0);
+            acc.p += toNum(l?.p, 0);
+            acc.f += toNum(l?.f, 0);
+            acc.c += toNum(l?.c, 0);
+            return acc;
+          },
+          { cal: 0, p: 0, f: 0, c: 0 }
+        );
+        // updated を反映した sums にする（before無いので追加扱い）
+        return {
+          cal: sum.cal - 0 + toNum(updated.total_calories, 0),
+          p: sum.p - 0 + toNum(updated.p, 0),
+          f: sum.f - 0 + toNum(updated.f, 0),
+          c: sum.c - 0 + toNum(updated.c, 0),
+        };
+      }
+
+      return {
+        cal: toNum(base.cal, 0) - toNum(before.total_calories, 0) + toNum(updated.total_calories, 0),
+        p: toNum(base.p, 0) - toNum(before.p, 0) + toNum(updated.p, 0),
+        f: toNum(base.f, 0) - toNum(before.f, 0) + toNum(updated.f, 0),
+        c: toNum(base.c, 0) - toNum(before.c, 0) + toNum(updated.c, 0),
+      };
+    });
+
+    // 親にも必要なら通知（再fetch派ならここで）
+    if (typeof onSaved === "function") onSaved(updated);
+  };
+
+  const handleEditedDeleted = (deletedId: string) => {
+    const before = (Array.isArray(localLogs) ? localLogs : []).find((x: any) => x?.id === deletedId) as any;
+
+    setLocalLogs((prev) => (Array.isArray(prev) ? prev.filter((x: any) => x?.id !== deletedId) : []));
+
+    if (before) {
+      setLocalTotals((prev: any) => {
+        const base = prev ?? { cal: 0, p: 0, f: 0, c: 0 };
+        return {
+          cal: toNum(base.cal, 0) - toNum(before.total_calories, 0),
+          p: toNum(base.p, 0) - toNum(before.p, 0),
+          f: toNum(base.f, 0) - toNum(before.f, 0),
+          c: toNum(base.c, 0) - toNum(before.c, 0),
+        };
+      });
     }
   };
 
@@ -498,17 +584,14 @@ export function NutritionCard({
             <span className="text-xs text-gray-500 dark:text-gray-400">{recordDate}</span>
           </div>
 
-          <h3 className="mt-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
-            今日の栄養サマリー
-          </h3>
+          <h3 className="mt-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">今日の栄養サマリー</h3>
 
           <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 space-x-3">
             {refs?.bmrKcal != null && <span>BMR: {refs.bmrKcal} kcal</span>}
             {refs?.tdeeKcal != null && <span>TDEE(推定): {refs.tdeeKcal} kcal</span>}
             {trainingMinutes > 0 && (
               <span>
-                練習: {trainingMinutes} min / RPE平均 {trainingAvgRpe.toFixed(1)} / 消費(推定){" "}
-                {exerciseKcal} kcal
+                練習: {trainingMinutes} min / RPE平均 {trainingAvgRpe.toFixed(1)} / 消費(推定) {exerciseKcal} kcal
               </span>
             )}
           </div>
@@ -544,25 +627,24 @@ export function NutritionCard({
             </select>
           )}
 
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-              title="写真を選択"
-            >
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-              写真を選択
-            </button>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+            title="写真を選択"
+          >
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+            写真を選択
+          </button>
 
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              // capture は付けない（＝カメラ強制しない）
-              className="absolute -left-[9999px] top-0 w-px h-px opacity-0"
-              onChange={(e) => handleSelectPhoto(e.target.files?.[0] ?? null)}
-            />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="absolute -left-[9999px] top-0 w-px h-px opacity-0"
+            onChange={(e) => handleSelectPhoto(e.target.files?.[0] ?? null)}
+          />
         </div>
       </div>
 
@@ -570,16 +652,14 @@ export function NutritionCard({
       {successMsg && (
         <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-300" />
-          <p className="text-sm text-emerald-700 dark:text-emerald-200">
-            {successMsg}（今日の記録を更新しました）
-          </p>
+          <p className="text-sm text-emerald-700 dark:text-emerald-200">{successMsg}（今日の記録を更新しました）</p>
         </div>
       )}
 
       {/* errors */}
       {uploadErr && (
         <div className="mt-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
-          <p className="text-sm text-red-700 dark:text-red-300">写真/解析に失敗しました：{uploadErr}</p>
+          <p className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">写真/解析に失敗しました：{uploadErr}</p>
         </div>
       )}
       {nutritionError && (
@@ -627,7 +707,7 @@ export function NutritionCard({
         {!targets ? (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
             <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              目標値の計算には「体重」が必要です（InBody/プロフィールの体重が必要）。
+              目標値の計算には「体重」が必要です（InBody / 体重記録 / プロフィール）。
             </p>
           </div>
         ) : (
@@ -679,23 +759,24 @@ export function NutritionCard({
             {localLogs.map((log: any) => (
               <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       {formatMealLabel(log.meal_type, log.meal_slot)}
-                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                        {toNum(log.total_calories, 0)} kcal
-                      </span>
+                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{toNum(log.total_calories, 0)} kcal</span>
                       {log.analysis_status && (
                         <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                           {log.analysis_status}
                         </span>
                       )}
+                      {log.is_edited ? (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-200">
+                          編集済
+                        </span>
+                      ) : null}
                     </p>
 
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      P {toNum(log.p, 0).toFixed(1)} / F {toNum(log.f, 0).toFixed(1)} / C{" "}
-                      {toNum(log.c, 0).toFixed(1)}
-                      {log.is_edited ? "（編集済）" : ""}
+                      P {toNum(log.p, 0).toFixed(1)} / F {toNum(log.f, 0).toFixed(1)} / C {toNum(log.c, 0).toFixed(1)}
                     </p>
 
                     {Array.isArray(log.menu_items) && log.menu_items.length > 0 && (
@@ -723,10 +804,10 @@ export function NutritionCard({
 
                   <button
                     type="button"
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    onClick={() => console.log("[NutritionCard] detail later", log.id)}
+                    className="shrink-0 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    onClick={() => openEdit(log)}
                   >
-                    詳細
+                    編集
                   </button>
                 </div>
               </div>
@@ -736,8 +817,17 @@ export function NutritionCard({
       </div>
 
       <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-        ※ Supabase Functions invoke（nutrition-gemini）で解析。失敗時はnutrition_logsにfailedを記録。
+        ※ Supabase Functions invoke（nutrition-gemini）で解析。失敗時は nutrition_logs に failed を記録。
       </p>
+
+      {/* ✅ 編集モーダル（分離済み） */}
+      <NutritionEditModal
+        open={editOpen}
+        log={editingLog}
+        onClose={closeEdit}
+        onSaved={handleEditedSaved}
+        onDeleted={handleEditedDeleted}
+      />
     </div>
   );
 }
