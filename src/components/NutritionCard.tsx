@@ -522,25 +522,25 @@ export function NutritionCard({
             </select>
           )}
 
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-            title="写真で記録"
-          >
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-            写真で記録
-          </button>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+              title="写真を選択"
+            >
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+              写真を選択
+            </button>
 
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => handleSelectPhoto(e.target.files?.[0] ?? null)}
-          />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              // capture は付けない（＝カメラ強制しない）
+              className="absolute -left-[9999px] top-0 w-px h-px opacity-0"
+              onChange={(e) => handleSelectPhoto(e.target.files?.[0] ?? null)}
+            />
         </div>
       </div>
 
