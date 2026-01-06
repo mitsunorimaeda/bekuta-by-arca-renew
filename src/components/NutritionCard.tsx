@@ -1,21 +1,20 @@
 // src/components/NutritionCard.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Flame, Camera, Loader2, CheckCircle2 } from "lucide-react";
+import { Flame, Camera, Loader2, CheckCircle2, Search } from "lucide-react";
 import { buildDailyTargets, calcGaps } from "../lib/nutritionCalc";
 import { supabase } from "../lib/supabase";
 import NutritionEditModal, { type NutritionLog } from "./NutritionEditModal";
 import NutritionOverview from "./NutritionOverview";
 
 type MealType = "朝食" | "昼食" | "夕食" | "補食";
-
 type MacroTotals = { cal: number; p: number; f: number; c: number };
 
 type Props = {
   user: any;
   latestInbody?: any;
-  latestWeightKg?: number;
+  latestWeightKg?: number | null;
   date?: any;
-  trainingRecords?: any[];
+  trainingRecords?: any[] | null;
 
   badgeText?: string;
 
@@ -84,6 +83,69 @@ function toTokyoDateString(anyDate: any) {
   return `${parts[0]}-${String(parts[1]).padStart(2, "0")}-${String(parts[2]).padStart(2, "0")}`;
 }
 
+/** duration_min の正規化（秒っぽい値は分に直す、異常値カット） */
+function normalizeDurationMin(raw: any) {
+  let v = Number(raw);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  if (v > 600 && v % 60 === 0) v = v / 60;
+  v = Math.min(360, Math.max(0, v));
+  return Math.round(v);
+}
+function sumMinutesForDate(records: any[] | null | undefined, yyyyMmDd: string) {
+  if (!Array.isArray(records)) return 0;
+  let sum = 0;
+  for (const r of records) {
+    const d =
+      toTokyoDateString(r?.record_date) ??
+      toTokyoDateString(r?.recordDate) ??
+      toTokyoDateString(r?.date) ??
+      toTokyoDateString(r?.created_at) ??
+      toTokyoDateString(r?.recorded_at);
+    if (d !== yyyyMmDd) continue;
+    sum += normalizeDurationMin(r?.duration_min);
+  }
+  return sum;
+}
+function avgRpeForDate(records: any[] | null | undefined, yyyyMmDd: string) {
+  if (!Array.isArray(records)) return 0;
+  let s = 0;
+  let n = 0;
+  for (const r of records) {
+    const d =
+      toTokyoDateString(r?.record_date) ??
+      toTokyoDateString(r?.recordDate) ??
+      toTokyoDateString(r?.date) ??
+      toTokyoDateString(r?.created_at) ??
+      toTokyoDateString(r?.recorded_at);
+    if (d !== yyyyMmDd) continue;
+
+    const v = Number(r?.rpe) || Number(r?.session_rpe) || Number(r?.RPE);
+    if (Number.isFinite(v) && v > 0) {
+      s += v;
+      n += 1;
+    }
+  }
+  return n > 0 ? s / n : 0;
+}
+
+/** 消費kcal推定（簡易） */
+function estimateExerciseKcal({
+  weightKg,
+  minutes,
+  avgRpe,
+}: {
+  weightKg: number;
+  minutes: number;
+  avgRpe: number;
+}) {
+  const w = Math.max(0, weightKg);
+  const m = Math.max(0, minutes);
+  const r = clamp(avgRpe, 1, 10);
+  const met = 2 + (r - 1) * (10 / 9); // RPE1->MET2, RPE10->MET12
+  const kcal = (met * 3.5 * w) / 200 * m;
+  return Math.round(kcal);
+}
+
 /**
  * nutrition-gemini の返却を厳格にパース（必須キーが揃わない場合は throw）
  */
@@ -111,8 +173,7 @@ function parseGeminiResultStrict(json: any) {
     cN >= 0;
 
   if (!ok) {
-    const msg =
-      r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
+    const msg = r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
     const detail = JSON.stringify({ calories, protein, fat, carbs, keys: Object.keys(r ?? {}) }, null, 2);
     throw new Error(`${msg}\n${detail}`);
   }
@@ -148,6 +209,14 @@ function duplicateMealMessage(mealType: MealType, mealSlot: number) {
   return `すでに「${label}」は記録済みです。新規追加はできません。\n「今日の記録」から開いて編集してください。`;
 }
 
+function safeUuid() {
+  // crypto.randomUUID が無い環境の保険（ほぼ不要だけど安全）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export function NutritionCard({
   user,
   latestInbody,
@@ -178,14 +247,25 @@ export function NutritionCard({
 
   // ✅ 表示を即更新するためのローカル状態（propsと同期）
   const [localLogs, setLocalLogs] = useState<NutritionLog[]>(Array.isArray(nutritionLogs) ? nutritionLogs : []);
-
   useEffect(() => {
     setLocalLogs(Array.isArray(nutritionLogs) ? nutritionLogs : []);
   }, [nutritionLogs]);
 
-  // ✅ 合計は「localLogsから常に再集計」＝編集/削除でズレない
+  // ✅ 今日のログだけを扱う（混ざってても崩れない）
+  const todayLogs: NutritionLog[] = useMemo(() => {
+    const list = Array.isArray(localLogs) ? localLogs : [];
+    return list
+      .filter((l: any) => String(l?.record_date ?? "") === String(recordDate))
+      .sort((a: any, b: any) => {
+        const at = new Date(a?.created_at ?? 0).getTime();
+        const bt = new Date(b?.created_at ?? 0).getTime();
+        return at - bt;
+      });
+  }, [localLogs, recordDate]);
+
+  // ✅ 合計は「todayLogsから常に再集計」＝編集/削除でズレない
   const displayTotals: MacroTotals = useMemo(() => {
-    const sum = (Array.isArray(localLogs) ? localLogs : []).reduce(
+    const sum = (Array.isArray(todayLogs) ? todayLogs : []).reduce(
       (acc, l: any) => {
         acc.cal += toNum(l?.total_calories, 0);
         acc.p += toNum(l?.p, 0);
@@ -196,23 +276,61 @@ export function NutritionCard({
       { cal: 0, p: 0, f: 0, c: 0 }
     );
 
-    // 初回ロード中に localLogs が空でも、親が totals を持ってる場合はそれを優先表示して“0チラつき”を回避
+    // 初回ロード中に todayLogs が空でも、親が totals を持ってる場合はそれを優先表示して“0チラつき”を回避
     const canUsePropsTotals =
-      nutritionLoading && (!Array.isArray(localLogs) || localLogs.length === 0) && nutritionTotals;
+      nutritionLoading && (!Array.isArray(todayLogs) || todayLogs.length === 0) && nutritionTotals;
 
     return canUsePropsTotals
       ? {
-          cal: toNum(nutritionTotals.cal, 0),
-          p: toNum(nutritionTotals.p, 0),
-          f: toNum(nutritionTotals.f, 0),
-          c: toNum(nutritionTotals.c, 0),
+          cal: toNum((nutritionTotals as any)?.cal, 0),
+          p: toNum((nutritionTotals as any)?.p, 0),
+          f: toNum((nutritionTotals as any)?.f, 0),
+          c: toNum((nutritionTotals as any)?.c, 0),
         }
       : sum;
-  }, [localLogs, nutritionLoading, nutritionTotals]);
+  }, [todayLogs, nutritionLoading, nutritionTotals]);
 
   // ✅ 編集モーダル
   const [editOpen, setEditOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<NutritionLog | null>(null);
+
+  // ✅ 検索モード
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [filterMeal, setFilterMeal] = useState<"ALL" | MealType>("ALL");
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "success" | "pending" | "failed">("ALL");
+
+  const filteredLogs: NutritionLog[] = useMemo(() => {
+    const list = Array.isArray(todayLogs) ? todayLogs : [];
+    const query = q.trim().toLowerCase();
+
+    return list.filter((l: any) => {
+      if (filterMeal !== "ALL" && l?.meal_type !== filterMeal) return false;
+
+      const st = String(l?.analysis_status ?? "");
+      if (filterStatus !== "ALL" && st !== filterStatus) return false;
+
+      if (!query) return true;
+
+      const hay = [
+        String(l?.meal_type ?? ""),
+        String(l?.meal_slot ?? ""),
+        String(l?.analysis_status ?? ""),
+        String(l?.analysis_error ?? ""),
+        String(l?.advice_markdown ?? ""),
+        Array.isArray(l?.menu_items)
+          ? l.menu_items
+              .map((x: any) => (typeof x === "string" ? x : x?.name ?? ""))
+              .filter(Boolean)
+              .join(" ")
+          : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return hay.includes(query);
+    });
+  }, [todayLogs, q, filterMeal, filterStatus]);
 
   async function callNutritionGeminiViaInvoke(payload: any) {
     const { data, error } = await supabase.functions.invoke("nutrition-gemini", { body: payload });
@@ -223,11 +341,17 @@ export function NutritionCard({
     return data;
   }
 
-  // 体重（InBody優先 → 体重記録latestWeightKg → user.profile）
-  const targetsAndGaps = useMemo(() => {
-    const weightFromUser = toNum(user?.weight_kg, NaN);
-    const weightFromInbody = toNum(latestInbody?.weight ?? latestInbody?.weight_kg, NaN);
-    const weightFromLatest = toNum(latestWeightKg, NaN);
+  // =========================
+  // ✅ BMR / TDEE / 目標PFC
+  // =========================
+  const targetsAndRefs = useMemo(() => {
+    // ★超重要：null / undefined は NaN 扱いにする（Number(null)=0 の罠回避）
+    const weightFromUser = user?.weight_kg == null ? NaN : toNum(user?.weight_kg, NaN);
+
+    const inbodyRaw = latestInbody?.weight ?? latestInbody?.weight_kg;
+    const weightFromInbody = inbodyRaw == null ? NaN : toNum(inbodyRaw, NaN);
+
+    const weightFromLatest = latestWeightKg == null ? NaN : toNum(latestWeightKg, NaN);
 
     const weightKg = Number.isFinite(weightFromInbody)
       ? weightFromInbody
@@ -237,64 +361,79 @@ export function NutritionCard({
       ? weightFromUser
       : NaN;
 
-    const heightCm = toNum(user?.height_cm, NaN);
+    const heightCm = user?.height_cm == null ? NaN : toNum(user?.height_cm, NaN);
     const age = calcAge(user?.date_of_birth);
     const sex = normalizeSex(user?.gender);
 
-    const bodyFatPercent = toNum(
-      latestInbody?.body_fat_percent ?? latestInbody?.body_fat_perc ?? latestInbody?.body_fat_percent,
-      NaN
-    );
+    const bfRaw =
+      latestInbody?.body_fat_percent ??
+      latestInbody?.body_fat_perc ??
+      latestInbody?.percent_body_fat ??
+      latestInbody?.pbf;
+    const bodyFatPercent = bfRaw == null ? NaN : toNum(bfRaw, NaN);
 
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
-      return { weightKg: null as number | null, targets: null as any, gaps: null as any, refs: null as any };
+      return { weightKg: null as number | null, targets: null as any, refs: null as any };
     }
 
-    const res = buildDailyTargets({
-      weightKg,
-      bodyFatPercent: Number.isFinite(bodyFatPercent) ? bodyFatPercent : null,
-      heightCm: Number.isFinite(heightCm) ? heightCm : null,
-      age: Number.isFinite(Number(age)) ? Number(age) : null,
-      sex: sex ?? null,
-      activityLevel: "moderate",
-      goalType: "maintain",
-    });
+    try {
+      const res = buildDailyTargets({
+        weightKg,
+        bodyFatPercent: Number.isFinite(bodyFatPercent) ? bodyFatPercent : null,
+        heightCm: Number.isFinite(heightCm) ? heightCm : null,
+        age: Number.isFinite(Number(age)) ? Number(age) : null,
+        sex: sex ?? null,
+        activityLevel: "moderate",
+        goalType: "maintain",
+      });
 
-    const targets = res?.target ?? null;
+      return {
+        weightKg,
+        targets: res?.target ?? null,
+        refs: {
+          ffmKg: res?.ffmKg ?? null,
+          bmrKcal: res?.bmrKcal ?? null,
+          tdeeKcal: res?.tdeeKcal ?? null,
+        },
+      };
+    } catch (e) {
+      console.error("[NutritionCard] buildDailyTargets error:", e);
+      return { weightKg, targets: null as any, refs: null as any };
+    }
+  }, [user, latestInbody, latestWeightKg]);
 
-    const gaps = targets
-      ? calcGaps({
-          today: {
-            cal: toNum(displayTotals?.cal, 0),
-            p: toNum(displayTotals?.p, 0),
-            f: toNum(displayTotals?.f, 0),
-            c: toNum(displayTotals?.c, 0),
-          },
-          target: targets,
-        })
-      : null;
+  const targets = targetsAndRefs.targets;
+  const refs = targetsAndRefs.refs;
+  const weightKg = targetsAndRefs.weightKg ?? 0;
 
-    return {
-      weightKg,
-      targets,
-      gaps,
-      refs: {
-        ffmKg: res?.ffmKg ?? null,
-        bmrKcal: res?.bmrKcal ?? null,
-        tdeeKcal: res?.tdeeKcal ?? null,
+  // 練習消費（任意）
+  const trainingMinutes = useMemo(() => sumMinutesForDate(trainingRecords, recordDate), [trainingRecords, recordDate]);
+  const trainingAvgRpe = useMemo(() => avgRpeForDate(trainingRecords, recordDate), [trainingRecords, recordDate]);
+  const exerciseKcal = useMemo(() => {
+    if (!weightKg || trainingMinutes <= 0 || trainingAvgRpe <= 0) return 0;
+    return estimateExerciseKcal({ weightKg, minutes: trainingMinutes, avgRpe: trainingAvgRpe });
+  }, [weightKg, trainingMinutes, trainingAvgRpe]);
+
+  // gaps は表示に使う（必要なら）
+  const gaps = useMemo(() => {
+    if (!targets) return null;
+    return calcGaps({
+      today: {
+        cal: toNum(displayTotals?.cal, 0),
+        p: toNum(displayTotals?.p, 0),
+        f: toNum(displayTotals?.f, 0),
+        c: toNum(displayTotals?.c, 0),
       },
-    };
-  }, [user, latestInbody, latestWeightKg, displayTotals]);
-
-  const targets = targetsAndGaps.targets;
-  const refs = targetsAndGaps.refs;
+      target: targets,
+    });
+  }, [displayTotals, targets]);
 
   const handleSelectPhoto = async (file: File | null) => {
     if (!file) return;
 
     // ✅ 先に重複チェック（朝/昼/夕=1回、補食も slot 単位で重複不可）
     const safeSlot = normalizeMealSlot(mealType, mealSlot);
-    const exists = (Array.isArray(localLogs) ? localLogs : []).some(
+    const exists = (Array.isArray(todayLogs) ? todayLogs : []).some(
       (l: any) =>
         String(l?.record_date) === String(recordDate) &&
         l?.meal_type === mealType &&
@@ -318,7 +457,7 @@ export function NutritionCard({
 
       // 1) Storage upload
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const uuid = crypto.randomUUID();
+      const uuid = safeUuid();
       const path = `nutrition/${userId}/${recordDate}/${uuid}.${ext}`;
 
       const { error: upErr } = await supabase.storage
@@ -351,7 +490,7 @@ export function NutritionCard({
         throw insErr;
       }
 
-      insertedId = inserted?.id ?? null;
+      insertedId = (inserted as any)?.id ?? null;
 
       // 3) analyze
       const base64 = await fileToBase64(file);
@@ -384,20 +523,14 @@ export function NutritionCard({
           analysis_model: meta?.used_model ?? null,
           analysis_reason: meta?.reason ?? null,
         })
-        .eq("id", inserted.id)
+        .eq("id", (inserted as any).id)
         .select("*")
         .single();
 
       if (updErr) throw updErr;
 
       // 5) UI即更新（合計は useMemo で再計算される）
-      setLocalLogs((prev) =>
-        [...(Array.isArray(prev) ? prev : []), updated].sort((a: any, b: any) => {
-          const at = new Date(a?.created_at ?? 0).getTime();
-          const bt = new Date(b?.created_at ?? 0).getTime();
-          return at - bt;
-        })
-      );
+      setLocalLogs((prev) => [...(Array.isArray(prev) ? prev : []), updated] as any);
 
       setSuccessMsg("記録完了");
       if (typeof onSaved === "function") onSaved(updated as NutritionLog);
@@ -423,6 +556,14 @@ export function NutritionCard({
     }
   };
 
+  const openSearch = () => setSearchOpen(true);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setQ("");
+    setFilterMeal("ALL");
+    setFilterStatus("ALL");
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
       {/* header */}
@@ -439,13 +580,34 @@ export function NutritionCard({
           <h3 className="mt-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">栄養</h3>
 
           <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 space-x-3">
-            {refs?.bmrKcal != null && <span>BMR: {refs.bmrKcal} kcal</span>}
-            {refs?.tdeeKcal != null && <span>TDEE(推定): {refs.tdeeKcal} kcal</span>}
+            {refs?.bmrKcal != null && <span>推定BMR: {refs.bmrKcal} kcal</span>}
+            {refs?.tdeeKcal != null && <span>今日必要(推定): {refs.tdeeKcal} kcal</span>}
+            {trainingMinutes > 0 && (
+              <span>
+                練習 {trainingMinutes}min / RPE {trainingAvgRpe.toFixed(1)} / 消費(推定) {exerciseKcal}kcal
+              </span>
+            )}
           </div>
+
+          {targets && gaps && (
+            <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+              目標PFC：P {targets.p}g / F {targets.f}g / C {targets.c}g（残り：P {toNum(gaps.p, 0).toFixed(1)}g）
+            </div>
+          )}
         </div>
 
-        {/* photo uploader */}
+        {/* right controls */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openSearch}
+            className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            title="検索"
+          >
+            <Search className="w-4 h-4" />
+            検索
+          </button>
+
           <select
             value={mealType}
             onChange={(e) => {
@@ -517,8 +679,68 @@ export function NutritionCard({
 
       {/* ✅ OVERVIEW（合計 & 目標） */}
       <div className="mt-4">
-        <NutritionOverview totals={displayTotals} targets={targets} loading={nutritionLoading} subtitle={recordDate} />
+        <NutritionOverview
+          totals={displayTotals}
+          targets={targets}
+          loading={nutritionLoading}
+          subtitle={recordDate}
+          onOpen={openSearch}
+        />
       </div>
+
+      {/* ✅ 検索パネル（カード内） */}
+      {searchOpen && (
+        <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-gray-900 dark:text-white">検索モード</div>
+            <button
+              type="button"
+              onClick={closeSearch}
+              className="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+            >
+              閉じる
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="メニュー名/アドバイス/エラーなど"
+              className="sm:col-span-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+            />
+
+            <div className="flex gap-2">
+              <select
+                value={filterMeal}
+                onChange={(e) => setFilterMeal(e.target.value as any)}
+                className="flex-1 px-2 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+              >
+                <option value="ALL">全て</option>
+                <option value="朝食">朝食</option>
+                <option value="昼食">昼食</option>
+                <option value="夕食">夕食</option>
+                <option value="補食">補食</option>
+              </select>
+
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as any)}
+                className="flex-1 px-2 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+              >
+                <option value="ALL">全状態</option>
+                <option value="success">success</option>
+                <option value="pending">pending</option>
+                <option value="failed">failed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+            表示件数：{filteredLogs.length} 件
+          </div>
+        </div>
+      )}
 
       {/* logs */}
       <div className="mt-5">
@@ -526,13 +748,13 @@ export function NutritionCard({
 
         {nutritionLoading ? (
           <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">読み込み中...</div>
-        ) : !Array.isArray(localLogs) || localLogs.length === 0 ? (
+        ) : !Array.isArray(todayLogs) || todayLogs.length === 0 ? (
           <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             まだ栄養記録がありません（朝/昼/夕/補食を追加していこう）
           </div>
         ) : (
           <div className="mt-2 space-y-2">
-            {localLogs.map((log: any) => (
+            {(searchOpen ? filteredLogs : todayLogs).map((log: any) => (
               <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <div className="flex items-start justify-between gap-3">
                   {/* 左：サムネ + テキスト */}
@@ -567,6 +789,16 @@ export function NutritionCard({
                         P {toNum(log.p, 0).toFixed(1)} / F {toNum(log.f, 0).toFixed(1)} / C {toNum(log.c, 0).toFixed(1)}
                         {log.is_edited ? "（編集済）" : ""}
                       </p>
+
+                      {Array.isArray(log.menu_items) && log.menu_items.length > 0 && (
+                        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                          推定メニュー:{" "}
+                          {log.menu_items
+                            .map((x: any) => (typeof x === "string" ? x : x?.name ?? ""))
+                            .filter(Boolean)
+                            .join(" / ")}
+                        </p>
+                      )}
 
                       {log.analysis_status === "failed" && log.analysis_error && (
                         <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap">
@@ -608,13 +840,15 @@ export function NutritionCard({
             setSelectedLog(null);
           }}
           onSaved={(updated) => {
-            setLocalLogs((prev) => (Array.isArray(prev) ? prev.map((x: any) => (x.id === updated.id ? updated : x)) : []));
+            setLocalLogs((prev) =>
+              Array.isArray(prev) ? (prev.map((x: any) => (x.id === (updated as any).id ? updated : x)) as any) : ([] as any)
+            );
             setEditOpen(false);
             setSelectedLog(null);
             if (typeof onSaved === "function") onSaved(updated);
           }}
           onDeleted={(deletedId) => {
-            setLocalLogs((prev) => (Array.isArray(prev) ? prev.filter((x: any) => x?.id !== deletedId) : []));
+            setLocalLogs((prev) => (Array.isArray(prev) ? (prev.filter((x: any) => x?.id !== deletedId) as any) : ([] as any)));
             setEditOpen(false);
             setSelectedLog(null);
           }}
