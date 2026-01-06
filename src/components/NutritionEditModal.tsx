@@ -60,6 +60,8 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
   const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [imgLoaded, setImgLoaded] = useState(false);
+
   const [cal, setCal] = useState<string>("0");
   const [p, setP] = useState<string>("0");
   const [f, setF] = useState<string>("0");
@@ -90,11 +92,17 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
     setAdvice(String(log.advice_markdown ?? ""));
   }, [open, log]);
 
+  useEffect(() => {
+    if (!open) return;
+    setImgLoaded(false);
+  }, [open, log?.id]);
+
   if (!open || !log) return null;
 
-  const handleSave = async () => {
-    setSaving(true);
-    setErr(null);
+
+    const handleSave = async () => {
+        setSaving(true);
+        setErr(null);
 
     try {
       const updatedPayload = {
@@ -189,12 +197,24 @@ export default function NutritionEditModal({ open, log, onClose, onSaved, onDele
             </div>
           )}
 
-          {log.image_url && (
-            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={log.image_url} alt="meal" className="w-full max-h-[320px] object-cover" />
-            </div>
-          )}
+        {log.image_url && (
+        <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+            {!imgLoaded && (
+            <div className="w-full h-[320px] bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            )}
+
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+            src={log.image_url}
+            alt="meal"
+            className={`w-full max-h-[320px] object-cover ${imgLoaded ? "block" : "hidden"}`}
+            loading="eager"
+            decoding="async"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgLoaded(true)} // 失敗でもスケルトンが残り続けないように
+            />
+        </div>
+        )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <label className="space-y-1">
