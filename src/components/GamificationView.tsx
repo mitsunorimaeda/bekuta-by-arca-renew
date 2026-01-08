@@ -18,6 +18,8 @@ import { TutorialController } from "./TutorialController";
 import { getTutorialSteps } from "../lib/tutorialContent";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { PointHistoryModal } from "./PointHistoryModal";
+import { useRankStats } from "../hooks/useRankStats";
+import { RankStatsCard } from "./RankStatsCard";
 
 interface GamificationViewProps {
   userId: string;
@@ -38,6 +40,20 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
 
   // --- Hooks ---
   const { loading: streaksLoading, getStreakByType, getTotalStreak } = useStreaks(userId);
+
+  const {
+    scope: globalScope,
+    setScope: setGlobalScope,
+    availableScopes,
+    data: globalStats,
+    loading: globalStatsLoading,
+    error: globalStatsError,
+  } = useRankStats(userId, userTeamId, {
+    enabled: true,
+    pollMs: 120000,
+    pauseWhenHidden: true,
+    defaultScope: "global",
+  });
 
   // ✅ transactions を初回で取らない（通信削減の本命）
   const {
@@ -416,6 +432,37 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
                 </ErrorBoundary>
               </div>
             </div>
+
+            {/* ✅ 全体/組織/チーム：順位カード */}
+            <div className="mb-4">
+              <div className="flex items-center space-x-2 mb-2">
+                {availableScopes.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setGlobalScope(s)}
+                    className={`px-3 py-1 rounded-full text-xs border transition-colors
+                      ${
+                        globalScope === s
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      }`}
+                  >
+                    {s === "global" ? "全体" : s === "organization" ? "組織" : "チーム"}
+                  </button>
+                ))}
+              </div>
+
+              <RankStatsCard
+                scope={globalScope}
+                data={globalStats}
+                loading={globalStatsLoading}
+                error={globalStatsError}
+              />
+            </div>
+
+
+
+
 
             <div ref={setRankingsEl} data-tutorial="rankings-section">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">
