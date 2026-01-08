@@ -75,6 +75,7 @@ export function AthleteList({
   const [search, setSearch] = useState('');
   const [filterRisk, setFilterRisk] = useState<'all' | 'high'>('all');
   const [filterSharing, setFilterSharing] = useState<'all' | 'on'>('all');
+  const displayName = (a: any) => a?.nickname || a?.name || '名前未設定';
 
   const filteredAthletes = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -102,8 +103,7 @@ export function AthleteList({
       const card = weekCardMap[athlete.id];
       const sharingMatch = filterSharing === 'all' ? true : !!card?.is_sharing_active;
 
-      const text =
-        `${athlete.name || ''} ${athlete.email || ''} ${(athlete as any).nickname || ''}`.toLowerCase();
+      const text = `${displayName(athlete)}`.toLowerCase()
       const searchMatch = s === '' ? true : text.includes(s);
 
       return riskMatch && sharingMatch && searchMatch;
@@ -203,7 +203,7 @@ export function AthleteList({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="名前・ニックネーム・メールで検索"
+            placeholder="名前で検索"
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
           />
           <Activity className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
@@ -302,7 +302,7 @@ export function AthleteList({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-gray-900 truncate">
-                      {(athlete as any).nickname || athlete.name || '名前未設定'}
+                      {displayName(athlete)}
                     </p>
                     {(athlete as any).nickname && athlete.name && (
                       <p className="text-xs text-gray-400 truncate">({athlete.name})</p>
@@ -311,8 +311,6 @@ export function AthleteList({
                     {/* 共有バッジ */}
                     {renderSharingBadge(card)}
                   </div>
-
-                  <p className="mt-0.5 text-xs text-gray-500 truncate">{athlete.email}</p>
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-gray-500">
                     <span>
