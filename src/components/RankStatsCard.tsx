@@ -58,10 +58,6 @@ export function RankStatsCard({
             <div className="text-base font-semibold">{loading ? "読み込み中…" : headline ?? "—"}</div>
           </div>
         </div>
-
-        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
-          APEX風 <ChevronRight className="w-4 h-4 ml-1" />
-        </div>
       </div>
 
       {error && <div className="mt-2 text-xs text-red-600 dark:text-red-400">error: {error}</div>}
