@@ -183,15 +183,11 @@ export default function NutritionSummaryPanel({
               </div>
             </div>
 
-            {/* PFC 2列 */}
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <MacroCell label="たんぱく質" unit="g" now={t.p} goal={g.p} />
-              <MacroCell label="脂質" unit="g" now={t.f} goal={g.f} />
-              <MacroCell label="炭水化物" unit="g" now={t.c} goal={g.c} />
-              {/* 右下は今は空けておく（将来：糖質/食物繊維/塩分など） */}
-              <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-4 py-3 flex items-center justify-center text-xs text-gray-500 dark:text-gray-400">
-                （追加栄養素は後で）
-              </div>
+            {/* PFC 3列（プレースホルダー削除）*/}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <MacroCell label="たんぱく質" unit="g" now={t.p} goal={g.p} />
+            <MacroCell label="脂質" unit="g" now={t.f} goal={g.f} />
+            <MacroCell label="炭水化物" unit="g" now={t.c} goal={g.c} />
             </div>
 
             {/* PFCバランスバー */}

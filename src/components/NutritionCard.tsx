@@ -581,8 +581,8 @@ export function NutritionCard({
 
           {/* ✅ 推定値（BMR/TDEE）を“見える”ように */}
           <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 space-x-3">
-            {refs?.bmrKcal != null && <span>推定BMR: {refs.bmrKcal} kcal</span>}
-            {refs?.tdeeKcal != null && <span>今日必要(推定TDEE): {refs.tdeeKcal} kcal</span>}
+            {refs?.bmrKcal != null && <span>推定基礎代謝量: {refs.bmrKcal} kcal</span>}
+            {refs?.tdeeKcal != null && <span>今日必要なカロリー(推定TDEE): {refs.tdeeKcal} kcal</span>}
           </div>
 
           {/* ✅ 目標PFCを“見える”ように（targets がある時だけ） */}
@@ -671,7 +671,7 @@ export function NutritionCard({
             <Lightbulb className="w-4 h-4 text-slate-700 dark:text-slate-200" />
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">今日の結論</p>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">※ 目安（AIは下書き）</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">※ 目安です</span>
         </div>
 
         {!targets ? (
@@ -691,7 +691,7 @@ export function NutritionCard({
                     <div key={d.key} className="text-sm text-slate-800 dark:text-slate-100">
                       <span className="font-semibold">{d.label}</span>
                       <span className="ml-2 text-slate-600 dark:text-slate-300">
-                        まだ <b>{d.remain}</b> {d.unit}
+                        あと <b>{d.remain}</b> {d.unit}
                       </span>
                     </div>
                   ))}
@@ -811,9 +811,7 @@ export function NutritionCard({
         )}
       </div>
 
-      <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-        ※ Supabase Functions invoke（nutrition-gemini）で解析。失敗時は nutrition_logs に failed を記録。
-      </p>
+    
 
       {/* ✅ Edit Modal */}
       {editOpen && selectedLog && (
