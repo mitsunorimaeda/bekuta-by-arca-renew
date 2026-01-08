@@ -2,7 +2,6 @@
 import React, { useMemo } from "react";
 
 type Totals = { p: number; f: number; c: number };
-type Targets = { p: number; f: number; c: number };
 
 function toNum(v: any, fallback = 0) {
   const n = Number(v);
@@ -25,18 +24,49 @@ function pct(part: number, total: number) {
   return clamp((part / total) * 100, 0, 100);
 }
 
-// バー内に置くラベル：狭い区画は出さない（見切れ防止）
-function shouldShowLabel(widthPct: number) {
-  return widthPct >= 12; // 12%未満は無理に出さない
+/** SVG arc utils */
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180.0;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+function describeWedge(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+}
+
+function LabelChip({
+  label,
+  percent,
+  dotClass,
+}: {
+  label: string;
+  percent: number;
+  dotClass: string;
+}) {
+  return (
+    <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`inline-block w-2.5 h-2.5 rounded-full ${dotClass} flex-none`} />
+          <span className="text-xs font-bold text-gray-900 dark:text-white whitespace-nowrap">
+            {label}
+          </span>
+        </div>
+        <span className="text-sm font-extrabold tabular-nums text-gray-900 dark:text-white whitespace-nowrap">
+          {Math.round(percent)}%
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export default function PFCBalance({
   totals,
-  targets,
-  title = "PFCバランス（kcal比）",
+  title = "PFCバランス",
 }: {
   totals: Totals;
-  targets?: Targets | null;
   title?: string;
 }) {
   const data = useMemo(() => {
@@ -52,139 +82,152 @@ export default function PFCBalance({
       c: pct(now.cK, now.total),
     };
 
-    const tgtPct = (() => {
-      if (!targets) return null;
-      const tp = toNum(targets.p, 0);
-      const tf = toNum(targets.f, 0);
-      const tc = toNum(targets.c, 0);
-      const t = kcalFromPFC(tp, tf, tc);
-      return {
-        p: pct(t.pK, t.total),
-        f: pct(t.fK, t.total),
-        c: pct(t.cK, t.total),
-      };
-    })();
+    // 念のため合計が100にならない誤差を吸収（表示用）
+    const sum = nowPct.p + nowPct.f + nowPct.c;
+    const fix = sum > 0 ? 100 / sum : 0;
+    const displayPct = {
+      p: nowPct.p * fix,
+      f: nowPct.f * fix,
+      c: nowPct.c * fix,
+    };
 
-    return { pG, fG, cG, now, nowPct, tgtPct };
-  }, [totals, targets]);
+    return { now, displayPct };
+  }, [totals]);
 
-  const totalK = Math.round(data.now.total);
+  // --- Pie angles (mobile) ---
+  const angles = useMemo(() => {
+    const p = data.displayPct.p;
+    const f = data.displayPct.f;
+    const c = data.displayPct.c;
 
-  const labels = {
-    p: `P（たんぱく質）`,
-    f: `F（脂質）`,
-    c: `C（炭水化物）`,
-  };
+    const pA = (p / 100) * 360;
+    const fA = (f / 100) * 360;
+    const cA = 360 - pA - fA; // 誤差吸収
+
+    const a0 = 0;
+    const a1 = a0 + pA;
+    const a2 = a1 + fA;
+    const a3 = 360;
+
+    return {
+      p: { start: a0, end: a1, mid: (a0 + a1) / 2 },
+      f: { start: a1, end: a2, mid: (a1 + a2) / 2 },
+      c: { start: a2, end: a3, mid: (a2 + a3) / 2 },
+    };
+  }, [data.displayPct.p, data.displayPct.f, data.displayPct.c]);
 
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-gray-200 dark:ring-gray-800 p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-sm font-semibold text-gray-900 dark:text-white">
-          {title}
-        </div>
-        <div className="text-[11px] text-gray-500 dark:text-gray-400">
-          合計: <span className="font-bold tabular-nums">{totalK}</span> kcal
+      <div className="text-sm font-semibold text-gray-900 dark:text-white">{title}</div>
+
+      {/* ===== Mobile: Pie (sm未満) ===== */}
+      <div className="mt-3 sm:hidden">
+        <div className="flex justify-center">
+          <svg
+            viewBox="0 0 120 120"
+            className="w-44 h-44"
+            role="img"
+            aria-label="PFC pie chart"
+          >
+            {/* wedges */}
+            <path d={describeWedge(60, 60, 52, angles.p.start, angles.p.end)} className="fill-emerald-600" />
+            <path d={describeWedge(60, 60, 52, angles.f.start, angles.f.end)} className="fill-orange-500" />
+            <path d={describeWedge(60, 60, 52, angles.c.start, angles.c.end)} className="fill-blue-600" />
+
+            {/* labels inside (P/F/C). 小さすぎる比率は見切れ/圧迫を避けるため非表示 */}
+            {data.displayPct.p >= 8 && (
+              <text
+                x={polarToCartesian(60, 60, 30, angles.p.mid).x}
+                y={polarToCartesian(60, 60, 30, angles.p.mid).y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="fill-white font-extrabold"
+                style={{ fontSize: 14 }}
+              >
+                P
+              </text>
+            )}
+            {data.displayPct.f >= 8 && (
+              <text
+                x={polarToCartesian(60, 60, 30, angles.f.mid).x}
+                y={polarToCartesian(60, 60, 30, angles.f.mid).y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="fill-white font-extrabold"
+                style={{ fontSize: 14 }}
+              >
+                F
+              </text>
+            )}
+            {data.displayPct.c >= 8 && (
+              <text
+                x={polarToCartesian(60, 60, 30, angles.c.mid).x}
+                y={polarToCartesian(60, 60, 30, angles.c.mid).y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="fill-white font-extrabold"
+                style={{ fontSize: 14 }}
+              >
+                C
+              </text>
+            )}
+
+            {/* center hole (ドーナツ風：見切れ防止＆見やすい) */}
+            <circle cx="60" cy="60" r="24" className="fill-white dark:fill-gray-900" />
+          </svg>
         </div>
       </div>
 
-      {/* 100% stacked bar + labels inside */}
-      <div className="mt-3">
-        <div className="h-10 rounded-2xl bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
+      {/* ===== PC: Stacked bar (sm以上) ===== */}
+      <div className="mt-3 hidden sm:block">
+        <div className="h-8 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
           {/* P */}
           <div
-            className="h-full bg-emerald-600 relative flex items-center justify-center"
-            style={{ width: `${data.nowPct.p}%` }}
-            aria-label={`P ${Math.round(data.nowPct.p)}%`}
+            className="relative h-full bg-emerald-600"
+            style={{ width: `${data.displayPct.p}%` }}
+            title={`P ${Math.round(data.displayPct.p)}%`}
           >
-            {shouldShowLabel(data.nowPct.p) && (
-              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
-                {labels.p}
-                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.p)}%</span>
-              </div>
+            {data.displayPct.p >= 12 && (
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-extrabold text-white">
+                P
+              </span>
             )}
           </div>
 
           {/* F */}
           <div
-            className="h-full bg-orange-500 relative flex items-center justify-center"
-            style={{ width: `${data.nowPct.f}%` }}
-            aria-label={`F ${Math.round(data.nowPct.f)}%`}
+            className="relative h-full bg-orange-500"
+            style={{ width: `${data.displayPct.f}%` }}
+            title={`F ${Math.round(data.displayPct.f)}%`}
           >
-            {shouldShowLabel(data.nowPct.f) && (
-              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
-                {labels.f}
-                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.f)}%</span>
-              </div>
+            {data.displayPct.f >= 12 && (
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-extrabold text-white">
+                F
+              </span>
             )}
           </div>
 
           {/* C */}
           <div
-            className="h-full bg-blue-600 relative flex items-center justify-center"
-            style={{ width: `${data.nowPct.c}%` }}
-            aria-label={`C ${Math.round(data.nowPct.c)}%`}
+            className="relative h-full bg-blue-600"
+            style={{ width: `${data.displayPct.c}%` }}
+            title={`C ${Math.round(data.displayPct.c)}%`}
           >
-            {shouldShowLabel(data.nowPct.c) && (
-              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
-                {labels.c}
-                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.c)}%</span>
-              </div>
+            {data.displayPct.c >= 12 && (
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-extrabold text-white">
+                C
+              </span>
             )}
           </div>
-
-          {/* どれかが小さすぎてラベルが出ない時の“凡例”を右下に出す（スマホ救済） */}
-          {(!shouldShowLabel(data.nowPct.p) ||
-            !shouldShowLabel(data.nowPct.f) ||
-            !shouldShowLabel(data.nowPct.c)) && (
-            <div className="absolute right-3 bottom-2 text-[10px] sm:text-[11px] text-white/90 font-bold">
-              P/F/C
-            </div>
-          )}
         </div>
-
-        {/* 目標比ガイド線（バー上に重ねる） */}
-        {data.tgtPct && (
-          <div className="relative mt-2 h-0">
-            <div
-              className="absolute -top-10 bottom-0 w-px bg-white/70 dark:bg-white/60"
-              style={{ left: `${data.tgtPct.p}%` }}
-              title={`目標P境界 ${Math.round(data.tgtPct.p)}%`}
-            />
-            <div
-              className="absolute -top-10 bottom-0 w-px bg-white/70 dark:bg-white/60"
-              style={{ left: `${data.tgtPct.p + data.tgtPct.f}%` }}
-              title={`目標F境界 ${Math.round(data.tgtPct.p + data.tgtPct.f)}%`}
-            />
-          </div>
-        )}
-
-        {data.tgtPct && (
-          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
-            うすい線＝目標PFC比（目安）
-          </div>
-        )}
       </div>
 
-      {/* スマホは“下の3カード”をやめて、1行の軽いサマリーにする */}
-      <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
-        P {data.pG.toFixed(1)}g / F {data.fG.toFixed(1)}g / C {data.cG.toFixed(1)}g
+      {/* ===== % only (always visible, never clipped) ===== */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <LabelChip label="P（たんぱく質）" percent={data.displayPct.p} dotClass="bg-emerald-600" />
+        <LabelChip label="F（脂質）" percent={data.displayPct.f} dotClass="bg-orange-500" />
+        <LabelChip label="C（炭水化物）" percent={data.displayPct.c} dotClass="bg-blue-600" />
       </div>
-
-      {/* 目標との差分（あれば） */}
-      {data.tgtPct && (
-        <div className="mt-2 text-[11px] text-gray-600 dark:text-gray-300">
-          目標比との差：
-          <span className="ml-2 tabular-nums">
-            P {Math.round(data.nowPct.p - data.tgtPct.p)}%
-          </span>
-          <span className="ml-2 tabular-nums">
-            F {Math.round(data.nowPct.f - data.tgtPct.f)}%
-          </span>
-          <span className="ml-2 tabular-nums">
-            C {Math.round(data.nowPct.c - data.tgtPct.c)}%
-          </span>
-        </div>
-      )}
     </div>
   );
 }
