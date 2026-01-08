@@ -25,7 +25,7 @@ type Props = {
   nutritionLoading?: boolean;
   nutritionError?: string | null;
 
-  onSaved?: (updated: NutritionLog) => void; // 親が再fetchしたい場合に使う
+  onSaved?: (updated?: NutritionLog | null ) => void; 
 };
 
 function toNum(v: any, fallback = 0) {
@@ -834,6 +834,9 @@ export function NutritionCard({
             setLocalLogs((prev) => (Array.isArray(prev) ? prev.filter((x: any) => x?.id !== deletedId) : []));
             setEditOpen(false);
             setSelectedLog(null);
+
+            // ✅ 親にも「変わったよ」を通知（refetchさせる）
+            if (typeof onSaved === "function") onSaved(null);
           }}
         />
       )}

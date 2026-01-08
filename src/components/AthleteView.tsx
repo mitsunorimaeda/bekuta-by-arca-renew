@@ -352,6 +352,7 @@ export function AthleteView({
     totals: nutritionTotalsToday,
     loading: nutritionLoading,
     error: nutritionError,
+    refetch: refetchNutritionToday,
   } = useTodayNutritionTotals(user.id, today);
 
   // ✅ ここに追加（この場所！）
@@ -1056,7 +1057,8 @@ export function AthleteView({
                 onBackHome={() => setActiveTab("unified")}
                 latestInbody={latestInbody ?? null}
                 trainingRecords={records ?? []}
-                latestWeightKg={latestWeight ?? []}
+                latestWeightKg={latestWeight ?? null}
+                onRefreshNutrition={refetchNutritionToday}
               />
             </Suspense>
           ) : null
