@@ -41,11 +41,11 @@ function describeWedge(cx: number, cy: number, r: number, startAngle: number, en
 type Segment = {
   key: "p" | "f" | "c";
   labelJa: string;
-  percent: number; // 0-100 (display)
-  start: number; // angle
-  end: number; // angle
-  mid: number; // angle
-  colorClass: string; // for tailwind fill
+  percent: number;
+  start: number;
+  end: number;
+  mid: number;
+  colorClass: string;
 };
 
 export default function PFCBalance({
@@ -77,7 +77,6 @@ export default function PFCBalance({
       c: rawPct.c * fix,
     };
 
-    // 角度（Cは最後で誤差吸収）
     const pA = (displayPct.p / 100) * 360;
     const fA = (displayPct.f / 100) * 360;
     const cA = 360 - pA - fA;
@@ -124,9 +123,9 @@ export default function PFCBalance({
     };
   }, [totals]);
 
-  /** ===== mobile pie callouts (overlap-safe-ish) ===== */
+  /** ===== mobile pie callouts (見切れ最優先：端から内側に＆伸びる向きを固定) ===== */
   const callouts = useMemo(() => {
-    // SVGの座標系（viewBox 0..200）
+    // viewBox: 0..200
     const cx = 100;
     const cy = 92;
     const r = 64;
@@ -139,9 +138,16 @@ export default function PFCBalance({
       const edge = polar(cx, cy, r, mid);
       const elbow = polar(cx, cy, r + 10, mid);
 
-      const isRight = Math.cos(deg2rad(mid - 90)) >= 0; // 右半分
-      const xLabel = isRight ? 182 : 18; // 端に寄せて見切れ防止
-      const yBase = polar(cx, cy, r + 26, mid).y;
+      // 右半分判定（角度）
+      const isRight = Math.cos(deg2rad(mid - 90)) >= 0;
+
+      // ✅ ここがポイント：右は「右端に置いて右寄せ(end)」＝文字は左へ伸びて見切れない
+      // ✅ 左は「左端に置いて左寄せ(start)」＝文字は右へ伸びて見切れない
+      const xLabel = isRight ? 188 : 12;
+      const textAnchor = isRight ? "end" : "start";
+
+      // 被ってOKなので、外側に出しすぎず少し内側に寄せる
+      const yBase = polar(cx, cy, r + 18, mid).y;
 
       const item = {
         ...s,
@@ -150,20 +156,18 @@ export default function PFCBalance({
         isRight,
         xLabel,
         y: yBase,
-        textAnchor: isRight ? "start" : "end",
+        textAnchor,
       };
 
-      if (isRight) right.push(item);
-      else left.push(item);
+      (isRight ? right : left).push(item);
     }
 
     function relax(list: any[]) {
-      // yでソート→最低間隔を確保しつつ上下にずらす
       list.sort((a, b) => a.y - b.y);
 
-      const minY = 22;
-      const maxY = 168;
-      const gap = 18; // 行間
+      const minY = 30;
+      const maxY = 160;
+      const gap = 18;
 
       for (let i = 0; i < list.length; i++) {
         const prev = list[i - 1];
@@ -171,24 +175,15 @@ export default function PFCBalance({
           list[i].y = clamp(list[i].y, minY, maxY);
           continue;
         }
-        if (list[i].y - prev.y < gap) {
-          list[i].y = prev.y + gap;
-        }
+        if (list[i].y - prev.y < gap) list[i].y = prev.y + gap;
       }
 
-      // 下にはみ出たら、全体を上へ寄せる
       const overflow = list.length ? list[list.length - 1].y - maxY : 0;
-      if (overflow > 0) {
-        for (let i = 0; i < list.length; i++) list[i].y -= overflow;
-      }
+      if (overflow > 0) for (let i = 0; i < list.length; i++) list[i].y -= overflow;
 
-      // 上にはみ出たら、全体を下へ寄せる
       const under = list.length ? minY - list[0].y : 0;
-      if (under > 0) {
-        for (let i = 0; i < list.length; i++) list[i].y += under;
-      }
+      if (under > 0) for (let i = 0; i < list.length; i++) list[i].y += under;
 
-      // 最後にclamp
       for (let i = 0; i < list.length; i++) list[i].y = clamp(list[i].y, minY, maxY);
 
       return list;
@@ -203,7 +198,7 @@ export default function PFCBalance({
     };
   }, [computed.segs]);
 
-  /** ===== PC bar labels: overlay layer so it never gets clipped ===== */
+  /** ===== PC bar labels ===== */
   const pcLabels = useMemo(() => {
     const p = computed.displayPct.p;
     const f = computed.displayPct.f;
@@ -235,30 +230,26 @@ export default function PFCBalance({
           <svg viewBox="0 0 200 200" className="w-full max-w-[360px]" role="img" aria-label="PFC pie">
             {/* wedges */}
             {computed.segs.map((s) => (
-              <path
-                key={s.key}
-                d={describeWedge(callouts.cx, callouts.cy, callouts.r, s.start, s.end)}
-                className={s.colorClass}
-              />
+              <path key={s.key} d={describeWedge(callouts.cx, callouts.cy, callouts.r, s.start, s.end)} className={s.colorClass} />
             ))}
 
             {/* donut hole */}
             <circle cx={callouts.cx} cy={callouts.cy} r={26} className="fill-white dark:fill-gray-900" />
 
-            {/* callout lines + labels (left/right) */}
+            {/* callout lines + labels */}
             {[...callouts.left, ...callouts.right].map((s: any) => {
               const endX = s.xLabel;
               const endY = s.y;
 
-              // elbowから水平に伸ばす
-              const midX = s.isRight ? s.elbow.x + 12 : s.elbow.x - 12;
+              // 被ってOKなので、線を短めに（内側に寄せる）
+              const elbowX = s.isRight ? s.elbow.x + 6 : s.elbow.x - 6;
 
               return (
                 <g key={`callout-${s.key}`}>
                   <polyline
-                    points={`${s.edge.x},${s.edge.y} ${s.elbow.x},${s.elbow.y} ${midX},${endY} ${endX},${endY}`}
+                    points={`${s.edge.x},${s.edge.y} ${s.elbow.x},${s.elbow.y} ${elbowX},${endY} ${endX},${endY}`}
                     fill="none"
-                    stroke="rgba(107,114,128,0.9)" // gray-500相当
+                    stroke="rgba(107,114,128,0.9)"
                     strokeWidth="1.5"
                   />
                   <text
@@ -286,14 +277,12 @@ export default function PFCBalance({
       {/* ===== PC: stacked bar + inside labels (overlay, not clipped) ===== */}
       <div className="mt-3 hidden sm:block">
         <div className="relative">
-          {/* bar itself */}
           <div className="h-9 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
             <div className="h-full bg-emerald-600" style={{ width: `${computed.displayPct.p}%` }} />
             <div className="h-full bg-orange-500" style={{ width: `${computed.displayPct.f}%` }} />
             <div className="h-full bg-blue-600" style={{ width: `${computed.displayPct.c}%` }} />
           </div>
 
-          {/* overlay labels */}
           <div className="pointer-events-none absolute inset-0">
             {pcLabels.map((l) => (
               <div
