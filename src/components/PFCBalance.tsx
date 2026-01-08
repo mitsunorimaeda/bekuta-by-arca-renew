@@ -25,6 +25,11 @@ function pct(part: number, total: number) {
   return clamp((part / total) * 100, 0, 100);
 }
 
+// バー内に置くラベル：狭い区画は出さない（見切れ防止）
+function shouldShowLabel(widthPct: number) {
+  return widthPct >= 12; // 12%未満は無理に出さない
+}
+
 export default function PFCBalance({
   totals,
   targets,
@@ -65,94 +70,109 @@ export default function PFCBalance({
 
   const totalK = Math.round(data.now.total);
 
+  const labels = {
+    p: `P（たんぱく質）`,
+    f: `F（脂質）`,
+    c: `C（炭水化物）`,
+  };
+
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-gray-200 dark:ring-gray-800 p-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-3">
         <div className="text-sm font-semibold text-gray-900 dark:text-white">
           {title}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400">
-          合計: <span className="font-bold tabular-nums">{totalK}</span> kcal（P/F/Cから換算）
+        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+          合計: <span className="font-bold tabular-nums">{totalK}</span> kcal
         </div>
       </div>
 
-      {/* 100% stacked bar */}
+      {/* 100% stacked bar + labels inside */}
       <div className="mt-3">
-        <div className="h-3 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
+        <div className="h-10 rounded-2xl bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
+          {/* P */}
           <div
-            className="h-full bg-emerald-600"
+            className="h-full bg-emerald-600 relative flex items-center justify-center"
             style={{ width: `${data.nowPct.p}%` }}
             aria-label={`P ${Math.round(data.nowPct.p)}%`}
-          />
+          >
+            {shouldShowLabel(data.nowPct.p) && (
+              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
+                {labels.p}
+                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.p)}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* F */}
           <div
-            className="h-full bg-orange-500"
+            className="h-full bg-orange-500 relative flex items-center justify-center"
             style={{ width: `${data.nowPct.f}%` }}
             aria-label={`F ${Math.round(data.nowPct.f)}%`}
-          />
+          >
+            {shouldShowLabel(data.nowPct.f) && (
+              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
+                {labels.f}
+                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.f)}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* C */}
           <div
-            className="h-full bg-blue-600"
+            className="h-full bg-blue-600 relative flex items-center justify-center"
             style={{ width: `${data.nowPct.c}%` }}
             aria-label={`C ${Math.round(data.nowPct.c)}%`}
-          />
+          >
+            {shouldShowLabel(data.nowPct.c) && (
+              <div className="px-2 text-white text-[11px] sm:text-xs font-bold leading-tight text-center whitespace-nowrap">
+                {labels.c}
+                <span className="ml-1 tabular-nums">{Math.round(data.nowPct.c)}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* どれかが小さすぎてラベルが出ない時の“凡例”を右下に出す（スマホ救済） */}
+          {(!shouldShowLabel(data.nowPct.p) ||
+            !shouldShowLabel(data.nowPct.f) ||
+            !shouldShowLabel(data.nowPct.c)) && (
+            <div className="absolute right-3 bottom-2 text-[10px] sm:text-[11px] text-white/90 font-bold">
+              P/F/C
+            </div>
+          )}
         </div>
 
-        {/* 目標比のガイド（薄い縦線） */}
+        {/* 目標比ガイド線（バー上に重ねる） */}
         {data.tgtPct && (
-          <div className="relative mt-2 h-3">
-            {/* バーの左端からの位置に線を引く：P境界、P+F境界 */}
+          <div className="relative mt-2 h-0">
             <div
-              className="absolute top-0 bottom-0 w-px bg-gray-400/70 dark:bg-gray-500/70"
+              className="absolute -top-10 bottom-0 w-px bg-white/70 dark:bg-white/60"
               style={{ left: `${data.tgtPct.p}%` }}
               title={`目標P境界 ${Math.round(data.tgtPct.p)}%`}
             />
             <div
-              className="absolute top-0 bottom-0 w-px bg-gray-400/70 dark:bg-gray-500/70"
+              className="absolute -top-10 bottom-0 w-px bg-white/70 dark:bg-white/60"
               style={{ left: `${data.tgtPct.p + data.tgtPct.f}%` }}
               title={`目標F境界 ${Math.round(data.tgtPct.p + data.tgtPct.f)}%`}
             />
-            <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-              うすい線＝目標PFC比（目安）
-            </div>
+          </div>
+        )}
+
+        {data.tgtPct && (
+          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+            うすい線＝目標PFC比（目安）
           </div>
         )}
       </div>
 
-      {/* 数字（直感用） */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">P</div>
-          <div className="mt-1 text-sm font-extrabold tabular-nums text-gray-900 dark:text-white">
-            {Math.round(data.nowPct.p)}%
-          </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
-            {data.pG.toFixed(1)}g / {Math.round(data.now.pK)}kcal
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">F</div>
-          <div className="mt-1 text-sm font-extrabold tabular-nums text-gray-900 dark:text-white">
-            {Math.round(data.nowPct.f)}%
-          </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
-            {data.fG.toFixed(1)}g / {Math.round(data.now.fK)}kcal
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">C</div>
-          <div className="mt-1 text-sm font-extrabold tabular-nums text-gray-900 dark:text-white">
-            {Math.round(data.nowPct.c)}%
-          </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
-            {data.cG.toFixed(1)}g / {Math.round(data.now.cK)}kcal
-          </div>
-        </div>
+      {/* スマホは“下の3カード”をやめて、1行の軽いサマリーにする */}
+      <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+        P {data.pG.toFixed(1)}g / F {data.fG.toFixed(1)}g / C {data.cG.toFixed(1)}g
       </div>
 
       {/* 目標との差分（あれば） */}
       {data.tgtPct && (
-        <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+        <div className="mt-2 text-[11px] text-gray-600 dark:text-gray-300">
           目標比との差：
           <span className="ml-2 tabular-nums">
             P {Math.round(data.nowPct.p - data.tgtPct.p)}%
