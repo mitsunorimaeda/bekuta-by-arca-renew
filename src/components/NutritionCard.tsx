@@ -5,6 +5,7 @@ import { buildDailyTargets, calcGaps } from "../lib/nutritionCalc";
 import { supabase } from "../lib/supabase";
 import NutritionEditModal, { type NutritionLog } from "./NutritionEditModal";
 import NutritionOverview from "./NutritionOverview";
+import NutritionSummaryPanel from "./NutritionSummaryPanel";
 
 type MealType = "朝食" | "昼食" | "夕食" | "補食";
 
@@ -723,10 +724,18 @@ export function NutritionCard({
         )}
       </div>
 
-      {/* ✅ OVERVIEW（合計 & 目標） */}
-      <div className="mt-4">
-        <NutritionOverview totals={displayTotals} targets={targets} loading={nutritionLoading} subtitle={recordDate} />
-      </div>
+        <div className="mt-4">
+        <NutritionSummaryPanel
+            dateLabel={recordDate}
+            totals={displayTotals}
+            targets={targets}
+            loading={nutritionLoading}
+            bmrKcal={refs?.bmrKcal ?? null}
+            tdeeKcal={refs?.tdeeKcal ?? null}
+            onPrimaryAction={() => fileRef.current?.click()}
+            primaryLabel="食事を記録"
+        />
+        </div>
 
       {/* logs */}
       <div className="mt-5">

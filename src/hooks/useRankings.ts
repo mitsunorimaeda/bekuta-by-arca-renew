@@ -12,6 +12,11 @@ type Options = {
   pauseWhenHidden?: boolean;  // true推奨
 };
 
+type RpcResult = {
+  weekly?: WeeklyRanking[];
+  points?: PointsRanking[];
+};
+
 export function useRankings(teamId: string | null | undefined, options: Options = {}) {
   const enabled = options.enabled ?? true;
   const pollMs = options.pollMs ?? 120000;
@@ -58,30 +63,29 @@ export function useRankings(teamId: string | null | undefined, options: Options 
       try {
         if (!silent && mountedRef.current) setLoading(true);
 
-        const [w, p] = await Promise.all([
-          supabase
-            .from("team_weekly_rankings")
-            .select("*")
-            .eq("team_id", teamId)
-            .order("rank", { ascending: true }),
-          supabase
-            .from("team_points_rankings")
-            .select("*")
-            .eq("team_id", teamId)
-            .order("rank", { ascending: true }),
-        ]);
+        // ✅ VIEW直叩き→RPCで取得（RLS問題を回避）
+        const { data, error } = await supabase.rpc("get_team_rankings", {
+          p_team_id: teamId,
+        });
 
-        if (w.error) throw w.error;
-        if (p.error) throw p.error;
+        if (error) throw error;
+
+        const res = (data ?? {}) as RpcResult;
+        const weekly = Array.isArray(res.weekly) ? res.weekly : [];
+        const points = Array.isArray(res.points) ? res.points : [];
 
         if (!mountedRef.current) return;
-        setWeeklyRankings((w.data ?? []) as WeeklyRanking[]);
-        setPointsRankings((p.data ?? []) as PointsRanking[]);
+        setWeeklyRankings(weekly);
+        setPointsRankings(points);
         setError(null);
       } catch (e: any) {
         if (!mountedRef.current) return;
         console.error("[useRankings] fetch error:", e);
         setError(e?.message ?? "ランキングの取得に失敗しました");
+
+        // 失敗時は「前回表示が残る」より、空にして気づける方が良いなら↓をON
+        // setWeeklyRankings([]);
+        // setPointsRankings([]);
       } finally {
         inflightRef.current = false;
         if (!silent && mountedRef.current) setLoading(false);
@@ -110,7 +114,7 @@ export function useRankings(teamId: string | null | undefined, options: Options 
   }, [teamId, enabled]);
 
   // -----------------------------
-  // ✅ ポーリング（VIEW前提の正攻法）
+  // ✅ ポーリング（Hub管理）
   // -----------------------------
   useEffect(() => {
     cleanupPoll();
