@@ -36,6 +36,18 @@ export function RankStatsCard({
     return `${total.toLocaleString()}人中 ${rank.toLocaleString()}位（上位 ${pct}%）`;
   }, [data, scope]);
 
+  // ✅ 分布：表示順を逆に（ビギナーⅠが最下層になる想定）
+  const dist = useMemo(() => {
+    const arr = (data?.distribution ?? []).slice();
+    return arr.reverse();
+  }, [data?.distribution]);
+
+  // ✅ 最大人数（棒グラフの100%基準）
+  const maxCount = useMemo(() => {
+    const m = Math.max(0, ...dist.map((d) => Number(d.count ?? 0)));
+    return m > 0 ? m : 1;
+  }, [dist]);
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between">
@@ -43,9 +55,7 @@ export function RankStatsCard({
           <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700">{scopeIcon(scope)}</div>
           <div>
             <div className="text-xs text-gray-600 dark:text-gray-400">{scopeLabel(scope)}ランキング</div>
-            <div className="text-base font-semibold">
-              {loading ? "読み込み中…" : headline ?? "—"}
-            </div>
+            <div className="text-base font-semibold">{loading ? "読み込み中…" : headline ?? "—"}</div>
           </div>
         </div>
 
@@ -56,17 +66,32 @@ export function RankStatsCard({
 
       {error && <div className="mt-2 text-xs text-red-600 dark:text-red-400">error: {error}</div>}
 
-      {/* ランク分布 */}
-      {data?.distribution?.length ? (
+      {/* ✅ ランク分布（横棒グラフ：最大人数が横幅いっぱい） */}
+      {dist.length ? (
         <div className="mt-3">
-          <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">ランク分布</div>
-          <div className="space-y-1">
-            {data.distribution.map((d) => (
-              <div key={d.rank_title} className="flex items-center justify-between text-sm">
-                <span className="text-gray-800 dark:text-gray-200">{d.rank_title}</span>
-                <span className="text-gray-600 dark:text-gray-400">{Number(d.count ?? 0).toLocaleString()}人</span>
-              </div>
-            ))}
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">人数分布</div>
+
+          <div className="space-y-2">
+            {dist.map((d) => {
+              const count = Number(d.count ?? 0);
+              const pct = Math.round((count / maxCount) * 100); // 0〜100
+              return (
+                <div key={d.rank_title} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-800 dark:text-gray-200">{d.rank_title}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{count.toLocaleString()}人</span>
+                  </div>
+
+                  <div className="w-full h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-blue-600"
+                      style={{ width: `${pct}%` }}
+                      aria-label={`${d.rank_title} ${count}人`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
