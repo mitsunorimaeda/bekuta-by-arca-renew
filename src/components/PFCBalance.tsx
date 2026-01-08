@@ -1,8 +1,8 @@
 // src/components/PFCBalance.tsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 
 type Totals = { p: number; f: number; c: number };
-type Targets = { p: number; f: number; c: number };
+type Targets = { p: number; f: number; c: number }; // 将来用（今は使わない）
 
 function toNum(v: any, fallback = 0) {
   const n = Number(v);
@@ -20,93 +20,142 @@ function kcalFromPFC(pG: number, fG: number, cG: number) {
   return { pK, fK, cK, total };
 }
 
-function pct(part: number, total: number) {
-  if (!Number.isFinite(total) || total <= 0) return 0;
-  return clamp((part / total) * 100, 0, 100);
+/**
+ * 小数% → 整数% にして「必ず合計100」になるよう調整
+ *（最大剰余法 / Largest Remainder Method）
+ */
+function toIntPct100(p: number, f: number, c: number) {
+  const raw = [
+    { key: "p" as const, v: clamp(p, 0, 100) },
+    { key: "f" as const, v: clamp(f, 0, 100) },
+    { key: "c" as const, v: clamp(c, 0, 100) },
+  ];
+
+  // total が 0 のケースは呼び出し側で弾く
+  const floors = raw.map((x) => ({
+    ...x,
+    floor: Math.floor(x.v),
+    frac: x.v - Math.floor(x.v),
+  }));
+
+  let sum = floors.reduce((acc, x) => acc + x.floor, 0);
+  let remain = 100 - sum;
+
+  // frac の大きい順に +1 して合計100に寄せる
+  floors.sort((a, b) => b.frac - a.frac);
+
+  const addMap: Record<"p" | "f" | "c", number> = { p: 0, f: 0, c: 0 };
+  for (let i = 0; i < floors.length && remain > 0; i++) {
+    addMap[floors[i].key] += 1;
+    remain -= 1;
+  }
+
+  // 元の順に戻して返す
+  const base: Record<"p" | "f" | "c", number> = { p: 0, f: 0, c: 0 };
+  for (const x of raw) {
+    const fnd = floors.find((z) => z.key === x.key)!;
+    base[x.key] = fnd.floor + addMap[x.key];
+  }
+
+  // 念のため最終調整（丸め誤差や極端値対策）
+  const finalSum = base.p + base.f + base.c;
+  if (finalSum !== 100) {
+    // どれかに差分を乗せる（最大のやつに寄せる）
+    const maxKey = (["p", "f", "c"] as const).reduce((best, k) =>
+      base[k] > base[best] ? k : best
+    , "p");
+    base[maxKey] += 100 - finalSum;
+  }
+
+  return base;
 }
 
-function roundPct(n: number) {
-  return Math.round(n);
+function fmt1(n: number) {
+  return Math.round(n * 10) / 10;
 }
+
+type Key = "p" | "f" | "c";
+
+const LABEL: Record<Key, { short: string; long: string }> = {
+  p: { short: "P", long: "たんぱく質" },
+  f: { short: "F", long: "脂質" },
+  c: { short: "C", long: "炭水化物" },
+};
 
 export default function PFCBalance({
   totals,
-  targets,
+  targets, // 今は未使用（残しておく）
   title = "PFCバランス",
 }: {
   totals: Totals;
   targets?: Targets | null;
   title?: string;
 }) {
+  const [active, setActive] = useState<Key | null>(null);
+
   const data = useMemo(() => {
     const pG = toNum(totals?.p, 0);
     const fG = toNum(totals?.f, 0);
     const cG = toNum(totals?.c, 0);
 
     const now = kcalFromPFC(pG, fG, cG);
+    const total = now.total;
 
-    const nowPctRaw = {
-      p: pct(now.pK, now.total),
-      f: pct(now.fK, now.total),
-      c: pct(now.cK, now.total),
-    };
-
-    // 見た目のズレを減らす：最後の1つに誤差を寄せて合計100にする
-    const pR = roundPct(nowPctRaw.p);
-    const fR = roundPct(nowPctRaw.f);
-    const cR = clamp(100 - pR - fR, 0, 100);
-
-    const nowPct = { p: pR, f: fR, c: cR };
-
-    const tgtPct = (() => {
-      if (!targets) return null;
-      const tp = toNum(targets.p, 0);
-      const tf = toNum(targets.f, 0);
-      const tc = toNum(targets.c, 0);
-      const t = kcalFromPFC(tp, tf, tc);
+    if (!Number.isFinite(total) || total <= 0) {
       return {
-        p: roundPct(pct(t.pK, t.total)),
-        f: roundPct(pct(t.fK, t.total)),
-        c: roundPct(pct(t.cK, t.total)),
+        pG,
+        fG,
+        cG,
+        now,
+        totalK: 0,
+        pctInt: { p: 0, f: 0, c: 0 } as Record<Key, number>,
+        pctFloat: { p: 0, f: 0, c: 0 } as Record<Key, number>,
       };
-    })();
+    }
 
-    return { pG, fG, cG, now, nowPct, tgtPct };
-  }, [totals, targets]);
+    const pPct = (now.pK / total) * 100;
+    const fPct = (now.fK / total) * 100;
+    const cPct = (now.cK / total) * 100;
 
-  const totalK = Math.round(data.now.total);
+    const pctInt = toIntPct100(pPct, fPct, cPct);
 
-  // ---- Donut (SVG) helpers ----
-  const donut = useMemo(() => {
-    const size = 220; // viewBox
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = 70;
-    const stroke = 28;
-    const c = 2 * Math.PI * r;
+    return {
+      pG,
+      fG,
+      cG,
+      now,
+      totalK: Math.round(total),
+      pctInt: pctInt as Record<Key, number>,
+      pctFloat: { p: pPct, f: fPct, c: cPct } as Record<Key, number>,
+    };
+  }, [totals]);
 
-    const segs = [
-      { key: "p", label: "P（たんぱく質）", pct: data.nowPct.p, color: "#059669" }, // emerald-600
-      { key: "f", label: "F（脂質）", pct: data.nowPct.f, color: "#f97316" }, // orange-500
-      { key: "c", label: "C（炭水化物）", pct: data.nowPct.c, color: "#2563eb" }, // blue-600
-    ] as const;
+  const totalK = data.totalK;
 
-    let offset = 0; // in length
-    const rings = segs.map((s) => {
-      const len = (s.pct / 100) * c;
-      const dasharray = `${len} ${Math.max(0, c - len)}`;
-      const dashoffset = -offset;
-      offset += len;
-      return { ...s, dasharray, dashoffset };
-    });
+  const activeDetail = useMemo(() => {
+    if (!active) return null;
+    const g =
+      active === "p" ? data.pG : active === "f" ? data.fG : data.cG;
+    const k =
+      active === "p" ? data.now.pK : active === "f" ? data.now.fK : data.now.cK;
+    const pct = data.pctInt[active] ?? 0;
+    return { g, k, pct, key: active };
+  }, [active, data]);
 
-    return { size, cx, cy, r, stroke, c, rings };
-  }, [data.nowPct]);
+  const setOrToggle = (k: Key) => {
+    setActive((prev) => (prev === k ? null : k));
+  };
 
-  // ---- UI ----
+  const fade = (k: Key) => {
+    if (!active) return "opacity-100";
+    return active === k ? "opacity-100" : "opacity-35";
+  };
+
+  const isEmpty = totalK <= 0;
+
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-gray-200 dark:ring-gray-800 p-4">
-      {/* Header */}
+      {/* Header（最小情報） */}
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-sm font-semibold text-gray-900 dark:text-white">
           {title}
@@ -116,140 +165,208 @@ export default function PFCBalance({
         </div>
       </div>
 
-      {/* PC: 100% stacked bar (そのまま良い前提で、グラフ内にラベルも入れる) */}
-      <div className="hidden sm:block mt-3">
-        <div className="relative h-4 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
-          <div className="h-full bg-emerald-600" style={{ width: `${data.nowPct.p}%` }} />
-          <div className="h-full bg-orange-500" style={{ width: `${data.nowPct.f}%` }} />
-          <div className="h-full bg-blue-600" style={{ width: `${data.nowPct.c}%` }} />
-          {/* ラベル（PCはバー内に“P（たんぱく質）◯%”まで入れる） */}
-          <div className="absolute inset-0 flex text-[11px] font-bold text-white">
-            <div className="h-full flex items-center justify-center px-2" style={{ width: `${data.nowPct.p}%` }}>
-              <span className="truncate">P（たんぱく質） {data.nowPct.p}%</span>
-            </div>
-            <div className="h-full flex items-center justify-center px-2" style={{ width: `${data.nowPct.f}%` }}>
-              <span className="truncate">F（脂質） {data.nowPct.f}%</span>
-            </div>
-            <div className="h-full flex items-center justify-center px-2" style={{ width: `${data.nowPct.c}%` }}>
-              <span className="truncate">C（炭水化物） {data.nowPct.c}%</span>
-            </div>
-          </div>
+      {/* 0kcal / 未入力 */}
+      {isEmpty ? (
+        <div className="mt-4 rounded-xl bg-gray-50 dark:bg-gray-800/60 p-4 text-sm text-gray-600 dark:text-gray-300">
+          まだ記録がありません（写真で食事を追加するとPFCバランスが表示されます）
         </div>
-      </div>
+      ) : (
+        <>
+          {/* =========================
+              PC（sm以上）：横バー + グラフ内ラベル
+             ========================= */}
+          <div className="hidden sm:block mt-3">
+            <div className="h-10 rounded-xl bg-gray-200 dark:bg-gray-700 overflow-hidden flex">
+              {/* P */}
+              <button
+                type="button"
+                onClick={() => setOrToggle("p")}
+                className={`h-full bg-emerald-600 flex items-center justify-center px-2 ${fade(
+                  "p"
+                )}`}
+                style={{ width: `${data.pctInt.p}%` }}
+                title={`P（たんぱく質） ${data.pctInt.p}%`}
+              >
+                <span className="text-white font-semibold text-xs whitespace-nowrap drop-shadow">
+                  P（たんぱく質） {data.pctInt.p}%
+                </span>
+              </button>
 
-      {/* Mobile: Donut + pills (線なし) */}
-      <div className="sm:hidden mt-3">
-        <div className="relative mx-auto w-full max-w-[420px] h-[240px]">
-          {/* donut */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <svg
-              width={200}
-              height={200}
-              viewBox={`0 0 ${donut.size} ${donut.size}`}
-              role="img"
-              aria-label="PFCバランス（ドーナツ）"
-            >
-              {/* base */}
-              <circle
-                cx={donut.cx}
-                cy={donut.cy}
-                r={donut.r}
-                stroke="rgba(148,163,184,0.35)"
-                strokeWidth={donut.stroke}
-                fill="transparent"
-              />
+              {/* F */}
+              <button
+                type="button"
+                onClick={() => setOrToggle("f")}
+                className={`h-full bg-orange-500 flex items-center justify-center px-2 ${fade(
+                  "f"
+                )}`}
+                style={{ width: `${data.pctInt.f}%` }}
+                title={`F（脂質） ${data.pctInt.f}%`}
+              >
+                <span className="text-white font-semibold text-xs whitespace-nowrap drop-shadow">
+                  F（脂質） {data.pctInt.f}%
+                </span>
+              </button>
 
-              {/* rings */}
-              <g transform={`rotate(-90 ${donut.cx} ${donut.cy})`}>
-                {donut.rings.map((s) => (
+              {/* C */}
+              <button
+                type="button"
+                onClick={() => setOrToggle("c")}
+                className={`h-full bg-blue-600 flex items-center justify-center px-2 ${fade(
+                  "c"
+                )}`}
+                style={{ width: `${data.pctInt.c}%` }}
+                title={`C（炭水化物） ${data.pctInt.c}%`}
+              >
+                <span className="text-white font-semibold text-xs whitespace-nowrap drop-shadow">
+                  C（炭水化物） {data.pctInt.c}%
+                </span>
+              </button>
+            </div>
+
+            {/* タップ後の1行詳細 */}
+            {activeDetail && (
+              <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 tabular-nums">
+                {LABEL[activeDetail.key].short}（{LABEL[activeDetail.key].long}）：
+                {fmt1(activeDetail.g)}g / {Math.round(activeDetail.k)}kcal（{activeDetail.pct}%）
+              </div>
+            )}
+          </div>
+
+          {/* =========================
+              Mobile（sm未満）：ドーナツ + ピル（線なし）
+             ========================= */}
+          <div className="sm:hidden mt-3">
+            <div className="relative rounded-2xl bg-gray-50 dark:bg-gray-800/60 p-3">
+              <div className="relative mx-auto w-[260px] max-w-full">
+                {/* Donut */}
+                <svg
+                  viewBox="0 0 200 200"
+                  className="block mx-auto w-[220px] h-[220px]"
+                >
+                  {/* 背景リング */}
                   <circle
-                    key={s.key}
-                    cx={donut.cx}
-                    cy={donut.cy}
-                    r={donut.r}
-                    stroke={s.color}
-                    strokeWidth={donut.stroke}
-                    fill="transparent"
-                    strokeDasharray={s.dasharray}
-                    strokeDashoffset={s.dashoffset}
+                    cx="100"
+                    cy="100"
+                    r="70"
+                    fill="none"
+                    stroke="rgba(156,163,175,0.25)"
+                    strokeWidth="28"
                   />
-                ))}
-              </g>
 
-              {/* center text */}
-              <text
-                x={donut.cx}
-                y={donut.cy - 2}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize="24"
-                fontWeight="800"
-                fill="currentColor"
-              >
-                {totalK} kcal
-              </text>
-              <text
-                x={donut.cx}
-                y={donut.cy + 20}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize="12"
-                fontWeight="700"
-                fill="rgba(107,114,128,0.95)"
-              >
-                （P/F/C換算）
-              </text>
-            </svg>
+                  {/* Segments */}
+                  {(() => {
+                    const CIRC = 2 * Math.PI * 70;
+
+                    const segs: Array<{
+                      key: Key;
+                      pct: number;
+                      className: string;
+                    }> = [
+                      { key: "p", pct: data.pctInt.p, className: "stroke-emerald-600" },
+                      { key: "f", pct: data.pctInt.f, className: "stroke-orange-500" },
+                      { key: "c", pct: data.pctInt.c, className: "stroke-blue-600" },
+                    ];
+
+                    let offsetPct = 0;
+
+                    return segs.map((s) => {
+                      const dash = (s.pct / 100) * CIRC;
+                      const dashArray = `${dash} ${CIRC - dash}`;
+                      const dashOffset = (offsetPct / 100) * CIRC;
+
+                      offsetPct += s.pct;
+
+                      return (
+                        <circle
+                          key={s.key}
+                          cx="100"
+                          cy="100"
+                          r="70"
+                          fill="none"
+                          strokeWidth="28"
+                          strokeLinecap="butt"
+                          className={`${s.className} ${fade(s.key)}`}
+                          strokeDasharray={dashArray}
+                          strokeDashoffset={-dashOffset}
+                          transform="rotate(-90 100 100)"
+                        />
+                      );
+                    });
+                  })()}
+
+                  {/* 中央テキスト */}
+                  <text
+                    x="100"
+                    y="96"
+                    textAnchor="middle"
+                    className="fill-gray-900 dark:fill-white"
+                    style={{ fontSize: 22, fontWeight: 800 }}
+                  >
+                    {totalK} kcal
+                  </text>
+                  <text
+                    x="100"
+                    y="118"
+                    textAnchor="middle"
+                    className="fill-gray-500 dark:fill-gray-300"
+                    style={{ fontSize: 12, fontWeight: 700 }}
+                  >
+                    （P/F/C換算）
+                  </text>
+                </svg>
+
+                {/* Pills（線なし・被ってOK） */}
+                <button
+                  type="button"
+                  onClick={() => setOrToggle("c")}
+                  className={`absolute left-0 top-2 rounded-2xl bg-white/90 dark:bg-gray-900/80 ring-1 ring-gray-200 dark:ring-gray-700 px-3 py-2 text-left shadow-sm ${active === "c" ? "ring-2 ring-blue-500" : ""}`}
+                >
+                  <div className="text-xs font-extrabold text-gray-900 dark:text-white">
+                    C（炭水化物）
+                  </div>
+                  <div className="text-2xl leading-none font-extrabold text-gray-900 dark:text-white tabular-nums">
+                    {data.pctInt.c}%
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrToggle("p")}
+                  className={`absolute right-0 top-6 rounded-2xl bg-white/90 dark:bg-gray-900/80 ring-1 ring-gray-200 dark:ring-gray-700 px-3 py-2 text-left shadow-sm ${active === "p" ? "ring-2 ring-emerald-500" : ""}`}
+                >
+                  <div className="text-xs font-extrabold text-gray-900 dark:text-white">
+                    P（たんぱく質）
+                  </div>
+                  <div className="text-2xl leading-none font-extrabold text-gray-900 dark:text-white tabular-nums">
+                    {data.pctInt.p}%
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrToggle("f")}
+                  className={`absolute left-0 bottom-4 rounded-2xl bg-white/90 dark:bg-gray-900/80 ring-1 ring-gray-200 dark:ring-gray-700 px-3 py-2 text-left shadow-sm ${active === "f" ? "ring-2 ring-orange-400" : ""}`}
+                >
+                  <div className="text-xs font-extrabold text-gray-900 dark:text-white">
+                    F（脂質）
+                  </div>
+                  <div className="text-2xl leading-none font-extrabold text-gray-900 dark:text-white tabular-nums">
+                    {data.pctInt.f}%
+                  </div>
+                </button>
+              </div>
+
+              {/* タップ後の1行詳細（スマホはここに） */}
+              {activeDetail && (
+                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 tabular-nums text-center">
+                  {LABEL[activeDetail.key].short}（{LABEL[activeDetail.key].long}）：
+                  {fmt1(activeDetail.g)}g / {Math.round(activeDetail.k)}kcal（{activeDetail.pct}%）
+                </div>
+              )}
+            </div>
           </div>
-
-          {/* label pills (線なし / 多少かぶってOK) */}
-          <LabelPill
-            className="absolute left-2 top-4"
-            title="C（炭水化物）"
-            pct={data.nowPct.c}
-          />
-          <LabelPill
-            className="absolute right-2 top-7"
-            title="P（たんぱく質）"
-            pct={data.nowPct.p}
-          />
-          <LabelPill
-            className="absolute left-2 bottom-6"
-            title="F（脂質）"
-            pct={data.nowPct.f}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LabelPill({
-  title,
-  pct,
-  className = "",
-}: {
-  title: string;
-  pct: number;
-  className?: string;
-}) {
-  return (
-    <div
-      className={[
-        "rounded-xl bg-white/95 dark:bg-gray-900/90",
-        "ring-1 ring-gray-200 dark:ring-gray-700",
-        "px-3 py-2",
-        "shadow-sm",
-        "max-w-[160px]",
-        className,
-      ].join(" ")}
-    >
-      <div className="text-[12px] font-extrabold text-gray-900 dark:text-white leading-tight">
-        {title}
-      </div>
-      <div className="text-[18px] font-extrabold tabular-nums text-gray-900 dark:text-white leading-none mt-0.5">
-        {pct}%
-      </div>
+        </>
+      )}
     </div>
   );
 }
