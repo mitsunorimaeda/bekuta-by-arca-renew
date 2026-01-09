@@ -1237,6 +1237,33 @@ export function StaffView({
                     </div>
                   )}
 
+                  {/* ✅ 週サイクル（1週間をサイクルとして見る） */}
+                  <div className="mt-6 space-y-4">
+                    <ChartErrorBoundary name="WeeklyGrowthCycleView">
+                      {/** 型/props違いで落ちないように any で逃がす */}
+                      {React.createElement(WeeklyGrowthCycleView as any, {
+                        teamId: selectedTeam?.id,
+                        startDate: weekRange.start,
+                        endDate: weekRange.end,
+                      })}
+                    </ChartErrorBoundary>
+
+                    <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
+                      {React.createElement(GrowthUnderstandingQuadrantSummary as any, {
+                        teamId: selectedTeam?.id,
+                        startDate: weekRange.start,
+                        endDate: weekRange.end,
+                      })}
+                    </ChartErrorBoundary>
+
+                    <ChartErrorBoundary name="GrowthUnderstandingMatrix">
+                      {React.createElement(GrowthUnderstandingMatrix as any, {
+                        teamId: selectedTeam?.id,
+                        date: todayKey,
+                      })}
+                    </ChartErrorBoundary>
+                  </div>
+
                   {activeTab === 'reports' && (
                     <Suspense
                       fallback={
