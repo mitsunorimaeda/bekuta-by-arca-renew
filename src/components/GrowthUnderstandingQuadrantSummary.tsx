@@ -2,9 +2,9 @@
 import React, { useMemo } from 'react';
 
 type DataPoint = {
-  growth_vector?: number | null;
-  intent_signal_score?: number | null;
-  load?: number | null; // sRPE
+  arrow_score?: number | null;     // ← growth_vector の代わり
+  signal_score?: number | null;    // ← intent_signal_score の代わり
+  load?: number | null;            // sRPE
 };
 
 type Props = {
@@ -34,8 +34,8 @@ export function GrowthUnderstandingQuadrantSummary({
     let totalLoad = 0;
 
     for (const p of safe) {
-      const g = typeof p.growth_vector === 'number' ? p.growth_vector : null;
-      const u = typeof p.intent_signal_score === 'number' ? p.intent_signal_score : null;
+      const g = typeof p.arrow_score === 'number' ? p.arrow_score : null;
+      const u = typeof p.signal_score === 'number' ? p.signal_score : null;
       const l = typeof p.load === 'number' ? p.load : 0;
 
       totalLoad += l;
@@ -80,8 +80,12 @@ export function GrowthUnderstandingQuadrantSummary({
         </div>
 
         <div className="text-right text-xs text-gray-600">
-          <div>有効点：<b className="text-gray-900">{summary.cnt}</b></div>
-          <div>週load：<b className="text-gray-900">{summary.totalLoad}</b></div>
+          <div>
+            有効点：<b className="text-gray-900">{summary.cnt}</b>
+          </div>
+          <div>
+            週load：<b className="text-gray-900">{summary.totalLoad}</b>
+          </div>
         </div>
       </div>
 

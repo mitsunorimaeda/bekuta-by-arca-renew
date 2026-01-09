@@ -362,8 +362,8 @@ const {
 
 // ✅ 今週の4象限サマリー用：weekRange + teamAthleteIds から training_records を取って DataPoint[] 化
 type QuadrantDataPoint = {
-  growth_vector?: number | null;
-  intent_signal_score?: number | null;
+  arrow_score?: number | null;
+  signal_score?: number | null;
   load?: number | null; // sRPE
 };
 
@@ -398,7 +398,7 @@ useEffect(() => {
       for (const ids of chunk(teamAthleteIds, 50)) {
         const { data, error } = await supabase
           .from('training_records')
-          .select('user_id,date,rpe,duration_min,load,growth_vector,intent_signal,signal_score')
+          .select('user_id,date,rpe,duration_min,load,arrow_score,signal,signal_score')
           .in('user_id', ids)
           .gte('date', weekRange.start)
           .lte('date', weekRange.end);
@@ -411,22 +411,26 @@ useEffect(() => {
       if (reqSeq !== weeklyReqSeqRef.current) return;
 
       const pts: QuadrantDataPoint[] = rows.map((r) => {
-        const g = typeof r.growth_vector === 'number' ? r.growth_vector : null;
-        const uRaw =
-          typeof r.intent_signal === 'number'
-            ? r.intent_signal
-            : typeof r.signal_score === 'number'
-            ? r.signal_score
+        const arrow =
+          typeof r.arrow_score === 'number' && Number.isFinite(r.arrow_score)
+            ? r.arrow_score
             : null;
-
+      
+        const signal =
+          typeof r.signal_score === 'number' && Number.isFinite(r.signal_score)
+            ? r.signal_score
+            : typeof r.intent_signal === 'number' && Number.isFinite(r.intent_signal)
+            ? r.intent_signal
+            : null;
+      
         const load =
           typeof r.load === 'number' && Number.isFinite(r.load)
             ? r.load
             : (Number(r.rpe) || 0) * (Number(r.duration_min) || 0);
-
+      
         return {
-          growth_vector: g,
-          intent_signal_score: uRaw,
+          arrow_score: arrow,     // ✅ growth_vector → arrow_score
+          signal_score: signal,   // ✅ intent_signal_score → signal_score
           load: Number.isFinite(load) ? load : 0,
         };
       });
