@@ -318,6 +318,22 @@ const safeAthletes = Array.isArray(athletes) ? athletes : [];
 const safeAlerts = Array.isArray(alerts) ? alerts : [];
 const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
 
+// ✅ 追加（ここから）
+const teamAlerts = useMemo(() => {
+  const tid = selectedTeam?.id;
+  if (!tid) return safeAlerts;
+
+  return safeAlerts.filter((al: any) => {
+    if (al?.team_id == null) return true;
+    return al.team_id === tid;
+  });
+}, [safeAlerts, selectedTeam?.id]);
+
+const highPriorityTeamAlerts = useMemo(() => {
+  return teamAlerts.filter((al: any) => al?.priority === 'high');
+}, [teamAlerts]);
+// ✅ 追加（ここまで）
+
 // ✅ ここ：ids は毎回 new Array にならないよう useMemo 固定（無限fetch対策）
 const teamAthleteIds = useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
 
