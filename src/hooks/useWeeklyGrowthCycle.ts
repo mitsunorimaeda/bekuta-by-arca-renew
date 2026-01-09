@@ -1,5 +1,4 @@
-// src/hooks/useWeeklyGrowthCycle.ts
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 type TrainingRow = {
@@ -16,11 +15,11 @@ type TrainingRow = {
 
 export type DailyCyclePoint = {
   date: string;
-  x: number; // understanding avg (0-100)
-  y: number; // growth avg (0-100)
-  load: number; // load avg (sRPE)
-  rpe: number; // rpe avg
-  n: number; // record count
+  x: number;
+  y: number;
+  load: number;
+  rpe: number;
+  n: number;
 };
 
 const chunk = <T,>(arr: T[], size: number) => {
@@ -32,11 +31,10 @@ const chunk = <T,>(arr: T[], size: number) => {
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 const avg = (sum: number, n: number) => (n > 0 ? sum / n : 0);
 
-// JST前提で「指定日を含む週（月〜日）」の範囲を返す
 function getWeekRangeFromDateKey(dateKey: string) {
   const d = new Date(`${dateKey}T00:00:00+09:00`);
-  const day = d.getDay(); // 0 Sun ... 6 Sat
-  const diffToMon = (day + 6) % 7; // Mon=0
+  const day = d.getDay();
+  const diffToMon = (day + 6) % 7;
   const mon = new Date(d);
   mon.setDate(d.getDate() - diffToMon);
   const sun = new Date(mon);
@@ -53,45 +51,28 @@ function getWeekRangeFromDateKey(dateKey: string) {
   return { start: toKey(mon), end: toKey(sun) };
 }
 
-export function useWeeklyGrowthCycle(params: {
-  baseDate: string; // date input
-  athleteIds: string[];
-}) {
+export function useWeeklyGrowthCycle(params: { baseDate: string; athleteIds: string[] }) {
   const { baseDate, athleteIds } = params;
 
   const [teamDaily, setTeamDaily] = useState<DailyCyclePoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ 週範囲は baseDate だけで決める
   const weekRange = useMemo(() => {
     if (!baseDate) return { start: '', end: '' };
     return getWeekRangeFromDateKey(baseDate);
   }, [baseDate]);
 
-  // ✅ ここが最重要：配列を依存に入れない（参照が毎回変わる）
+  // ✅ ここが重要：配列そのものではなく “キー文字列” を依存にする
   const athleteIdsKey = useMemo(() => {
-    if (!Array.isArray(athleteIds) || athleteIds.length === 0) return '';
-    return athleteIds.slice().sort().join(',');
+    const ids = Array.isArray(athleteIds) ? athleteIds : [];
+    return ids.slice().sort().join(',');
   }, [athleteIds]);
 
-  // ✅ 安定した配列（ソート済み）を作る
-  const sortedIds = useMemo(() => {
-    if (!athleteIdsKey) return [];
-    return athleteIdsKey.split(',').filter(Boolean);
-  }, [athleteIdsKey]);
-
-  // ✅ 古いリクエスト結果を捨てる
-  const reqSeqRef = useRef(0);
-
   useEffect(() => {
-    if (!weekRange.start || !weekRange.end) {
-      setTeamDaily([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    if (!athleteIdsKey || sortedIds.length === 0) {
+    const ids = athleteIdsKey ? athleteIdsKey.split(',').filter(Boolean) : [];
+
+    if (!weekRange.start || !weekRange.end || ids.length === 0) {
       setTeamDaily([]);
       setLoading(false);
       setError(null);
@@ -99,7 +80,6 @@ export function useWeeklyGrowthCycle(params: {
     }
 
     let cancelled = false;
-    const reqSeq = ++reqSeqRef.current;
 
     (async () => {
       try {
@@ -107,15 +87,13 @@ export function useWeeklyGrowthCycle(params: {
         setError(null);
 
         const all: TrainingRow[] = [];
-
-        // ✅ chunk 対象は sortedIds（安定）
-        for (const ids of chunk(sortedIds, 50)) {
+        for (const idChunk of chunk(ids, 50)) {
           const { data, error } = await supabase
             .from('training_records')
             .select(
               'user_id,date,rpe,duration_min,load,growth_vector,intent_signal,arrow_score,signal_score'
             )
-            .in('user_id', ids)
+            .in('user_id', idChunk)
             .gte('date', weekRange.start)
             .lte('date', weekRange.end);
 
@@ -124,9 +102,7 @@ export function useWeeklyGrowthCycle(params: {
         }
 
         if (cancelled) return;
-        if (reqSeq !== reqSeqRef.current) return; // ✅ 後発が走ってたら捨てる
 
-        // 日別に平均化
         const map = new Map<
           string,
           { sumX: number; sumY: number; sumLoad: number; sumRpe: number; n: number }
@@ -156,28 +132,23 @@ export function useWeeklyGrowthCycle(params: {
           map.set(key, cur);
         }
 
-        // 週の7日を埋める
         const days: string[] = [];
-        {
-          const start = new Date(`${weekRange.start}T00:00:00+09:00`);
-          for (let i = 0; i < 7; i++) {
-            const d = new Date(start);
-            d.setDate(start.getDate() + i);
-            const key = new Intl.DateTimeFormat('en-CA', {
-              timeZone: 'Asia/Tokyo',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-            }).format(d);
-            days.push(key);
-          }
+        const start = new Date(`${weekRange.start}T00:00:00+09:00`);
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const key = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Tokyo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(d);
+          days.push(key);
         }
 
         const teamDailyPoints: DailyCyclePoint[] = days.map((date) => {
           const v = map.get(date);
-          if (!v || v.n === 0) {
-            return { date, x: 50, y: 50, load: 0, rpe: 0, n: 0 };
-          }
+          if (!v || v.n === 0) return { date, x: 50, y: 50, load: 0, rpe: 0, n: 0 };
           return {
             date,
             x: Math.round(avg(v.sumX, v.n) * 10) / 10,
@@ -203,8 +174,7 @@ export function useWeeklyGrowthCycle(params: {
     return () => {
       cancelled = true;
     };
-    // ✅ 依存は「文字列キー」にする
-  }, [weekRange.start, weekRange.end, athleteIdsKey, sortedIds]);
+  }, [weekRange.start, weekRange.end, athleteIdsKey]);
 
   return { weekRange, teamDaily, loading, error };
 }

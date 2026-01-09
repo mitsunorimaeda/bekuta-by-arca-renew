@@ -310,17 +310,125 @@ export function StaffView({
   const teamACWRData = teamACWRHook.teamACWRData ?? teamACWRHook.data ?? [];
   const safeTeamACWRData = Array.isArray(teamACWRData) ? teamACWRData : [];
 
-  // =========================
-  // Derived: safe arrays
-  // =========================
-  const safeAthletes = Array.isArray(athletes) ? athletes : [];
-  const safeAlerts = Array.isArray(alerts) ? alerts : [];
-  const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
+// =========================
+// Derived: safe arrays
+// =========================
+const safeAthletes = Array.isArray(athletes) ? athletes : [];
+const safeAlerts = Array.isArray(alerts) ? alerts : [];
+const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
 
-  const teamAthleteIds = React.useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
-  const teamAlerts = safeAlerts.filter((al) => teamAthleteIds.includes(al.user_id));
-  const highPriorityTeamAlerts = teamAlerts.filter((al) => al.priority === 'high');
+// ✅ ここ：ids は毎回 new Array にならないよう useMemo 固定（無限fetch対策）
+const teamAthleteIds = useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
 
+// ✅ ここ：マトリクス用 athletes も useMemo 固定（無限fetch対策）
+const matrixAthletes = useMemo(
+  () =>
+    safeAthletes.map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      nickname: a.nickname,
+      email: a.email,
+    })),
+  [safeAthletes]
+);
+
+// ✅ 今日のマトリクス（hook → points/teamAvg を作る）
+const {
+  points: matrixPoints,
+  teamAvg: matrixTeamAvg,
+  loading: matrixLoading,
+  error: matrixError,
+} = useDailyGrowthMatrix({
+  date: todayKey,
+  athletes: matrixAthletes,
+});
+
+// ✅ 今週の4象限サマリー用：weekRange + teamAthleteIds から training_records を取って DataPoint[] 化
+type QuadrantDataPoint = {
+  growth_vector?: number | null;
+  intent_signal_score?: number | null;
+  load?: number | null; // sRPE
+};
+
+const [weeklyQuadrantData, setWeeklyQuadrantData] = useState<QuadrantDataPoint[]>([]);
+const [weeklyQuadrantLoading, setWeeklyQuadrantLoading] = useState(false);
+const [weeklyQuadrantError, setWeeklyQuadrantError] = useState<string | null>(null);
+const weeklyReqSeqRef = useRef(0);
+
+// deps を安定させる（配列そのまま依存に入れない）
+const teamAthleteIdsKey = useMemo(() => teamAthleteIds.slice().sort().join(','), [teamAthleteIds]);
+
+useEffect(() => {
+  // team-average タブ以外では取りに行かない（リクエスト削減）
+  if (activeTab !== 'team-average') return;
+
+  if (!selectedTeam?.id || !weekRange.start || !weekRange.end || teamAthleteIds.length === 0) {
+    setWeeklyQuadrantData([]);
+    setWeeklyQuadrantLoading(false);
+    setWeeklyQuadrantError(null);
+    return;
+  }
+
+  const reqSeq = ++weeklyReqSeqRef.current;
+  let cancelled = false;
+
+  (async () => {
+    try {
+      setWeeklyQuadrantLoading(true);
+      setWeeklyQuadrantError(null);
+
+      const rows: any[] = [];
+      for (const ids of chunk(teamAthleteIds, 50)) {
+        const { data, error } = await supabase
+          .from('training_records')
+          .select('user_id,date,rpe,duration_min,load,growth_vector,intent_signal,signal_score')
+          .in('user_id', ids)
+          .gte('date', weekRange.start)
+          .lte('date', weekRange.end);
+
+        if (error) throw error;
+        rows.push(...(data ?? []));
+      }
+
+      if (cancelled) return;
+      if (reqSeq !== weeklyReqSeqRef.current) return;
+
+      const pts: QuadrantDataPoint[] = rows.map((r) => {
+        const g = typeof r.growth_vector === 'number' ? r.growth_vector : null;
+        const uRaw =
+          typeof r.intent_signal === 'number'
+            ? r.intent_signal
+            : typeof r.signal_score === 'number'
+            ? r.signal_score
+            : null;
+
+        const load =
+          typeof r.load === 'number' && Number.isFinite(r.load)
+            ? r.load
+            : (Number(r.rpe) || 0) * (Number(r.duration_min) || 0);
+
+        return {
+          growth_vector: g,
+          intent_signal_score: uRaw,
+          load: Number.isFinite(load) ? load : 0,
+        };
+      });
+
+      setWeeklyQuadrantData(pts);
+    } catch (e: any) {
+      console.error('[weeklyQuadrant] error', e);
+      setWeeklyQuadrantError(e?.message ?? '週サマリー取得に失敗しました');
+      setWeeklyQuadrantData([]);
+    } finally {
+      if (!cancelled) setWeeklyQuadrantLoading(false);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+  // ✅ idsKey を依存に入れて、ids配列の参照差分で無限に走らないようにする
+}, [activeTab, selectedTeam?.id, weekRange.start, weekRange.end, teamAthleteIdsKey]);
   // =========================
   // ✅ 週サイクル（チーム全体・日別平均7点）
   // =========================
@@ -1114,6 +1222,7 @@ export function StaffView({
                         </ChartErrorBoundary>
                       )}
 
+                      {/* ✅ 週サイクル表示（7日分） */}
                       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
@@ -1142,36 +1251,62 @@ export function StaffView({
                           ) : cycleError ? (
                             <div className="text-sm text-red-600">{cycleError}</div>
                           ) : (
-                            <WeeklyGrowthCycleView
-                              teamDaily={teamDaily}
-                              weekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
-                            />
+                            <ChartErrorBoundary name="WeeklyGrowthCycleView">
+                              <WeeklyGrowthCycleView
+                                teamDaily={teamDaily}
+                                weekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
+                              />
+                            </ChartErrorBoundary>
                           )}
                         </div>
                       </div>
 
-                      {/* ✅ ここから Growth 系（team-average タブの中だけで描画） */}
-                      <Suspense
-                        fallback={
-                          <div className="flex items-center justify-center py-12">
+                      {/* ✅ 今週の4象限サマリー */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+                        {weeklyQuadrantLoading ? (
+                          <div className="flex items-center justify-center py-10">
                             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
                           </div>
-                        }
-                      >
-                        <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
-                          <GrowthUnderstandingQuadrantSummaryLazy
-                            teamId={selectedTeam?.id}
-                            startDate={weekRange.start}
-                            endDate={weekRange.end}
-                          />
-                        </ChartErrorBoundary>
+                        ) : weeklyQuadrantError ? (
+                          <div className="text-sm text-red-600">{weeklyQuadrantError}</div>
+                        ) : (
+                          <Suspense
+                            fallback={
+                              <div className="flex items-center justify-center py-10">
+                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                              </div>
+                            }
+                          >
+                            <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
+                              <GrowthUnderstandingQuadrantSummaryLazy data={weeklyQuadrantData} />
+                            </ChartErrorBoundary>
+                          </Suspense>
+                        )}
+                      </div>
 
-                        <div className="mt-4" />
-
-                        <ChartErrorBoundary name="GrowthUnderstandingMatrix">
-                          <GrowthUnderstandingMatrix date={todayKey} athletes={safeAthletes} />
-                        </ChartErrorBoundary>
-                      </Suspense>
+                      {/* ✅ 今日のマトリクス */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+                        {matrixLoading ? (
+                          <div className="flex items-center justify-center py-10">
+                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                          </div>
+                        ) : matrixError ? (
+                          <div className="text-sm text-red-600">{matrixError}</div>
+                        ) : (
+                          <Suspense
+                            fallback={
+                              <div className="flex items-center justify-center py-10">
+                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                              </div>
+                            }
+                          >
+                            <ChartErrorBoundary name="GrowthUnderstandingMatrix">
+                              {/* ✅ Lazy を使う（ここ重要：GrowthUnderstandingMatrix is not defined を潰す） */}
+                              <GrowthUnderstandingMatrixLazy points={matrixPoints} teamAvg={matrixTeamAvg} />
+                            </ChartErrorBoundary>
+                          </Suspense>
+                        )}
+                      </div>
                     </div>
                   )}
 
