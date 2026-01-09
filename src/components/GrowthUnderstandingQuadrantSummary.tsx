@@ -1,159 +1,119 @@
+// src/components/GrowthUnderstandingQuadrantSummary.tsx
 import React, { useMemo } from 'react';
-import type { MatrixPoint } from '../hooks/useDailyGrowthMatrix';
-import { AlertTriangle, TrendingUp, Users, Zap } from 'lucide-react';
 
-type QuadrantKey = 'HH' | 'HL' | 'LH' | 'LL';
-
-const quadLabel: Record<QuadrantKey, string> = {
-  HH: '右上：理解↑×成長↑',
-  HL: '右下：理解↑×成長↓',
-  LH: '左上：理解↓×成長↑',
-  LL: '左下：理解↓×成長↓',
+type DataPoint = {
+  growth_vector?: number | null;
+  intent_signal_score?: number | null;
+  load?: number | null; // sRPE
 };
 
-function quadrantOf(p: MatrixPoint, threshold = 50): QuadrantKey {
-  const highX = p.x >= threshold; // understanding
-  const highY = p.y >= threshold; // growth
-  if (highX && highY) return 'HH';
-  if (highX && !highY) return 'HL';
-  if (!highX && highY) return 'LH';
-  return 'LL';
-}
+type Props = {
+  data?: DataPoint[] | null;
+  title?: string;
+  // 50ラインで4象限にする前提（必要なら変えられる）
+  threshold?: number;
+};
 
-const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
-
-export function GrowthUnderstandingQuadrantSummary(props: {
-  points: MatrixPoint[];
-  threshold?: number; // default 50
-  topN?: number; // default 5
-}) {
-  const { points, threshold = 50, topN = 5 } = props;
+export function GrowthUnderstandingQuadrantSummary({
+  data,
+  title = '今週のサマリー（4象限）',
+  threshold = 50,
+}: Props) {
+  const safe = Array.isArray(data) ? data : [];
 
   const summary = useMemo(() => {
-    const buckets: Record<QuadrantKey, MatrixPoint[]> = { HH: [], HL: [], LH: [], LL: [] };
+    let q1 = 0; // 高成長×高理解
+    let q2 = 0; // 低成長×高理解
+    let q3 = 0; // 低成長×低理解
+    let q4 = 0; // 高成長×低理解
 
-    for (const p of points) {
-      buckets[quadrantOf(p, threshold)].push(p);
+    let sumG = 0;
+    let sumU = 0;
+    let cnt = 0;
+
+    let totalLoad = 0;
+
+    for (const p of safe) {
+      const g = typeof p.growth_vector === 'number' ? p.growth_vector : null;
+      const u = typeof p.intent_signal_score === 'number' ? p.intent_signal_score : null;
+      const l = typeof p.load === 'number' ? p.load : 0;
+
+      totalLoad += l;
+
+      if (g == null || u == null) continue;
+      cnt += 1;
+      sumG += g;
+      sumU += u;
+
+      const highG = g >= threshold;
+      const highU = u >= threshold;
+
+      if (highG && highU) q1 += 1;
+      else if (!highG && highU) q2 += 1;
+      else if (!highG && !highU) q3 += 1;
+      else q4 += 1;
     }
 
-    const stats = (key: QuadrantKey) => {
-      const arr = buckets[key];
-      const loads = arr.map((p) => p.load).filter((n) => typeof n === 'number' && isFinite(n));
-      return {
-        count: arr.length,
-        avgLoad: Math.round(avg(loads)),
-        avgRPE: Math.round(avg(arr.map((p) => p.rpe).filter((n) => isFinite(n)) as number[] ) * 10) / 10,
-      };
+    const avgG = cnt > 0 ? Math.round((sumG / cnt) * 10) / 10 : null;
+    const avgU = cnt > 0 ? Math.round((sumU / cnt) * 10) / 10 : null;
+
+    return {
+      q1,
+      q2,
+      q3,
+      q4,
+      avgG,
+      avgU,
+      cnt,
+      totalLoad: Math.round(totalLoad),
     };
-
-    const HH = stats('HH');
-    const HL = stats('HL');
-    const LH = stats('LH');
-    const LL = stats('LL');
-
-    // 要注意：左下(LL)の中で load が高い順（＝消耗疑い）
-    const risky = [...buckets.LL]
-      .sort((a, b) => (b.load ?? 0) - (a.load ?? 0))
-      .slice(0, topN);
-
-    // 良い効率：右上(HH)で load 低め順（＝効率良い成功例）
-    const efficient = [...buckets.HH]
-      .sort((a, b) => (a.load ?? 0) - (b.load ?? 0))
-      .slice(0, topN);
-
-    return { buckets, HH, HL, LH, LL, risky, efficient };
-  }, [points, threshold, topN]);
+  }, [safe, threshold]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div className="text-sm sm:text-base font-semibold text-gray-900">象限サマリー</div>
-          <div className="text-xs text-gray-500">
-            区切り：{threshold} / 左下で負荷が大きいほど「消耗疑い」
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm sm:text-base font-semibold text-gray-900">{title}</div>
+          <div className="mt-1 text-xs text-gray-600">
+            ※ {threshold}ラインで4象限 / 点の大きさ=load（sRPE）
           </div>
         </div>
-        <div className="text-xs text-gray-500 flex items-center gap-2">
-          <Users className="w-4 h-4" />
-          {points.length} 件
+
+        <div className="text-right text-xs text-gray-600">
+          <div>有効点：<b className="text-gray-900">{summary.cnt}</b></div>
+          <div>週load：<b className="text-gray-900">{summary.totalLoad}</b></div>
         </div>
       </div>
 
-      {/* 4象限の人数＋平均負荷 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {(['HH', 'LH', 'HL', 'LL'] as QuadrantKey[]).map((k) => {
-          const s = (summary as any)[k] as { count: number; avgLoad: number; avgRPE: number };
-          const tone =
-            k === 'HH'
-              ? 'border-emerald-200 bg-emerald-50'
-              : k === 'LL'
-              ? 'border-red-200 bg-red-50'
-              : 'border-gray-200 bg-gray-50';
-
-          return (
-            <div key={k} className={`rounded-lg border p-3 ${tone}`}>
-              <div className="text-[11px] text-gray-700 mb-1">{quadLabel[k]}</div>
-              <div className="text-lg font-bold text-gray-900">{s.count}人</div>
-              <div className="text-xs text-gray-700 mt-1 flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5" />
-                平均負荷 {s.avgLoad}
-              </div>
-              <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                平均RPE {s.avgRPE}
-              </div>
-            </div>
-          );
-        })}
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-lg border border-gray-200 p-3">
+          <div className="text-xs text-gray-600">高成長 × 高理解</div>
+          <div className="text-lg font-bold text-gray-900">{summary.q1}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 p-3">
+          <div className="text-xs text-gray-600">低成長 × 高理解</div>
+          <div className="text-lg font-bold text-gray-900">{summary.q2}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 p-3">
+          <div className="text-xs text-gray-600">低成長 × 低理解</div>
+          <div className="text-lg font-bold text-gray-900">{summary.q3}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 p-3">
+          <div className="text-xs text-gray-600">高成長 × 低理解</div>
+          <div className="text-lg font-bold text-gray-900">{summary.q4}</div>
+        </div>
       </div>
 
-      {/* 要注意トップ */}
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-          <div className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-            要注意（左下×負荷大）
-          </div>
-
-          {summary.risky.length === 0 ? (
-            <div className="text-xs text-gray-600">該当なし（良い傾向）</div>
-          ) : (
-            <ul className="space-y-1.5">
-              {summary.risky.map((p) => (
-                <li key={p.user_id} className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-gray-900 truncate mr-2">{p.name}</span>
-                  <span className="text-xs text-gray-700 whitespace-nowrap">
-                    load {Math.round(p.load)} / RPE {p.rpe} / {p.duration_min}分
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* 良い例トップ（右上×負荷小） */}
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-          <div className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-emerald-700" />
-            良い例（右上×負荷小）
-          </div>
-
-          {summary.efficient.length === 0 ? (
-            <div className="text-xs text-gray-600">該当なし</div>
-          ) : (
-            <ul className="space-y-1.5">
-              {summary.efficient.map((p) => (
-                <li key={p.user_id} className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-gray-900 truncate mr-2">{p.name}</span>
-                  <span className="text-xs text-gray-700 whitespace-nowrap">
-                    load {Math.round(p.load)} / RPE {p.rpe} / {p.duration_min}分
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="mt-3 text-xs sm:text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
+        <span>
+          平均 成長度：<b>{summary.avgG ?? '-'}</b>
+        </span>
+        <span>
+          平均 理解度：<b>{summary.avgU ?? '-'}</b>
+        </span>
       </div>
     </div>
   );
 }
+
+export default GrowthUnderstandingQuadrantSummary;

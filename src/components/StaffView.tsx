@@ -19,10 +19,6 @@ import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/risk
 import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
 
-import { GrowthUnderstandingQuadrantSummary } from './GrowthUnderstandingQuadrantSummary';
-import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
-import { GrowthUnderstandingMatrix } from './GrowthUnderstandingMatrix';
-
 import {
   Users,
   BarChart3,
@@ -30,37 +26,70 @@ import {
   AlertTriangle,
   Activity,
   HelpCircle,
-  UserCog,
-  UsersRound,
-  MessageSquare,
   FileText,
-  PieChart,
   Lock,
 } from 'lucide-react';
 
-// import { TeamInjuryRiskHeatmap } from './TeamInjuryRiskHeatmap';
-// import { TeamPerformanceComparison } from './TeamPerformanceComparison';
-// import { TeamTrendAnalysis } from './TeamTrendAnalysis';
-
+// -------------------------
+// Lazy components
+// -------------------------
 const TeamExportPanel = lazy(() =>
-  import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
+  import('./TeamExportPanel').then((m) => ({ default: (m as any).TeamExportPanel ?? m.default }))
 );
 const ReportView = lazy(() =>
-  import('./ReportView').then((m) => ({ default: m.ReportView }))
+  import('./ReportView').then((m) => ({ default: (m as any).ReportView ?? m.default }))
 );
-// const TeamAccessRequestManagement = lazy(() =>
-//   import('./TeamAccessRequestManagement').then((m) => ({
-//     default: m.TeamAccessRequestManagement,
-//   }))
-// );
-// const AthleteTransferManagement = lazy(() =>
-//   import('./AthleteTransferManagement').then((m) => ({
-//     default: m.AthleteTransferManagement,
-//   }))
-// );
-// const MessagingPanel = lazy(() =>
-//   import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
-// );
+
+// -------------------------
+// ✅ Optional (存在すれば読み込む) Growth components
+//   - これにより「ファイルが無い」状態でも build が通る
+// -------------------------
+type AnyComp = React.ComponentType<any>;
+
+// Vite の import.meta.glob は build 時に解決されるので、未存在でも OK（= map に出てこない）
+const growthSummaryModules = import.meta.glob<() => Promise<any>>(
+  [
+    './GrowthUnderstandingQuadrantSummary.{tsx,ts,jsx,js}',
+    './growth/GrowthUnderstandingQuadrantSummary.{tsx,ts,jsx,js}',
+    './growth/*GrowthUnderstandingQuadrantSummary.{tsx,ts,jsx,js}',
+  ],
+  { import: 'default' }
+) as any;
+
+const growthMatrixModules = import.meta.glob<() => Promise<any>>(
+  [
+    './GrowthUnderstandingMatrix.{tsx,ts,jsx,js}',
+    './growth/GrowthUnderstandingMatrix.{tsx,ts,jsx,js}',
+    './growth/*GrowthUnderstandingMatrix.{tsx,ts,jsx,js}',
+  ],
+  { import: 'default' }
+) as any;
+
+function makeOptionalLazy(
+  modules: Record<string, () => Promise<any>>,
+  namedExportFallback?: string
+): { Component: React.LazyExoticComponent<AnyComp> | null; available: boolean } {
+  const keys = Object.keys(modules || {});
+  if (keys.length === 0) return { Component: null, available: false };
+
+  const loader = modules[keys[0]];
+  const Component = lazy(async () => {
+    // modules は { import: 'default' } 指定だけど、環境により default 以外もあり得るので保険
+    const mod = await loader();
+    const resolved =
+      mod?.default ??
+      (namedExportFallback ? mod?.[namedExportFallback] : null) ??
+      mod?.GrowthUnderstandingQuadrantSummary ??
+      mod?.GrowthUnderstandingMatrix;
+
+    return { default: resolved as AnyComp };
+  });
+
+  return { Component, available: true };
+}
+
+const OptionalGrowthSummary = makeOptionalLazy(growthSummaryModules, 'GrowthUnderstandingQuadrantSummary');
+const OptionalGrowthMatrix = makeOptionalLazy(growthMatrixModules, 'GrowthUnderstandingMatrix');
 
 interface StaffViewProps {
   user: User;
@@ -160,8 +189,7 @@ const calcRisk = (acwr: number): RiskLevel => {
 type SummaryTone = 'danger' | 'warn' | 'ok' | 'unknown';
 
 const getSummaryTone = (avg: number | null, valid: number, roster: number): SummaryTone => {
-  // データ不足は Unknown
-  const minValid = Math.min(5, Math.max(1, Math.floor(roster * 0.2))); // 少人数でも破綻しない
+  const minValid = Math.min(5, Math.max(1, Math.floor(roster * 0.2)));
   if (avg == null || valid < minValid) return 'unknown';
   if (avg >= 1.5) return 'danger';
   if (avg >= 1.3) return 'warn';
@@ -211,7 +239,6 @@ type AthleteACWRInfo = {
   daysOfData?: number | null;
 };
 
-// ✅ DB（athlete_acwr_daily）から取る形（列が無ければnullでもOK）
 type AthleteACWRDailyRow = {
   user_id: string;
   date: string; // YYYY-MM-DD
@@ -246,38 +273,29 @@ export function StaffView({
 
   const [loading, setLoading] = useState(true);
 
-  // ✅ AthleteList に渡すのは「数値Map」
   const [athleteACWRMap, setAthleteACWRMap] = useState<Record<string, AthleteACWRInfo>>({});
   const [acwrLoading, setAcwrLoading] = useState(false);
 
-  // 週次サマリー（RPC）
   const [weekRange, setWeekRange] = useState(() => getThisWeekRange());
   const [weekCards, setWeekCards] = useState<CoachWeekAthleteCard[]>([]);
   const [weekLoading, setWeekLoading] = useState(false);
 
-  // ✅ 原因タグ（週次）
   const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
 
-  // ✅ 週サイクル（マトリクス7点）
   const [cycleBaseDate, setCycleBaseDate] = useState<string>(() => getJSTDateKey(new Date()));
 
-  // 選手詳細
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
-
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'reports'>('athletes');
 
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
 
-  // ✅ team-average 追加表示のON/OFF
   const [showAvgRPE, setShowAvgRPE] = useState(true);
   const [showAvgLoad, setShowAvgLoad] = useState(false);
 
-  // ===== ACWR request guard（チーム切替対策）=====
+  // ===== ACWR request guard =====
   const selectedTeamIdRef = useRef<string | null>(null);
   const acwrRequestSeqRef = useRef(0);
-
-  // ✅ athletes の最新ID集合を常に保持（async内で最新を参照するため）
   const athletesIdsKeyRef = useRef<string>('');
 
   useEffect(() => {
@@ -288,7 +306,6 @@ export function StaffView({
     athletesIdsKeyRef.current = athletes.map((a) => a.id).slice().sort().join(',');
   }, [athletes]);
 
-  // 🔔 練習記録なしカード用（今日だけ抑制） ※JST統一
   const todayKey = getJSTDateKey(new Date());
   const [noDataDismissedToday, setNoDataDismissedToday] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -315,21 +332,17 @@ export function StaffView({
 
   const orgHook = useOrganizations(user.id);
   const organizations = Array.isArray(orgHook?.organizations) ? orgHook.organizations : [];
-
-  // ✅ ここが白画面の最大原因になりがち：一瞬 undefined でも絶対落ちないようにする
   const safeOrganizations = Array.isArray(organizations) ? organizations : [];
 
   const currentOrganizationId =
     selectedTeam?.organization_id || (safeOrganizations.length > 0 ? safeOrganizations[0].id : '');
 
   useEffect(() => {
-    if (shouldShowTutorial() && !loading) {
-      startTutorial();
-    }
+    if (shouldShowTutorial() && !loading) startTutorial();
   }, [shouldShowTutorial, startTutorial, loading]);
 
   // =========================
-  // Team ACWR (chart用は既存hookを使う)
+  // Team ACWR (chart用)
   // =========================
   const teamACWRHook = useTeamACWR(selectedTeam?.id || null) as any;
   const teamACWRLoading = !!teamACWRHook.loading;
@@ -350,15 +363,11 @@ export function StaffView({
   // =========================
   // ✅ 週サイクル（チーム全体・日別平均7点）
   // =========================
-  const {
-    weekRange: cycleWeekRange,
-    teamDaily,
-    loading: cycleLoading,
-    error: cycleError,
-  } = useWeeklyGrowthCycle({
-    baseDate: cycleBaseDate,
-    athleteIds: teamAthleteIds,
-  });
+  const { weekRange: cycleWeekRange, teamDaily, loading: cycleLoading, error: cycleError } =
+    useWeeklyGrowthCycle({
+      baseDate: cycleBaseDate,
+      athleteIds: teamAthleteIds,
+    });
 
   // =========================
   // Effects
@@ -371,7 +380,6 @@ export function StaffView({
   useEffect(() => {
     if (!selectedTeam?.id) return;
 
-    // 🔑 チーム切替時にリセット
     setAthletes([]);
     setWeekCards([]);
     setTeamCauseTags([]);
@@ -383,7 +391,6 @@ export function StaffView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTeam?.id, weekRange.start, weekRange.end]);
 
-  // 今日が変わったら localStorage を更新
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const key = `noDataDismissed-${user.id}-${todayKey}`;
@@ -420,11 +427,8 @@ export function StaffView({
 
       setTeams(teamsData || []);
 
-      if (teamsData && teamsData.length > 0) {
-        setSelectedTeam(teamsData[0]);
-      } else {
-        setSelectedTeam(null);
-      }
+      if (teamsData && teamsData.length > 0) setSelectedTeam(teamsData[0]);
+      else setSelectedTeam(null);
     } catch (error) {
       console.error('Error fetching staff teams:', error);
       setTeams([]);
@@ -448,13 +452,11 @@ export function StaffView({
 
       if (error) throw error;
 
-      // ✅ チーム切替中の古いレスポンスは捨てる
       if (selectedTeamIdRef.current !== currentTeamId) return;
 
       const rows = (data || []) as StaffAthleteWithActivity[];
       setAthletes(rows);
 
-      // ✅ ここでids作って「1回だけ」ACWR取得
       const ids = rows.map((r) => r.id);
       fetchAthleteACWRFromDaily(teamId, ids);
     } catch (e) {
@@ -465,7 +467,6 @@ export function StaffView({
     }
   };
 
-  // ✅ 週次：cards + cause_tags を同時取得
   const fetchWeekSummary = async (teamId: string, startDate: string, endDate: string) => {
     try {
       setWeekLoading(true);
@@ -498,7 +499,7 @@ export function StaffView({
   };
 
   // =========================
-  // ✅ ACWR（DB: athlete_acwr_daily）から「直近90日」取得し、各選手の最新のみ採用
+  // ✅ ACWR（athlete_acwr_daily）から「直近90日」→ 最新のみ
   // =========================
   const fetchAthleteACWRFromDaily = async (teamId: string, athleteIds: string[]) => {
     if (!athleteIds || athleteIds.length === 0) {
@@ -538,17 +539,14 @@ export function StaffView({
         allRows.push(...((data || []) as AthleteACWRDailyRow[]));
       }
 
-      // ✅ チーム切替 or 新しいリクエストが走ってたら捨てる
       if (selectedTeamIdRef.current !== teamId) return;
       if (reqSeq !== acwrRequestSeqRef.current) return;
 
-      // ✅ athletes集合が変わってたら捨てる（2人→57人バグ対策）
       const currentIdsKey = athletesIdsKeyRef.current;
       if (currentIdsKey !== reqIdsKey) return;
 
       const newMap: Record<string, AthleteACWRInfo> = {};
 
-      // すでに date desc なので、先に入ったものが「最新」
       for (const r of allRows) {
         if (newMap[r.user_id]) continue;
         const acwr = typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
@@ -556,15 +554,12 @@ export function StaffView({
         newMap[r.user_id] = {
           currentACWR: acwr != null ? round2(acwr) : null,
           riskLevel: acwr != null ? calcRisk(acwr) : undefined,
-          daysOfData: 28, // ここは表示用（必要ならviewに合わせて差し替え）
+          daysOfData: 28,
         };
       }
 
-      // 取れなかった選手もキーだけは作る（AthleteListでundefined参照しない）
       for (const id of athleteIds) {
-        if (!newMap[id]) {
-          newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null };
-        }
+        if (!newMap[id]) newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null };
       }
 
       setAthleteACWRMap(newMap);
@@ -577,17 +572,11 @@ export function StaffView({
   };
 
   // =========================
-  // Alert handlers（必要なら後で実装）
+  // Alert handlers（仮）
   // =========================
-  const markAsRead = async (alertId: string) => {
-    console.log('Mark as read:', alertId);
-  };
-  const dismissAlert = async (alertId: string) => {
-    console.log('Dismiss alert:', alertId);
-  };
-  const markAllAsRead = async () => {
-    console.log('Mark all as read');
-  };
+  const markAsRead = async (alertId: string) => console.log('Mark as read:', alertId);
+  const dismissAlert = async (alertId: string) => console.log('Dismiss alert:', alertId);
+  const markAllAsRead = async () => console.log('Mark all as read');
 
   // =========================
   // Derived UI values
@@ -620,36 +609,73 @@ export function StaffView({
     roster
   );
 
-  // 🧠 フォーカス一覧 → 選手詳細を開く
-  const handleOpenAthleteDetailFromFocus = (it: { user_id: string }) => {
-    const target = safeAthletes.find((a) => a.id === it.user_id);
+  const safeWeekCardsById = useMemo(() => {
+    const map: Record<string, CoachWeekAthleteCard> = {};
+    for (const c of safeWeekCards) map[c.athlete_user_id] = c;
+    return map;
+  }, [safeWeekCards]);
 
-    if (!target) {
-      window.alert('選手情報が見つかりませんでした');
-      return;
+  const noDataMap = useMemo(() => {
+    const map: Record<string, { daysSinceLast: number }> = {};
+    for (const x of noDataAthletes) map[x.athlete.id] = { daysSinceLast: x.daysSinceLast };
+    return map;
+  }, [noDataAthletes]);
+
+  const athleteRiskMap = useMemo(() => {
+    const map: Record<string, AthleteRisk> = {};
+    for (const a of safeAthletes) {
+      map[a.id] = calcRiskForAthlete({
+        id: a.id,
+        name: a.name || a.email || 'unknown',
+        acwrInfo: athleteACWRMap?.[a.id] ?? null,
+        weekCard: safeWeekCardsById?.[a.id] ?? null,
+        noData: noDataMap?.[a.id] ?? null,
+      });
     }
+    return map;
+  }, [safeAthletes, athleteACWRMap, safeWeekCardsById, noDataMap]);
 
-    const card = safeWeekCards.find((c) => c.athlete_user_id === target.id);
-    if (card && !card.is_sharing_active) {
-      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
-      return;
+  const sortedAthletes = useMemo(() => {
+    return sortAthletesByRisk({
+      athletes: safeAthletes,
+      riskMap: athleteRiskMap,
+      weekCardMap: safeWeekCardsById,
+    });
+  }, [safeAthletes, athleteRiskMap, safeWeekCardsById]);
+
+  useEffect(() => {
+    if (!sortedAthletes || sortedAthletes.length === 0) return;
+
+    const withRisk = sortedAthletes.filter((a) => athleteRiskMap?.[a.id]?.riskLevel).length;
+
+    if (withRisk >= Math.floor(sortedAthletes.length * 0.7)) {
+      console.log(
+        '[sortedAthletes]',
+        sortedAthletes.map((a) => ({
+          name: a.name,
+          risk: athleteRiskMap[a.id]?.riskLevel,
+          sharing: safeWeekCardsById[a.id]?.is_sharing_active,
+          acwr: athleteACWRMap[a.id]?.currentACWR,
+          reasons: athleteRiskMap[a.id]?.reasons?.length ?? 0,
+        }))
+      );
+    } else {
+      console.log(`[sortedAthletes] risk not ready: ${withRisk}/${sortedAthletes.length}`);
     }
+  }, [sortedAthletes, athleteRiskMap, safeWeekCardsById, athleteACWRMap]);
 
-    setSelectedAthlete(target);
-  };
+  const focusItems = useMemo(() => {
+    type FocusItem = {
+      user_id: string;
+      name: string;
+      category: 'risk' | 'checkin' | 'praise';
+      reason: string;
+      meta?: string;
+    };
 
-  type FocusItem = {
-    user_id: string;
-    name: string;
-    category: 'risk' | 'checkin' | 'praise';
-    reason: string;
-    meta?: string;
-  };
-
-  const focusItems = useMemo<FocusItem[]>(() => {
     const items: FocusItem[] = [];
 
-    // 🟥 注意：記録途切れ
+    // 記録途切れ
     noDataAthletes.slice(0, 3).forEach(({ athlete, daysSinceLast }) => {
       items.push({
         user_id: athlete.id,
@@ -660,9 +686,7 @@ export function StaffView({
       });
     });
 
-    if (!safeWeekCards || safeWeekCards.length === 0) return items.slice(0, 5);
-
-    // 🟥 注意：ACWR高め（共有ONのみ）
+    // ACWR 高め（共有ONのみ）
     safeWeekCards.forEach((c) => {
       if (!c.is_sharing_active) return;
       const acwr = athleteACWRMap?.[c.athlete_user_id]?.currentACWR;
@@ -677,7 +701,7 @@ export function StaffView({
       }
     });
 
-    // 🟨 声かけ：睡眠が短い
+    // 睡眠短い
     safeWeekCards.forEach((c) => {
       if (!c.is_sharing_active) return;
       if (c.sleep_hours_avg != null && c.sleep_hours_avg <= 5.5) {
@@ -691,7 +715,7 @@ export function StaffView({
       }
     });
 
-    // 🟩 称賛：行動目標達成率高い
+    // 行動目標達成
     safeWeekCards.forEach((c) => {
       if (c.action_total > 0 && (c.action_done_rate ?? 0) >= 90) {
         items.push({
@@ -704,25 +728,34 @@ export function StaffView({
       }
     });
 
-    const priority: Record<FocusItem['category'], number> = {
-      risk: 3,
-      checkin: 2,
-      praise: 1,
-    };
+    const priority: Record<'risk' | 'checkin' | 'praise', number> = { risk: 3, checkin: 2, praise: 1 };
+    const map = new Map<string, any>();
 
-    const map = new Map<string, FocusItem>();
     for (const it of items) {
       const prev = map.get(it.user_id);
-      if (!prev || priority[it.category] > priority[prev.category]) {
-        map.set(it.user_id, it);
-      }
+      if (!prev || priority[it.category] > priority[prev.category]) map.set(it.user_id, it);
     }
 
     const merged = Array.from(map.values());
     merged.sort((a, b) => priority[b.category] - priority[a.category]);
-
     return merged.slice(0, 5);
   }, [noDataAthletes, safeWeekCards, athleteACWRMap]);
+
+  const handleOpenAthleteDetailFromFocus = (it: { user_id: string }) => {
+    const target = safeAthletes.find((a) => a.id === it.user_id);
+    if (!target) {
+      window.alert('選手情報が見つかりませんでした');
+      return;
+    }
+
+    const card = safeWeekCardsById[target.id];
+    if (card && !card.is_sharing_active) {
+      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
+      return;
+    }
+
+    setSelectedAthlete(target);
+  };
 
   const handleDismissNoDataForToday = () => {
     if (typeof window !== 'undefined') {
@@ -732,70 +765,8 @@ export function StaffView({
     setNoDataDismissedToday(true);
   };
 
-  const weekCardMap = useMemo(() => {
-    const map: Record<string, CoachWeekAthleteCard> = {};
-    for (const c of safeWeekCards) map[c.athlete_user_id] = c;
-    return map;
-  }, [safeWeekCards]);
-
-  const noDataMap = useMemo(() => {
-    const map: Record<string, { daysSinceLast: number }> = {};
-    for (const x of noDataAthletes) {
-      map[x.athlete.id] = { daysSinceLast: x.daysSinceLast };
-    }
-    return map;
-  }, [noDataAthletes]);
-
-  const athleteRiskMap = useMemo(() => {
-    const map: Record<string, AthleteRisk> = {};
-
-    for (const a of safeAthletes) {
-      map[a.id] = calcRiskForAthlete({
-        id: a.id,
-        name: a.name || a.email || 'unknown',
-        acwrInfo: athleteACWRMap?.[a.id] ?? null, // currentACWR
-        weekCard: weekCardMap?.[a.id] ?? null, // is_sharing_active / sleep_hours_avg
-        noData: noDataMap?.[a.id] ?? null, // daysSinceLast
-      });
-    }
-
-    return map;
-  }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap]);
-
-  const sortedAthletes = useMemo(() => {
-    return sortAthletesByRisk({
-      athletes: safeAthletes,
-      riskMap: athleteRiskMap,
-      weekCardMap,
-    });
-  }, [safeAthletes, athleteRiskMap, weekCardMap]);
-
-  useEffect(() => {
-    if (!sortedAthletes || sortedAthletes.length === 0) return;
-
-    // riskLevel が入ってる人数
-    const withRisk = sortedAthletes.filter((a) => athleteRiskMap?.[a.id]?.riskLevel).length;
-
-    // 70% 以上揃ったらログ
-    if (withRisk >= Math.floor(sortedAthletes.length * 0.7)) {
-      console.log(
-        '[sortedAthletes]',
-        sortedAthletes.map((a) => ({
-          name: a.name,
-          risk: athleteRiskMap[a.id]?.riskLevel,
-          sharing: weekCardMap[a.id]?.is_sharing_active,
-          acwr: athleteACWRMap[a.id]?.currentACWR,
-          reasons: athleteRiskMap[a.id]?.reasons?.length ?? 0,
-        }))
-      );
-    } else {
-      console.log(`[sortedAthletes] risk not ready: ${withRisk}/${sortedAthletes.length}`);
-    }
-  }, [sortedAthletes, athleteRiskMap, weekCardMap, athleteACWRMap]);
-
-  // ✅ 選手クリック：共有🔓以外はモーダルを開かない
   const handleAthleteSelect = (athlete: User) => {
-    const card = safeWeekCards.find((c) => c.athlete_user_id === athlete.id);
+    const card = safeWeekCardsById[athlete.id];
     if (!card?.is_sharing_active) {
       window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
       return;
@@ -818,12 +789,10 @@ export function StaffView({
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Top Bar */}
           <div className="flex items-center justify-between py-3">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">コーチダッシュボード</h1>
 
             <div className="flex items-center space-x-1">
-              {/* 🔔 高リスクアラートがある時だけベル表示 */}
               {highPriorityTeamAlerts.length > 0 && (
                 <button
                   onClick={() => setShowAlertPanel(true)}
@@ -847,7 +816,6 @@ export function StaffView({
             </div>
           </div>
 
-          {/* Team Selector */}
           {teams.length > 0 && (
             <div className="pb-3 border-t border-gray-100">
               <div className="flex items-center gap-3 pt-3">
@@ -881,7 +849,6 @@ export function StaffView({
           </div>
         ) : (
           <div className="space-y-6 sm:space-y-8">
-            {/* ✅ 今日のチーム状況（全タブ共通で最上部に表示） */}
             {selectedTeam && (
               <div className="space-y-4">
                 {!teamACWRLoading && latestTeamACWR && (
@@ -931,7 +898,6 @@ export function StaffView({
                   </div>
                 )}
 
-                {/* ✅ フォーカス5人 */}
                 {focusItems.length > 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
                     <div className="flex items-center justify-between mb-3">
@@ -980,7 +946,6 @@ export function StaffView({
               </div>
             )}
 
-            {/* 🆕 練習記録が途切れている選手カード */}
             {noDataAthletes.length > 0 && !noDataDismissedToday && (
               <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-4 sm:p-5">
                 <div className="flex items-start justify-between mb-3">
@@ -1018,7 +983,6 @@ export function StaffView({
               </div>
             )}
 
-            {/* Team Overview */}
             {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
@@ -1073,11 +1037,9 @@ export function StaffView({
               </div>
             )}
 
-            {/* Tabs */}
             {selectedTeam && (
               <div className="bg-white rounded-xl shadow-sm">
                 <div className="border-b border-gray-200">
-                  {/* Desktop tabs */}
                   <nav className="hidden sm:flex px-4 sm:px-6 overflow-x-auto">
                     <button
                       onClick={() => setActiveTab('athletes')}
@@ -1124,11 +1086,10 @@ export function StaffView({
                     </button>
                   </nav>
 
-                  {/* Mobile dropdown */}
                   <div className="sm:hidden px-4 py-3">
                     <select
                       value={activeTab}
-                      onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
+                      onChange={(e) => setActiveTab(e.target.value as any)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     >
                       <option value="athletes">選手一覧</option>
@@ -1174,7 +1135,7 @@ export function StaffView({
                           athletes={sortedAthletes}
                           onAthleteSelect={handleAthleteSelect}
                           athleteACWRMap={athleteACWRMap}
-                          weekCardMap={weekCardMap}
+                          weekCardMap={safeWeekCardsById}
                           athleteRiskMap={athleteRiskMap}
                         />
                       )}
@@ -1198,7 +1159,6 @@ export function StaffView({
                         </ChartErrorBoundary>
                       )}
 
-                      {/* ✅ 週サイクル表示（7日分をサイクルとして） */}
                       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
@@ -1234,35 +1194,52 @@ export function StaffView({
                           )}
                         </div>
                       </div>
+
+                      {/* ✅ Growth系（ファイルが存在する時だけ） */}
+                      {(OptionalGrowthSummary.available || OptionalGrowthMatrix.available) && (
+                        <div className="space-y-4">
+                          {OptionalGrowthSummary.available && OptionalGrowthSummary.Component && (
+                            <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
+                              <Suspense
+                                fallback={
+                                  <div className="flex items-center justify-center py-10">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                                  </div>
+                                }
+                              >
+                                {/*
+                                  ⚠️ props は不明なので、まずは teamId / range のみ渡す（落ちたらコンポ側修正が必要）
+                                  ここで落ちても ErrorBoundary で白画面にはならない
+                                */}
+                                {React.createElement(OptionalGrowthSummary.Component as any, {
+                                  teamId: selectedTeam?.id,
+                                  startDate: weekRange.start,
+                                  endDate: weekRange.end,
+                                })}
+                              </Suspense>
+                            </ChartErrorBoundary>
+                          )}
+
+                          {OptionalGrowthMatrix.available && OptionalGrowthMatrix.Component && (
+                            <ChartErrorBoundary name="GrowthUnderstandingMatrix">
+                              <Suspense
+                                fallback={
+                                  <div className="flex items-center justify-center py-10">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                                  </div>
+                                }
+                              >
+                                {React.createElement(OptionalGrowthMatrix.Component as any, {
+                                  teamId: selectedTeam?.id,
+                                  date: todayKey,
+                                })}
+                              </Suspense>
+                            </ChartErrorBoundary>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  {/* ✅ 週サイクル（1週間をサイクルとして見る） */}
-                  <div className="mt-6 space-y-4">
-                    <ChartErrorBoundary name="WeeklyGrowthCycleView">
-                      {/** 型/props違いで落ちないように any で逃がす */}
-                      {React.createElement(WeeklyGrowthCycleView as any, {
-                        teamId: selectedTeam?.id,
-                        startDate: weekRange.start,
-                        endDate: weekRange.end,
-                      })}
-                    </ChartErrorBoundary>
-
-                    <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
-                      {React.createElement(GrowthUnderstandingQuadrantSummary as any, {
-                        teamId: selectedTeam?.id,
-                        startDate: weekRange.start,
-                        endDate: weekRange.end,
-                      })}
-                    </ChartErrorBoundary>
-
-                    <ChartErrorBoundary name="GrowthUnderstandingMatrix">
-                      {React.createElement(GrowthUnderstandingMatrix as any, {
-                        teamId: selectedTeam?.id,
-                        date: todayKey,
-                      })}
-                    </ChartErrorBoundary>
-                  </div>
 
                   {activeTab === 'reports' && (
                     <Suspense
@@ -1282,17 +1259,15 @@ export function StaffView({
         )}
       </main>
 
-      {/* Athlete Detail Modal */}
       {selectedAthlete && (
         <AthleteDetailModal
           athlete={selectedAthlete}
           onClose={() => setSelectedAthlete(null)}
           risk={athleteRiskMap[selectedAthlete.id]}
-          weekCard={weekCardMap[selectedAthlete.id]}
+          weekCard={safeWeekCardsById[selectedAthlete.id]}
         />
       )}
 
-      {/* Alert Panel */}
       {showAlertPanel && (
         <AlertPanel
           alerts={teamAlerts}
@@ -1304,7 +1279,6 @@ export function StaffView({
         />
       )}
 
-      {/* Team Export Panel（将来ボタン追加するなら生きる） */}
       {showExportPanel && selectedTeam && (
         <Suspense
           fallback={
