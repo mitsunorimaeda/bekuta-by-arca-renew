@@ -16,6 +16,12 @@ import { getTutorialSteps } from '../lib/tutorialContent';
 import { useOrganizations } from '../hooks/useOrganizations';
 import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/riskUtils';
 
+import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
+import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
+
+import { GrowthUnderstandingQuadrantSummary } from './GrowthUnderstandingQuadrantSummary';
+import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
+import { GrowthUnderstandingMatrix } from './GrowthUnderstandingMatrix';
 
 import {
   Users,
@@ -112,6 +118,7 @@ const NO_DATA_DAYS_THRESHOLD = 14;
 
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 
+// ✅ JSTの "YYYY-MM-DD" 取得
 const getJSTDateKey = (d: Date) => {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tokyo',
@@ -251,12 +258,13 @@ export function StaffView({
   // ✅ 原因タグ（週次）
   const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
 
+  // ✅ 週サイクル（マトリクス7点）
+  const [cycleBaseDate, setCycleBaseDate] = useState<string>(() => getJSTDateKey(new Date()));
+
   // 選手詳細
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<
-  'athletes' | 'team-average' | 'reports'
->('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'reports'>('athletes');
 
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -338,6 +346,19 @@ export function StaffView({
   const teamAthleteIds = safeAthletes.map((a) => a.id);
   const teamAlerts = safeAlerts.filter((al) => teamAthleteIds.includes(al.user_id));
   const highPriorityTeamAlerts = teamAlerts.filter((al) => al.priority === 'high');
+
+  // =========================
+  // ✅ 週サイクル（チーム全体・日別平均7点）
+  // =========================
+  const {
+    weekRange: cycleWeekRange,
+    teamDaily,
+    loading: cycleLoading,
+    error: cycleError,
+  } = useWeeklyGrowthCycle({
+    baseDate: cycleBaseDate,
+    athleteIds: teamAthleteIds,
+  });
 
   // =========================
   // Effects
@@ -589,8 +610,6 @@ export function StaffView({
       .sort((a, b) => b.daysSinceLast - a.daysSinceLast);
   }, [safeAthletes]);
 
-
-
   const latestTeamAvg = latestTeamACWR?.averageACWR ?? null;
   const latestValid = latestTeamACWR?.athleteCount ?? 0;
   const roster = safeAthletes.length;
@@ -728,18 +747,18 @@ export function StaffView({
   }, [noDataAthletes]);
 
   const athleteRiskMap = useMemo(() => {
-    const map: Record<string, AthleteRisk> = {}; // ←型を厳密にするなら AthleteRisk
-  
+    const map: Record<string, AthleteRisk> = {};
+
     for (const a of safeAthletes) {
       map[a.id] = calcRiskForAthlete({
         id: a.id,
         name: a.name || a.email || 'unknown',
         acwrInfo: athleteACWRMap?.[a.id] ?? null, // currentACWR
-        weekCard: weekCardMap?.[a.id] ?? null,    // is_sharing_active / sleep_hours_avg
-        noData: noDataMap?.[a.id] ?? null,        // daysSinceLast
+        weekCard: weekCardMap?.[a.id] ?? null, // is_sharing_active / sleep_hours_avg
+        noData: noDataMap?.[a.id] ?? null, // daysSinceLast
       });
     }
-  
+
     return map;
   }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap]);
 
@@ -753,15 +772,15 @@ export function StaffView({
 
   useEffect(() => {
     if (!sortedAthletes || sortedAthletes.length === 0) return;
-  
+
     // riskLevel が入ってる人数
-    const withRisk = sortedAthletes.filter(a => athleteRiskMap?.[a.id]?.riskLevel).length;
-  
+    const withRisk = sortedAthletes.filter((a) => athleteRiskMap?.[a.id]?.riskLevel).length;
+
     // 70% 以上揃ったらログ
     if (withRisk >= Math.floor(sortedAthletes.length * 0.7)) {
       console.log(
         '[sortedAthletes]',
-        sortedAthletes.map(a => ({
+        sortedAthletes.map((a) => ({
           name: a.name,
           risk: athleteRiskMap[a.id]?.riskLevel,
           sharing: weekCardMap[a.id]?.is_sharing_active,
@@ -773,16 +792,6 @@ export function StaffView({
       console.log(`[sortedAthletes] risk not ready: ${withRisk}/${sortedAthletes.length}`);
     }
   }, [sortedAthletes, athleteRiskMap, weekCardMap, athleteACWRMap]);
-
-  // // 週切替
-  // const goPrevWeek = () => {
-  //   const start = new Date(weekRange.start);
-  //   const end = new Date(weekRange.end);
-  //   start.setDate(start.getDate() - 7);
-  //   end.setDate(end.getDate() - 7);
-  //   setWeekRange({ start: toISODate(start), end: toISODate(end) });
-  // };
-  // const goThisWeek = () => setWeekRange(getThisWeekRange());
 
   // ✅ 選手クリック：共有🔓以外はモーダルを開かない
   const handleAthleteSelect = (athlete: User) => {
@@ -872,9 +881,8 @@ export function StaffView({
           </div>
         ) : (
           <div className="space-y-6 sm:space-y-8">
-
-                        {/* ✅ 今日のチーム状況（全タブ共通で最上部に表示） */}
-                        {selectedTeam && (
+            {/* ✅ 今日のチーム状況（全タブ共通で最上部に表示） */}
+            {selectedTeam && (
               <div className="space-y-4">
                 {!teamACWRLoading && latestTeamACWR && (
                   <div className={`rounded-xl border p-4 sm:p-5 ${toneStyles[summaryTone].box}`}>
@@ -957,7 +965,11 @@ export function StaffView({
                                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               }`}
                             >
-                              {it.category === 'risk' ? '注意' : it.category === 'checkin' ? '声かけ' : '称賛'}
+                              {it.category === 'risk'
+                                ? '注意'
+                                : it.category === 'checkin'
+                                ? '声かけ'
+                                : '称賛'}
                             </span>
                           </button>
                         </li>
@@ -967,12 +979,6 @@ export function StaffView({
                 )}
               </div>
             )}
-
-
-
-
-
-
 
             {/* 🆕 練習記録が途切れている選手カード */}
             {noDataAthletes.length > 0 && !noDataDismissedToday && (
@@ -1011,8 +1017,6 @@ export function StaffView({
                 </ul>
               </div>
             )}
-
-
 
             {/* Team Overview */}
             {selectedTeam && (
@@ -1105,20 +1109,6 @@ export function StaffView({
                       </div>
                     </button>
 
-                    {/* <button
-                      onClick={() => setActiveTab('team-analytics')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'team-analytics'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <PieChart className="w-4 h-4 mr-2" />
-                        チーム分析
-                      </div>
-                    </button> */}
-
                     <button
                       onClick={() => setActiveTab('reports')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
@@ -1132,48 +1122,6 @@ export function StaffView({
                         レポート
                       </div>
                     </button>
-
-                    {/* <button
-                      onClick={() => setActiveTab('team-access')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'team-access'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <UsersRound className="w-4 h-4 mr-2" />
-                        チームアクセス
-                      </div>
-                    </button> */}
-
-                    {/* <button
-                      onClick={() => setActiveTab('transfers')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'transfers'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <UserCog className="w-4 h-4 mr-2" />
-                        選手移籍
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab('messages')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'messages'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        メッセージ
-                      </div>
-                    </button> */}
                   </nav>
 
                   {/* Mobile dropdown */}
@@ -1185,11 +1133,7 @@ export function StaffView({
                     >
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
-                      {/* <option value="team-analytics">チーム分析</option> */}
                       <option value="reports">レポート</option>
-                      {/* <option value="team-access">チームアクセス</option>
-                      <option value="transfers">選手移籍</option>
-                      <option value="messages">メッセージ</option> */}
                     </select>
                   </div>
                 </div>
@@ -1231,7 +1175,7 @@ export function StaffView({
                           onAthleteSelect={handleAthleteSelect}
                           athleteACWRMap={athleteACWRMap}
                           weekCardMap={weekCardMap}
-                          athleteRiskMap={athleteRiskMap} //
+                          athleteRiskMap={athleteRiskMap}
                         />
                       )}
                     </div>
@@ -1239,7 +1183,6 @@ export function StaffView({
 
                   {activeTab === 'team-average' && (
                     <div className="space-y-4">
-
                       {teamACWRLoading ? (
                         <div className="flex items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
@@ -1254,16 +1197,45 @@ export function StaffView({
                           />
                         </ChartErrorBoundary>
                       )}
+
+                      {/* ✅ 週サイクル表示（7日分をサイクルとして） */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm sm:text-base font-semibold text-gray-900">
+                              週サイクル表示（7日）
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              指定日を含む週（月〜日）を「成長×理解」の動き＋負荷で可視化します
+                            </div>
+                          </div>
+
+                          <input
+                            type="date"
+                            value={cycleBaseDate}
+                            onChange={(e) => setCycleBaseDate(e.target.value)}
+                            className="px-3 py-2 rounded-lg border border-gray-300"
+                            title="この日付を含む週（月〜日）を表示"
+                          />
+                        </div>
+
+                        <div className="mt-3">
+                          {cycleLoading ? (
+                            <div className="flex items-center justify-center py-10">
+                              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                            </div>
+                          ) : cycleError ? (
+                            <div className="text-sm text-red-600">{cycleError}</div>
+                          ) : (
+                            <WeeklyGrowthCycleView
+                              teamDaily={teamDaily}
+                              weekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
+                            />
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
-
-                  {/* {activeTab === 'team-analytics' && (
-                    <div className="space-y-6">
-                      <TeamInjuryRiskHeatmap teamId={selectedTeam!.id} />
-                      <TeamPerformanceComparison teamId={selectedTeam!.id} />
-                      <TeamTrendAnalysis teamId={selectedTeam!.id} />
-                    </div>
-                  )} */}
 
                   {activeTab === 'reports' && (
                     <Suspense
@@ -1276,60 +1248,6 @@ export function StaffView({
                       <ReportView team={selectedTeam!} />
                     </Suspense>
                   )}
-
-                  {/* {activeTab === 'team-access' &&
-                    (currentOrganizationId ? (
-                      <Suspense
-                        fallback={
-                          <div className="flex items-center justify-center h-64">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                          </div>
-                        }
-                      >
-                        <TeamAccessRequestManagement
-                          userId={user.id}
-                          organizationId={currentOrganizationId}
-                          isAdmin={false}
-                        />
-                      </Suspense>
-                    ) : (
-                      <div className="text-center py-12 text-gray-500">
-                        組織に所属していないため、チームアクセスリクエストを利用できません。
-                      </div>
-                    ))} */}
-
-                  {/* {activeTab === 'transfers' &&
-                    (currentOrganizationId ? (
-                      <Suspense
-                        fallback={
-                          <div className="flex items-center justify-center h-64">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                          </div>
-                        }
-                      >
-                        <AthleteTransferManagement
-                          userId={user.id}
-                          organizationId={currentOrganizationId}
-                          isAdmin={false}
-                        />
-                      </Suspense>
-                    ) : (
-                      <div className="text-center py-12 text-gray-500">
-                        組織に所属していないため、選手移籍機能を利用できません。
-                      </div>
-                    ))}
-
-                  {activeTab === 'messages' && (
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center h-64">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                        </div>
-                      }
-                    >
-                      <MessagingPanel userId={user.id} userName={user.name} onClose={() => setActiveTab('athletes')} />
-                    </Suspense>
-                  )} */}
                 </div>
               </div>
             )}
