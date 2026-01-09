@@ -398,7 +398,7 @@ useEffect(() => {
       for (const ids of chunk(teamAthleteIds, 50)) {
         const { data, error } = await supabase
           .from('training_records')
-          .select('user_id,date,rpe,duration_min,load,arrow_score,signal,signal_score')
+          .select('user_id,date,rpe,duration_min,load,arrow_score,signal_score')
           .in('user_id', ids)
           .gte('date', weekRange.start)
           .lte('date', weekRange.end);
@@ -419,8 +419,6 @@ useEffect(() => {
         const signal =
           typeof r.signal_score === 'number' && Number.isFinite(r.signal_score)
             ? r.signal_score
-            : typeof r.intent_signal === 'number' && Number.isFinite(r.intent_signal)
-            ? r.intent_signal
             : null;
       
         const load =
@@ -429,8 +427,8 @@ useEffect(() => {
             : (Number(r.rpe) || 0) * (Number(r.duration_min) || 0);
       
         return {
-          arrow_score: arrow,     // ✅ growth_vector → arrow_score
-          signal_score: signal,   // ✅ intent_signal_score → signal_score
+          arrow_score: arrow,
+          signal_score: signal,
           load: Number.isFinite(load) ? load : 0,
         };
       });
