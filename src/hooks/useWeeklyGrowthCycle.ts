@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+// src/hooks/useWeeklyGrowthCycle.ts
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 type TrainingRow = {
@@ -29,12 +30,10 @@ const chunk = <T,>(arr: T[], size: number) => {
 };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
 const avg = (sum: number, n: number) => (n > 0 ? sum / n : 0);
 
 // JST前提で「指定日を含む週（月〜日）」の範囲を返す
 function getWeekRangeFromDateKey(dateKey: string) {
-  // "YYYY-MM-DD" -> Date (JSTとして扱うため +09:00 を付与)
   const d = new Date(`${dateKey}T00:00:00+09:00`);
   const day = d.getDay(); // 0 Sun ... 6 Sat
   const diffToMon = (day + 6) % 7; // Mon=0
@@ -64,10 +63,26 @@ export function useWeeklyGrowthCycle(params: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ 週範囲は baseDate だけで決める
   const weekRange = useMemo(() => {
     if (!baseDate) return { start: '', end: '' };
     return getWeekRangeFromDateKey(baseDate);
   }, [baseDate]);
+
+  // ✅ ここが最重要：配列を依存に入れない（参照が毎回変わる）
+  const athleteIdsKey = useMemo(() => {
+    if (!Array.isArray(athleteIds) || athleteIds.length === 0) return '';
+    return athleteIds.slice().sort().join(',');
+  }, [athleteIds]);
+
+  // ✅ 安定した配列（ソート済み）を作る
+  const sortedIds = useMemo(() => {
+    if (!athleteIdsKey) return [];
+    return athleteIdsKey.split(',').filter(Boolean);
+  }, [athleteIdsKey]);
+
+  // ✅ 古いリクエスト結果を捨てる
+  const reqSeqRef = useRef(0);
 
   useEffect(() => {
     if (!weekRange.start || !weekRange.end) {
@@ -76,7 +91,7 @@ export function useWeeklyGrowthCycle(params: {
       setError(null);
       return;
     }
-    if (!athleteIds || athleteIds.length === 0) {
+    if (!athleteIdsKey || sortedIds.length === 0) {
       setTeamDaily([]);
       setLoading(false);
       setError(null);
@@ -84,6 +99,7 @@ export function useWeeklyGrowthCycle(params: {
     }
 
     let cancelled = false;
+    const reqSeq = ++reqSeqRef.current;
 
     (async () => {
       try {
@@ -91,7 +107,9 @@ export function useWeeklyGrowthCycle(params: {
         setError(null);
 
         const all: TrainingRow[] = [];
-        for (const ids of chunk(athleteIds, 50)) {
+
+        // ✅ chunk 対象は sortedIds（安定）
+        for (const ids of chunk(sortedIds, 50)) {
           const { data, error } = await supabase
             .from('training_records')
             .select(
@@ -106,6 +124,7 @@ export function useWeeklyGrowthCycle(params: {
         }
 
         if (cancelled) return;
+        if (reqSeq !== reqSeqRef.current) return; // ✅ 後発が走ってたら捨てる
 
         // 日別に平均化
         const map = new Map<
@@ -116,6 +135,7 @@ export function useWeeklyGrowthCycle(params: {
         for (const r of all) {
           const xRaw = (r.intent_signal ?? r.signal_score ?? 50) as number;
           const yRaw = (r.growth_vector ?? r.arrow_score ?? 50) as number;
+
           const loadRaw =
             typeof r.load === 'number' && isFinite(r.load)
               ? r.load
@@ -136,7 +156,7 @@ export function useWeeklyGrowthCycle(params: {
           map.set(key, cur);
         }
 
-        // 週の7日を埋める（データなしの日も点として出したいならここで追加可）
+        // 週の7日を埋める
         const days: string[] = [];
         {
           const start = new Date(`${weekRange.start}T00:00:00+09:00`);
@@ -156,7 +176,7 @@ export function useWeeklyGrowthCycle(params: {
         const teamDailyPoints: DailyCyclePoint[] = days.map((date) => {
           const v = map.get(date);
           if (!v || v.n === 0) {
-            return { date, x: 50, y: 50, load: 0, rpe: 0, n: 0 }; // データなし日は中央に置く（n=0で見分け可）
+            return { date, x: 50, y: 50, load: 0, rpe: 0, n: 0 };
           }
           return {
             date,
@@ -183,7 +203,8 @@ export function useWeeklyGrowthCycle(params: {
     return () => {
       cancelled = true;
     };
-  }, [weekRange.start, weekRange.end, athleteIds]);
+    // ✅ 依存は「文字列キー」にする
+  }, [weekRange.start, weekRange.end, athleteIdsKey, sortedIds]);
 
   return { weekRange, teamDaily, loading, error };
 }

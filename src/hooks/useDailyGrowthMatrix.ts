@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+// src/hooks/useDailyGrowthMatrix.ts
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 type TrainingRow = {
@@ -31,26 +32,63 @@ const chunk = <T,>(arr: T[], size: number) => {
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
-export function useDailyGrowthMatrix(params: {
-  date: string;
-  athletes: { id: string; name?: string | null; nickname?: string | null; email?: string | null }[];
-}) {
+type AthleteLite = {
+  id: string;
+  name?: string | null;
+  nickname?: string | null;
+  email?: string | null;
+};
+
+export function useDailyGrowthMatrix(params: { date: string; athletes: AthleteLite[] }) {
   const { date, athletes } = params;
 
   const [points, setPoints] = useState<MatrixPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const nameMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const a of athletes) {
-      m[a.id] = a.nickname || a.name || a.email || '名前未設定';
-    }
-    return m;
+  // ✅ 依存安定化：配列を直接 useEffect に入れないためのキー
+  const athletesKey = useMemo(() => {
+    if (!Array.isArray(athletes) || athletes.length === 0) return '';
+    return athletes
+      .map((a) => {
+        const display = a.nickname || a.name || a.email || '名前未設定';
+        return `${a.id}:${display}`;
+      })
+      .sort()
+      .join('|');
   }, [athletes]);
 
+  const idsKey = useMemo(() => {
+    if (!Array.isArray(athletes) || athletes.length === 0) return '';
+    return athletes
+      .map((a) => a.id)
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  }, [athletes]);
+
+  const ids = useMemo(() => {
+    if (!idsKey) return [];
+    return idsKey.split(',').filter(Boolean);
+  }, [idsKey]);
+
+  const nameMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    if (!athletesKey) return m;
+
+    // athletesKey から復元（順序安定）
+    for (const token of athletesKey.split('|')) {
+      const [id, ...rest] = token.split(':');
+      const display = rest.join(':') || '名前未設定';
+      if (id) m[id] = display;
+    }
+    return m;
+  }, [athletesKey]);
+
+  // ✅ 古いリクエスト結果を捨てる
+  const reqSeqRef = useRef(0);
+
   useEffect(() => {
-    const ids = athletes.map(a => a.id).filter(Boolean);
     if (!date || ids.length === 0) {
       setPoints([]);
       setError(null);
@@ -59,6 +97,7 @@ export function useDailyGrowthMatrix(params: {
     }
 
     let cancelled = false;
+    const reqSeq = ++reqSeqRef.current;
 
     (async () => {
       try {
@@ -66,6 +105,7 @@ export function useDailyGrowthMatrix(params: {
         setError(null);
 
         const rows: TrainingRow[] = [];
+
         for (const idChunk of chunk(ids, 50)) {
           const { data, error } = await supabase
             .from('training_records')
@@ -80,25 +120,56 @@ export function useDailyGrowthMatrix(params: {
         }
 
         if (cancelled) return;
+        if (reqSeq !== reqSeqRef.current) return; // ✅ 後発が走ってたら捨てる
 
-        const pts: MatrixPoint[] = rows.map(r => {
+        // ✅ 同日に複数レコードがあっても user_id ごとに平均して1点にまとめる
+        const acc = new Map<
+          string,
+          { sumX: number; sumY: number; sumLoad: number; sumRpe: number; sumDur: number; n: number }
+        >();
+
+        for (const r of rows) {
           const xRaw = (r.intent_signal ?? r.signal_score ?? 50) as number;
           const yRaw = (r.growth_vector ?? r.arrow_score ?? 50) as number;
 
-          // load は generated だけど念のためフォールバック
           const loadRaw =
-            typeof r.load === 'number'
+            typeof r.load === 'number' && isFinite(r.load)
               ? r.load
               : (r.rpe ?? 0) * (r.duration_min ?? 0);
 
+          const x = clamp(Number(xRaw) || 50, 0, 100);
+          const y = clamp(Number(yRaw) || 50, 0, 100);
+          const load = clamp(Number(loadRaw) || 0, 0, 999999);
+          const rpe = clamp(Number(r.rpe) || 0, 0, 10);
+          const dur = clamp(Number(r.duration_min) || 0, 0, 100000);
+
+          const cur = acc.get(r.user_id) ?? {
+            sumX: 0,
+            sumY: 0,
+            sumLoad: 0,
+            sumRpe: 0,
+            sumDur: 0,
+            n: 0,
+          };
+          cur.sumX += x;
+          cur.sumY += y;
+          cur.sumLoad += load;
+          cur.sumRpe += rpe;
+          cur.sumDur += dur;
+          cur.n += 1;
+          acc.set(r.user_id, cur);
+        }
+
+        const pts: MatrixPoint[] = Array.from(acc.entries()).map(([user_id, v]) => {
+          const n = v.n || 1;
           return {
-            user_id: r.user_id,
-            name: nameMap[r.user_id] || '名前未設定',
-            x: clamp(Number(xRaw) || 50, 0, 100),
-            y: clamp(Number(yRaw) || 50, 0, 100),
-            load: clamp(Number(loadRaw) || 0, 0, 999999),
-            rpe: r.rpe ?? 0,
-            duration_min: r.duration_min ?? 0,
+            user_id,
+            name: nameMap[user_id] || '名前未設定',
+            x: Math.round((v.sumX / n) * 10) / 10,
+            y: Math.round((v.sumY / n) * 10) / 10,
+            load: Math.round(v.sumLoad / n),
+            rpe: Math.round((v.sumRpe / n) * 10) / 10,
+            duration_min: Math.round(v.sumDur / n),
           };
         });
 
@@ -117,17 +188,16 @@ export function useDailyGrowthMatrix(params: {
     return () => {
       cancelled = true;
     };
-  }, [date, athletes, nameMap]);
+    // ✅ 依存は “安定キー” のみ
+  }, [date, idsKey, athletesKey]);
 
   const teamAvg = useMemo(() => {
     if (!points || points.length === 0) return null;
-
-    const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
-
+    const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
     return {
-      x: avg(points.map(p => p.x)),
-      y: avg(points.map(p => p.y)),
-      load: avg(points.map(p => p.load)),
+      x: mean(points.map((p) => p.x)),
+      y: mean(points.map((p) => p.y)),
+      load: mean(points.map((p) => p.load)),
     };
   }, [points]);
 

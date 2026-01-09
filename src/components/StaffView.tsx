@@ -317,7 +317,7 @@ export function StaffView({
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
   const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
 
-  const teamAthleteIds = safeAthletes.map((a) => a.id);
+  const teamAthleteIds = React.useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
   const teamAlerts = safeAlerts.filter((al) => teamAthleteIds.includes(al.user_id));
   const highPriorityTeamAlerts = teamAlerts.filter((al) => al.priority === 'high');
 
@@ -1169,7 +1169,7 @@ export function StaffView({
                         <div className="mt-4" />
 
                         <ChartErrorBoundary name="GrowthUnderstandingMatrix">
-                          <GrowthUnderstandingMatrixLazy teamId={selectedTeam?.id} date={todayKey} />
+                          <GrowthUnderstandingMatrix date={todayKey} athletes={safeAthletes} />
                         </ChartErrorBoundary>
                       </Suspense>
                     </div>
