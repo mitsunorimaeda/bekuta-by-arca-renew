@@ -18,6 +18,7 @@ import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/risk
 
 import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
+import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
 
 import {
   Users,
