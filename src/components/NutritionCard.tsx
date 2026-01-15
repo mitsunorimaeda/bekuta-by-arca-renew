@@ -8,7 +8,6 @@ import NutritionOverview from "./NutritionOverview";
 import NutritionSummaryPanel from "./NutritionSummaryPanel";
 
 type MealType = "朝食" | "昼食" | "夕食" | "補食";
-
 type MacroTotals = { cal: number; p: number; f: number; c: number };
 
 type Props = {
@@ -25,7 +24,7 @@ type Props = {
   nutritionLoading?: boolean;
   nutritionError?: string | null;
 
-  onSaved?: (updated?: NutritionLog | null ) => void; 
+  onSaved?: (updated?: NutritionLog | null) => void;
 };
 
 function toNum(v: any, fallback = 0) {
@@ -112,8 +111,7 @@ function parseGeminiResultStrict(json: any) {
     cN >= 0;
 
   if (!ok) {
-    const msg =
-      r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
+    const msg = r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
     const detail = JSON.stringify({ calories, protein, fat, carbs, keys: Object.keys(r ?? {}) }, null, 2);
     throw new Error(`${msg}\n${detail}`);
   }
@@ -215,7 +213,6 @@ function buildQuickSuggestions(deficits: DeficitRow[] | null) {
   const fNeed = Math.max(0, toNum(byKey.f?.remain, 0));
   const calNeed = Math.max(0, toNum(byKey.cal?.remain, 0));
 
-  // 優先を雑に決める（不足が“行動に繋がる”単位のとき）
   const primary =
     pNeed >= 15 ? "p" :
     cNeed >= 40 ? "c" :
@@ -224,7 +221,6 @@ function buildQuickSuggestions(deficits: DeficitRow[] | null) {
     pNeed > 0 || cNeed > 0 || fNeed > 0 || calNeed > 0 ? "mix" :
     "ok";
 
-  // 併せ技（P不足かつC不足が大きい日は「主食+主菜」系）
   const pcCombo = pNeed >= 15 && cNeed >= 40;
 
   if (primary === "ok") {
@@ -267,12 +263,43 @@ function buildQuickSuggestions(deficits: DeficitRow[] | null) {
     ];
   }
 
-  // cal / mix
   return [
     "主食＋主菜＋果物（まず“セット”で増やす）",
     "補食：おにぎり＋乳製品（簡単に底上げ）",
     "夕食：丼もの/定食スタイルで“量”を確保",
   ];
+}
+
+/** menu_items は jsonb/配列/文字列(JSON) があり得るので正規化 */
+function normalizeMenuItems(raw: any): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  if (typeof raw === "object") {
+    const vals = Object.values(raw);
+    return Array.isArray(vals) ? vals : [];
+  }
+
+  return [];
+}
+function formatMenuItem(x: any) {
+  if (!x) return "";
+  if (typeof x === "string") return x;
+
+  const name = x?.name ?? "";
+  const note = x?.note ? `(${x.note})` : "";
+  const amt = x?.estimated_amount ? ` ${x.estimated_amount}` : "";
+  const s = `${name}${note}${amt}`.trim();
+  return s || "";
 }
 
 export function NutritionCard({
@@ -329,10 +356,10 @@ export function NutritionCard({
 
     return canUsePropsTotals
       ? {
-          cal: toNum(nutritionTotals.cal, 0),
-          p: toNum(nutritionTotals.p, 0),
-          f: toNum(nutritionTotals.f, 0),
-          c: toNum(nutritionTotals.c, 0),
+          cal: toNum((nutritionTotals as any).cal, 0),
+          p: toNum((nutritionTotals as any).p, 0),
+          f: toNum((nutritionTotals as any).f, 0),
+          c: toNum((nutritionTotals as any).c, 0),
         }
       : sum;
   }, [localLogs, nutritionLoading, nutritionTotals]);
@@ -410,7 +437,6 @@ export function NutritionCard({
 
   const shortageRanking = useMemo(() => {
     if (!deficits) return null;
-    // “足りない”のみ抽出して大きい順
     const shorts = deficits.filter((d) => d.remain > 0 && Number.isFinite(d.remain));
     shorts.sort((a, b) => b.remain - a.remain);
     return shorts;
@@ -579,13 +605,11 @@ export function NutritionCard({
 
           <h3 className="mt-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">栄養</h3>
 
-          {/* ✅ 推定値（BMR/TDEE）を“見える”ように */}
           <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 space-x-3">
             {refs?.bmrKcal != null && <span>推定基礎代謝量: {refs.bmrKcal} kcal</span>}
             {refs?.tdeeKcal != null && <span>今日必要なカロリー(推定TDEE): {refs.tdeeKcal} kcal</span>}
           </div>
 
-          {/* ✅ 目標PFCを“見える”ように（targets がある時だけ） */}
           {targets && (
             <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
               目標: {targets.cal} kcal / P {targets.p} g / F {targets.f} g / C {targets.c} g
@@ -702,11 +726,10 @@ export function NutritionCard({
                 </div>
               )}
 
-              {/* “残り”も見えると納得感が上がる（gapsを補助表示） */}
               {gaps && (
                 <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300">
-                  残り目安：P {toNum(gaps.p, 0).toFixed(1)} g / F {toNum(gaps.f, 0).toFixed(1)} g / C{" "}
-                  {toNum(gaps.c, 0).toFixed(1)} g / kcal {Math.round(toNum(gaps.cal, 0))}
+                  残り目安：P {toNum((gaps as any).p, 0).toFixed(1)} g / F {toNum((gaps as any).f, 0).toFixed(1)} g / C{" "}
+                  {toNum((gaps as any).c, 0).toFixed(1)} g / kcal {Math.round(toNum((gaps as any).cal, 0))}
                 </div>
               )}
             </div>
@@ -724,18 +747,19 @@ export function NutritionCard({
         )}
       </div>
 
-        <div className="mt-4">
+      {/* Summary Panel（既存コンポーネント） */}
+      <div className="mt-4">
         <NutritionSummaryPanel
-            dateLabel={recordDate}
-            totals={displayTotals}
-            targets={targets}
-            loading={nutritionLoading}
-            bmrKcal={refs?.bmrKcal ?? null}
-            tdeeKcal={refs?.tdeeKcal ?? null}
-            onPrimaryAction={() => fileRef.current?.click()}
-            primaryLabel="食事を記録"
+          dateLabel={recordDate}
+          totals={displayTotals}
+          targets={targets}
+          loading={nutritionLoading}
+          bmrKcal={refs?.bmrKcal ?? null}
+          tdeeKcal={refs?.tdeeKcal ?? null}
+          onPrimaryAction={() => fileRef.current?.click()}
+          primaryLabel="食事を記録"
         />
-        </div>
+      </div>
 
       {/* logs */}
       <div className="mt-5">
@@ -749,69 +773,86 @@ export function NutritionCard({
           </div>
         ) : (
           <div className="mt-2 space-y-2">
-            {localLogs.map((log: any) => (
-              <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  {/* 左：サムネ + テキスト */}
-                  <div className="flex items-start gap-3 min-w-0">
-                    {log.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={log.image_url}
-                        alt="meal"
-                        className="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700 flex-none"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-none" />
-                    )}
+            {localLogs.map((log: any) => {
+              const menuItems = normalizeMenuItems(log?.menu_items);
+              const menuText = menuItems.map((x: any) => formatMenuItem(x)).filter(Boolean).join(" / ");
 
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {formatMealLabel(log.meal_type, log.meal_slot)}
-                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                          {toNum(log.total_calories, 0)} kcal
-                        </span>
-                        {log.analysis_status && (
-                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                            {String(log.analysis_status)}
-                          </span>
-                        )}
-                      </p>
-
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        P {toNum(log.p, 0).toFixed(1)} / F {toNum(log.f, 0).toFixed(1)} / C {toNum(log.c, 0).toFixed(1)}
-                        {log.is_edited ? "（編集済）" : ""}
-                      </p>
-
-                      {log.analysis_status === "failed" && log.analysis_error && (
-                        <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap">
-                          解析失敗: {String(log.analysis_error)}
-                        </p>
+              return (
+                <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    {/* 左：サムネ + テキスト */}
+                    <div className="flex items-start gap-3 min-w-0">
+                      {log.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={log.image_url}
+                          alt="meal"
+                          className="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700 flex-none"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-none" />
                       )}
-                    </div>
-                  </div>
 
-                  {/* 右：詳細ボタン */}
-                  <button
-                    type="button"
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    onClick={() => {
-                      setSelectedLog(log as NutritionLog);
-                      setEditOpen(true);
-                    }}
-                  >
-                    詳細
-                  </button>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {formatMealLabel(log.meal_type, log.meal_slot)}
+                          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                            {toNum(log.total_calories, 0)} kcal
+                          </span>
+                          {log.analysis_status && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                              {String(log.analysis_status)}
+                            </span>
+                          )}
+                        </p>
+
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                          P {toNum(log.p, 0).toFixed(1)} / F {toNum(log.f, 0).toFixed(1)} / C {toNum(log.c, 0).toFixed(1)}
+                          {log.is_edited ? "（編集済）" : ""}
+                        </p>
+
+                        {/* ✅ 推定メニュー（ここが今回の修正点） */}
+                        {menuText && (
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 break-words">
+                            推定メニュー: {menuText}
+                          </p>
+                        )}
+
+                        {/* ✅ AIアドバイス（必要なら表示） */}
+                        {log.advice_markdown && (
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+                            {String(log.advice_markdown)}
+                          </p>
+                        )}
+
+                        {log.analysis_status === "failed" && log.analysis_error && (
+                          <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap">
+                            解析失敗: {String(log.analysis_error)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 右：詳細ボタン */}
+                    <button
+                      type="button"
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                      onClick={() => {
+                        setSelectedLog(log as NutritionLog);
+                        setEditOpen(true);
+                      }}
+                    >
+                      詳細
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
-
-    
 
       {/* ✅ Edit Modal */}
       {editOpen && selectedLog && (
@@ -832,12 +873,13 @@ export function NutritionCard({
             setLocalLogs((prev) => (Array.isArray(prev) ? prev.filter((x: any) => x?.id !== deletedId) : []));
             setEditOpen(false);
             setSelectedLog(null);
-
-            // ✅ 親にも「変わったよ」を通知（refetchさせる）
             if (typeof onSaved === "function") onSaved(null);
           }}
         />
       )}
+
+      {/* 既存コンポーネント（使ってるなら残す：未使用なら消してOK） */}
+      {/* <NutritionOverview /> */}
     </div>
   );
 }
