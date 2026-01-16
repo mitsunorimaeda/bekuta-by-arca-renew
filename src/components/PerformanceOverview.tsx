@@ -5,7 +5,7 @@ import { PerformanceTestType } from '../lib/supabase';
 import { PerformanceChart } from './PerformanceChart';
 import { supabase } from '../lib/supabase';
 import { getCalculatedUnit } from '../lib/performanceCalculations';
-import { StrengthRankings } from './StrengthRankings';
+
 
 
 type TeamBenchmarkRow = {
@@ -38,7 +38,8 @@ export function PerformanceOverview({
   const [selectedTestTypeId, setSelectedTestTypeId] = useState<string | null>(null);
 
   // ★追加：チームベンチマーク
-  const [teamBenchmarksByTestId, setTeamBenchmarksByTestId] = useState<Record<string, TeamBenchmarkRow>>({});
+  const [teamBenchAbsByTestId, setTeamBenchAbsByTestId] = useState<Record<string, TeamBenchmarkRow>>({});
+  const [teamBenchRelByTestId, setTeamBenchRelByTestId] = useState<Record<string, TeamBenchmarkRow>>({})
   const [benchLoading, setBenchLoading] = useState(false);
 
   useEffect(() => {
@@ -50,19 +51,31 @@ export function PerformanceOverview({
     (async () => {
       try {
         setBenchLoading(true);
-        const { data, error } = await supabase.rpc('get_my_team_benchmarks', { p_days: 90 });
-        if (error) throw error;
-
-        const map: Record<string, TeamBenchmarkRow> = {};
-        (data ?? []).forEach((row: any) => {
-          if (row?.test_type_id) map[row.test_type_id] = row as TeamBenchmarkRow;
-        });
-
-        if (!cancelled) setTeamBenchmarksByTestId(map);
+           const [{ data: abs, error: e1 }, { data: rel, error: e2 }] = await Promise.all([
+            supabase.rpc('get_my_team_benchmarks', { p_days: 90, p_metric: 'primary_value' }),
+            supabase.rpc('get_my_team_benchmarks', { p_days: 90, p_metric: 'relative_1rm' }),
+          ]);
+          if (e1) throw e1;
+          if (e2) throw e2;
+    
+          const absMap: Record<string, TeamBenchmarkRow> = {};
+          (abs ?? []).forEach((row: any) => { if (row?.test_type_id) absMap[row.test_type_id] = row as TeamBenchmarkRow; });
+    
+          const relMap: Record<string, TeamBenchmarkRow> = {};
+          (rel ?? []).forEach((row: any) => { if (row?.test_type_id) relMap[row.test_type_id] = row as TeamBenchmarkRow; });
+    
+          if (!cancelled) {
+            setTeamBenchAbsByTestId(absMap);
+            setTeamBenchRelByTestId(relMap);
+          }
+          
       } catch (e) {
         console.warn('[get_my_team_benchmarks error]', e);
         // 失敗してもUIは通常表示でOK（ベンチだけ出ない）
-        if (!cancelled) setTeamBenchmarksByTestId({});
+        if (!cancelled) {
+                 setTeamBenchAbsByTestId({});
+                 setTeamBenchRelByTestId({});
+        }       
       } finally {
         if (!cancelled) setBenchLoading(false);
       }
@@ -72,6 +85,9 @@ export function PerformanceOverview({
       cancelled = true;
     };
   }, [records?.length]);
+
+  const strengthTests = ['bench_press', 'back_squat', 'deadlift', 'bulgarian_squat_r', 'bulgarian_squat_l'];
+  const [benchMetricByTestId, setBenchMetricByTestId] = useState<Record<string, 'primary_value' | 'relative_1rm'>>({});
 
   const selectedTestType = useMemo(() => {
     return selectedTestTypeId ? testTypes.find((t) => t.id === selectedTestTypeId) : null;
@@ -118,8 +134,15 @@ export function PerformanceOverview({
           const testRecords = getRecordsByTestType(testType.id);
           const latestRecord = testRecords[0];
 
-          const bench = teamBenchmarksByTestId[testType.id];
+          const metric = benchMetricByTestId[testType.id] ?? 'primary_value';
+          const bench = metric === 'relative_1rm'
+            ? teamBenchRelByTestId[testType.id]
+            : teamBenchAbsByTestId[testType.id];
           const showBench = !!bench && !!bench.team_n && bench.team_n >= 2;
+
+          const suffix = metric === 'relative_1rm' ? '×BW' : unitFor(testType);
+          const digits = testType.name.includes('rsi') ? 2 : 1;
+          const fmt = (v: any) => (v === null || v === undefined ? '-' : Number(v).toFixed(digits));
 
           return (
             <button
@@ -177,12 +200,45 @@ export function PerformanceOverview({
               {/* ★追加：チーム比較（種目カード内に表示） */}
               {testRecords.length > 0 && (
                 <div className="mt-3">
+                  {/* ★筋力種目だけ：指標トグル（ピルの表示だけ切替） */}
+                  {strengthTests.includes(testType.name) && (
+                    <div className="mb-2 inline-flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBenchMetricByTestId((prev) => ({ ...prev, [testType.id]: 'primary_value' }));
+                        }}
+                        className={`px-2 py-1 rounded-md ${ (benchMetricByTestId[testType.id] ?? 'primary_value') === 'primary_value'
+                          ? 'bg-white dark:bg-gray-800 shadow text-gray-900 dark:text-white'
+                          : 'text-gray-600 dark:text-gray-300'
+                        }`}
+                      >
+                        推定1RM
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBenchMetricByTestId((prev) => ({ ...prev, [testType.id]: 'relative_1rm' }));
+                        }}
+                        className={`px-2 py-1 rounded-md ${ (benchMetricByTestId[testType.id] ?? 'primary_value') === 'relative_1rm'
+                          ? 'bg-white dark:bg-gray-800 shadow text-gray-900 dark:text-white'
+                          : 'text-gray-600 dark:text-gray-300'
+                        }`}
+                      >
+                        相対1RM
+                      </button>
+                    </div>
+                  )}
                   {showBench ? (
                     <div className="flex flex-wrap gap-2">
                       {/* 平均 */}
                       {bench.team_avg !== null && bench.team_avg !== undefined && (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
-                          チーム平均 {Number(bench.team_avg).toFixed(testType.name.includes('rsi') ? 2 : 1)}
+                          チーム平均 {fmt(bench.team_avg)}{suffix}
                         </span>
                       )}
 
@@ -196,7 +252,7 @@ export function PerformanceOverview({
                           }`}
                         >
                           平均差 {bench.diff_vs_team_avg >= 0 ? '+' : ''}
-                          {Number(bench.diff_vs_team_avg).toFixed(testType.name.includes('rsi') ? 2 : 1)}
+                          {fmt(bench.diff_vs_team_avg)}{suffix}
                         </span>
                       )}
 
@@ -291,14 +347,7 @@ export function PerformanceOverview({
         </div>
       )}
 
-      {/* Strength Rankings (absolute & relative 1RM) */}
-      {selectedTestType &&
-        ['bench_press', 'back_squat', 'deadlift', 'bulgarian_squat_r', 'bulgarian_squat_l'].includes(selectedTestType.name) && (
-          <StrengthRankings
-            testTypeId={selectedTestType.id}
-            testTypeDisplayName={selectedTestType.display_name}
-          />
-        )}
+
 
 
       {/* Summary Stats */}
