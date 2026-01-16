@@ -5,6 +5,8 @@ import { PerformanceTestType } from '../lib/supabase';
 import { PerformanceChart } from './PerformanceChart';
 import { supabase } from '../lib/supabase';
 import { getCalculatedUnit } from '../lib/performanceCalculations';
+import { StrengthRankings } from './StrengthRankings';
+
 
 type TeamBenchmarkRow = {
   test_type_id: string;
@@ -288,6 +290,16 @@ export function PerformanceOverview({
           <PerformanceChart records={selectedRecords} personalBest={selectedPB} testTypeName={selectedTestType.display_name} />
         </div>
       )}
+
+      {/* Strength Rankings (absolute & relative 1RM) */}
+      {selectedTestType &&
+        ['bench_press', 'back_squat', 'deadlift', 'bulgarian_squat_r', 'bulgarian_squat_l'].includes(selectedTestType.name) && (
+          <StrengthRankings
+            testTypeId={selectedTestType.id}
+            testTypeDisplayName={selectedTestType.display_name}
+          />
+        )}
+
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
