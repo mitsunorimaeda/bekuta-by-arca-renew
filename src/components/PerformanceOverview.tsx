@@ -18,11 +18,38 @@ type TeamBenchmarkRow = {
   team_top_percent: number | null; // 0に近いほど上位（例: 12.5）
 };
 
+type MetricKey = 'primary_value' | 'relative_1rm';
+
 type TeamMonthlyPoint = {
-  month_start: string; // 'YYYY-MM-DD'
+  month_start: string;
   team_n: number | null;
   team_avg: number | null;
 };
+
+// ✅ ファイルスコープに置く（必ず定義される）
+function buildPersonalBestFromRecords(
+  recs: PerformanceRecordWithTest[],
+  metricKey: MetricKey,
+  higherIsBetter: boolean
+): PersonalBest | undefined {
+  let best: { value: number; date: string } | null = null;
+
+  for (const r of recs) {
+    const raw = (r as any)?.values?.[metricKey];
+    const v = typeof raw === 'string' ? parseFloat(raw) : raw;
+    if (v === null || v === undefined || Number.isNaN(v)) continue;
+
+    if (!best) {
+      best = { value: v, date: r.date };
+      continue;
+    }
+
+    const better = higherIsBetter ? v > best.value : v < best.value;
+    if (better) best = { value: v, date: r.date };
+  }
+
+  return best ? { value: best.value, date: best.date } : undefined;
+}
 
 interface PerformanceOverviewProps {
   testTypes: PerformanceTestType[];
@@ -41,77 +68,43 @@ export function PerformanceOverview({
 }: PerformanceOverviewProps) {
   const [selectedTestTypeId, setSelectedTestTypeId] = useState<string | null>(null);
 
-  // 筋力種目
-  const strengthTests = ['bench_press', 'back_squat', 'deadlift', 'bulgarian_squat_r', 'bulgarian_squat_l'];
-
-  // 種目ごとに「推定1RM / 相対1RM」を保持（ピル用）
-  const [benchMetricByTestId, setBenchMetricByTestId] = useState<Record<string, 'primary_value' | 'relative_1rm'>>({});
-
-  // チーム月次平均（latest-of-month）
+  // ★チーム月次平均（latest-of-month）
   const [teamMonthlyAbsByTestId, setTeamMonthlyAbsByTestId] = useState<Record<string, TeamMonthlyPoint[]>>({});
   const [teamMonthlyRelByTestId, setTeamMonthlyRelByTestId] = useState<Record<string, TeamMonthlyPoint[]>>({});
 
-  // チームベンチマーク（90日）
+  // ★チームベンチマーク
   const [teamBenchAbsByTestId, setTeamBenchAbsByTestId] = useState<Record<string, TeamBenchmarkRow>>({});
   const [teamBenchRelByTestId, setTeamBenchRelByTestId] = useState<Record<string, TeamBenchmarkRow>>({});
   const [benchLoading, setBenchLoading] = useState(false);
 
-  // 選択中の testType（グラフ用）
+  const strengthTests = ['bench_press', 'back_squat', 'deadlift', 'bulgarian_squat_r', 'bulgarian_squat_l'];
+  const [benchMetricByTestId, setBenchMetricByTestId] = useState<Record<string, MetricKey>>({});
+
+  // 選択中種目
   const selectedTestType = useMemo(() => {
     return selectedTestTypeId ? testTypes.find((t) => t.id === selectedTestTypeId) : null;
   }, [selectedTestTypeId, testTypes]);
 
-  // 選択中が筋力かどうか（安全ガード）
-  const selectedIsStrength = useMemo(() => {
-    if (!selectedTestType) return false;
-    return strengthTests.includes(selectedTestType.name);
-  }, [selectedTestType]);
-
-  // ✅ 選択中の metric（筋力以外は強制 primary）
-  const selectedMetric = useMemo(() => {
-    if (!selectedTestTypeId) return 'primary_value' as const;
-
-    // 選択中のtestTypeを見て筋力じゃないなら primary固定
-    const t = testTypes.find((x) => x.id === selectedTestTypeId);
-    const isStrength = !!t && strengthTests.includes(t.name);
-    if (!isStrength) return 'primary_value' as const;
-
-    return benchMetricByTestId[selectedTestTypeId] ?? 'primary_value';
-  }, [selectedTestTypeId, benchMetricByTestId, testTypes]);
-
-  // 選択中 records / PB
   const selectedRecords = useMemo(() => {
     return selectedTestTypeId ? getRecordsByTestType(selectedTestTypeId) : [];
   }, [selectedTestTypeId, getRecordsByTestType]);
 
+  // ✅ 選択中の metric（筋力以外は primary固定）
+  const selectedMetric: MetricKey = useMemo(() => {
+    if (!selectedTestTypeId) return 'primary_value';
+    if (!selectedTestType) return 'primary_value';
+    if (!strengthTests.includes(selectedTestType.name)) return 'primary_value';
+    return benchMetricByTestId[selectedTestTypeId] ?? 'primary_value';
+  }, [selectedTestTypeId, selectedTestType, benchMetricByTestId]);
+
+  // ✅ PBを「表示中metric」で作り直す（これで表記誤りが消える）
   const selectedPB = useMemo(() => {
     if (!selectedTestType || selectedRecords.length === 0) return undefined;
-  
     const higherIsBetter = selectedTestType.higher_is_better ?? true;
-  
-    // ✅ 選択中の指標（metricKey）でPBを作り直す
-    return buildPersonalBestFromRecords(
-      selectedRecords,
-      selectedMetric,
-      higherIsBetter
-    );
+    return buildPersonalBestFromRecords(selectedRecords, selectedMetric, higherIsBetter);
   }, [selectedTestType, selectedRecords, selectedMetric]);
 
-  // 単位（表示）
-  const unitFor = (testType: PerformanceTestType) => {
-    return getCalculatedUnit(testType.name || '') || testType.unit;
-  };
-
-  // 表示値フォーマット（カード内の最新など）
-  const formatValue = (value: any, testTypeName: string) => {
-    const num = typeof value === 'string' ? parseFloat(value) : value;
-    if (num === null || num === undefined || Number.isNaN(num)) return '-';
-    return num.toFixed(testTypeName.includes('rsi') ? 2 : 1);
-  };
-
-  // -------------------------
-  // ① チームベンチマーク（90日）取得：初回/records変化でOK
-  // -------------------------
+  // 初期：ベンチマーク取得（abs/rel）
   useEffect(() => {
     if (!records || records.length === 0) return;
 
@@ -125,7 +118,6 @@ export function PerformanceOverview({
           supabase.rpc('get_my_team_benchmarks', { p_days: 90, p_metric: 'primary_value' }),
           supabase.rpc('get_my_team_benchmarks', { p_days: 90, p_metric: 'relative_1rm' }),
         ]);
-
         if (e1) throw e1;
         if (e2) throw e2;
 
@@ -159,9 +151,7 @@ export function PerformanceOverview({
     };
   }, [records?.length]);
 
-  // -------------------------
-  // ② 月次平均（latest-of-month）取得：選択中 testTypeId と metric が変わったときだけ
-  // -------------------------
+  // 月次平均（latest-of-month）取得：選択中種目＆選択中metricに追従
   useEffect(() => {
     if (!selectedTestTypeId) return;
 
@@ -174,7 +164,6 @@ export function PerformanceOverview({
           p_months: 6,
           p_metric: selectedMetric,
         });
-
         if (error) throw error;
         if (cancelled) return;
 
@@ -200,9 +189,6 @@ export function PerformanceOverview({
     };
   }, [selectedTestTypeId, selectedMetric]);
 
-  // --------------------------------
-  // records 0 のガード
-  // --------------------------------
   if (records.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-8 text-center transition-colors">
@@ -210,10 +196,18 @@ export function PerformanceOverview({
           <Trophy className="w-10 h-10 text-blue-600 dark:text-blue-400" />
         </div>
         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">測定を始めましょう！</h3>
-        <p className="text-gray-600 dark:text-gray-400">最初のジャンプ測定を記録して、成長を追跡しましょう。</p>
+        <p className="text-gray-600 dark:text-gray-400">最初の測定を記録して、成長を追跡しましょう。</p>
       </div>
     );
   }
+
+  const unitFor = (testType: PerformanceTestType) => getCalculatedUnit(testType.name || '') || testType.unit;
+
+  const formatValue = (value: any, testTypeName: string) => {
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (num === null || num === undefined || Number.isNaN(num)) return '-';
+    return num.toFixed(testTypeName.includes('rsi') ? 2 : 1);
+  };
 
   return (
     <div className="space-y-6">
@@ -224,10 +218,8 @@ export function PerformanceOverview({
           const testRecords = getRecordsByTestType(testType.id);
           const latestRecord = testRecords[0];
 
-          const isStrength = strengthTests.includes(testType.name);
-
-          // カード側の metric（筋力のみ切替OK）
-          const metric = isStrength ? (benchMetricByTestId[testType.id] ?? 'primary_value') : 'primary_value';
+          const metric: MetricKey =
+            strengthTests.includes(testType.name) ? (benchMetricByTestId[testType.id] ?? 'primary_value') : 'primary_value';
 
           const bench =
             metric === 'relative_1rm' ? teamBenchRelByTestId[testType.id] : teamBenchAbsByTestId[testType.id];
@@ -237,31 +229,6 @@ export function PerformanceOverview({
           const suffix = metric === 'relative_1rm' ? '×BW' : unitFor(testType);
           const digits = testType.name.includes('rsi') ? 2 : 1;
           const fmt = (v: any) => (v === null || v === undefined ? '-' : Number(v).toFixed(digits));
-
-
-          const buildPersonalBestFromRecords = (
-            recs: PerformanceRecordWithTest[],
-            metricKey: 'primary_value' | 'relative_1rm',
-            higherIsBetter: boolean
-          ): PersonalBest | undefined => {
-            let best: { value: number; date: string } | null = null;
-          
-            for (const r of recs) {
-              const raw = (r as any)?.values?.[metricKey];
-              const v = typeof raw === 'string' ? parseFloat(raw) : raw;
-              if (v === null || v === undefined || Number.isNaN(v)) continue;
-          
-              if (!best) {
-                best = { value: v, date: r.date };
-                continue;
-              }
-          
-              const better = higherIsBetter ? v > best.value : v < best.value;
-              if (better) best = { value: v, date: r.date };
-            }
-          
-            return best ? { value: best.value, date: best.date } : undefined;
-          };
 
           return (
             <button
@@ -284,9 +251,7 @@ export function PerformanceOverview({
                       {pb.value.toFixed(testType.name.includes('rsi') ? 2 : 1)}
                       <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{unitFor(testType)}</span>
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {new Date(pb.date).toLocaleDateString('ja-JP')}
-                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(pb.date).toLocaleDateString('ja-JP')}</p>
                   </div>
 
                   {latestRecord && latestRecord.date !== pb.date && (
@@ -306,9 +271,7 @@ export function PerformanceOverview({
                     {formatValue(latestRecord.values.primary_value, testType.name)}
                     <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{unitFor(testType)}</span>
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(latestRecord.date).toLocaleDateString('ja-JP')}
-                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(latestRecord.date).toLocaleDateString('ja-JP')}</p>
                 </div>
               ) : (
                 <div className="text-center py-4">
@@ -316,11 +279,10 @@ export function PerformanceOverview({
                 </div>
               )}
 
-              {/* チーム比較（カード内） */}
+              {/* チーム比較 */}
               {testRecords.length > 0 && (
                 <div className="mt-3">
-                  {/* 筋力だけ：指標トグル */}
-                  {isStrength && (
+                  {strengthTests.includes(testType.name) && (
                     <div className="mb-2 inline-flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1 text-[11px]">
                       <button
                         type="button"
@@ -432,18 +394,16 @@ export function PerformanceOverview({
                 {selectedTestType.display_name} の成長グラフ
               </h3>
 
-              {/* 見出し下：チーム比較（metricに合わせて表示） */}
               {(() => {
-                const metric = selectedMetric;
                 const bench =
-                  metric === 'relative_1rm'
+                  selectedMetric === 'relative_1rm'
                     ? teamBenchRelByTestId[selectedTestType.id]
                     : teamBenchAbsByTestId[selectedTestType.id];
 
                 const showBench = !!bench && !!bench.team_n && bench.team_n >= 2;
                 if (!showBench) return null;
 
-                const suffix = metric === 'relative_1rm' ? '×BW' : unitFor(selectedTestType);
+                const suffix = selectedMetric === 'relative_1rm' ? '×BW' : unitFor(selectedTestType);
                 const digits = selectedTestType.name.includes('rsi') ? 2 : 1;
                 const fmt = (v: any) => (v === null || v === undefined ? '-' : Number(v).toFixed(digits));
 
