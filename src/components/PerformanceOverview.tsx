@@ -26,7 +26,7 @@ type TeamMonthlyPoint = {
   team_avg: number | null;
 };
 
-// ✅ ファイルスコープに置く（必ず定義される）
+// ✅ 必ずファイルスコープで定義（ReferenceError回避）
 function buildPersonalBestFromRecords(
   recs: PerformanceRecordWithTest[],
   metricKey: MetricKey,
@@ -51,6 +51,42 @@ function buildPersonalBestFromRecords(
   return best ? { value: best.value, date: best.date } : undefined;
 }
 
+// ✅ RPCの返却カラム名が多少違っても吸収する（安全策）
+function normalizeMonthlyRows(rows: any[]): TeamMonthlyPoint[] {
+  return (rows ?? [])
+    .map((r: any) => {
+      const month_start =
+        r?.month_start ??
+        r?.month ??
+        r?.month_start_date ??
+        r?.month_start_at ??
+        r?.month_begin ??
+        null;
+
+      const team_avg =
+        r?.team_avg ??
+        r?.avg ??
+        r?.mean ??
+        r?.team_mean ??
+        null;
+
+      const team_n =
+        r?.team_n ??
+        r?.n ??
+        r?.count ??
+        null;
+
+      if (!month_start) return null;
+
+      return {
+        month_start: String(month_start),
+        team_avg: team_avg === null || team_avg === undefined ? null : Number(team_avg),
+        team_n: team_n === null || team_n === undefined ? null : Number(team_n),
+      } as TeamMonthlyPoint;
+    })
+    .filter(Boolean) as TeamMonthlyPoint[];
+}
+
 interface PerformanceOverviewProps {
   testTypes: PerformanceTestType[];
   records: PerformanceRecordWithTest[];
@@ -68,7 +104,7 @@ export function PerformanceOverview({
 }: PerformanceOverviewProps) {
   const [selectedTestTypeId, setSelectedTestTypeId] = useState<string | null>(null);
 
-  // ★チーム月次平均（latest-of-month）
+  // ★チーム月次平均
   const [teamMonthlyAbsByTestId, setTeamMonthlyAbsByTestId] = useState<Record<string, TeamMonthlyPoint[]>>({});
   const [teamMonthlyRelByTestId, setTeamMonthlyRelByTestId] = useState<Record<string, TeamMonthlyPoint[]>>({});
 
@@ -97,7 +133,7 @@ export function PerformanceOverview({
     return benchMetricByTestId[selectedTestTypeId] ?? 'primary_value';
   }, [selectedTestTypeId, selectedTestType, benchMetricByTestId]);
 
-  // ✅ PBを「表示中metric」で作り直す（これで表記誤りが消える）
+  // ✅ PBを「表示中metric」で作り直す（上の表記ズレ対策）
   const selectedPB = useMemo(() => {
     if (!selectedTestType || selectedRecords.length === 0) return undefined;
     const higherIsBetter = selectedTestType.higher_is_better ?? true;
@@ -151,7 +187,7 @@ export function PerformanceOverview({
     };
   }, [records?.length]);
 
-  // 月次平均（latest-of-month）取得：選択中種目＆選択中metricに追従
+  // ✅ 月次平均：存在するRPCに合わせて取得（metric あり）
   useEffect(() => {
     if (!selectedTestTypeId) return;
 
@@ -159,21 +195,25 @@ export function PerformanceOverview({
 
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('get_my_team_monthly_avg', {
+        // ★ここがポイント：get_my_team_monthly_averages を使う（p_metricあり）
+        const { data, error } = await supabase.rpc('get_my_team_monthly_averages', {
           p_test_type_id: selectedTestTypeId,
-          p_months: 6,
           p_metric: selectedMetric,
+          p_months: 6,
         });
+
         if (error) throw error;
         if (cancelled) return;
 
+        const normalized = normalizeMonthlyRows(data ?? []);
+
         if (selectedMetric === 'relative_1rm') {
-          setTeamMonthlyRelByTestId((prev) => ({ ...prev, [selectedTestTypeId]: (data ?? []) as TeamMonthlyPoint[] }));
+          setTeamMonthlyRelByTestId((prev) => ({ ...prev, [selectedTestTypeId]: normalized }));
         } else {
-          setTeamMonthlyAbsByTestId((prev) => ({ ...prev, [selectedTestTypeId]: (data ?? []) as TeamMonthlyPoint[] }));
+          setTeamMonthlyAbsByTestId((prev) => ({ ...prev, [selectedTestTypeId]: normalized }));
         }
       } catch (e) {
-        console.warn('[get_my_team_monthly_latest error]', e);
+        console.warn('[get_my_team_monthly_averages error]', e);
         if (cancelled) return;
 
         if (selectedMetric === 'relative_1rm') {
