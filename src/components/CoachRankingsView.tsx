@@ -31,8 +31,9 @@ type RankingRow = {
 };
 
 type Props = {
-  team: Team;
-};
+    team: Team;
+    onOpenAthlete: (userId: string, testTypeId: string, metric: MetricKey) => void;
+  };
 
 const strengthTestNames = new Set([
   'bench_press',
@@ -101,13 +102,23 @@ export function CoachRankingsView({ team }: Props) {
       });
       map.set(k, arr);
     }
-  
-    return Array.from(map.entries()).sort((a, b) => {
-      const sa = map.get(a[0])?.[0]?.category_sort ?? 999;
-      const sb = map.get(b[0])?.[0]?.category_sort ?? 999;
-      if (sa !== sb) return sa - sb;
-      return a[0].localeCompare(b[0], 'ja');
-    });
+    const CATEGORY_ORDER = [
+        '筋力',
+        'スプリント',
+        'ジャンプ',
+        '敏捷',
+        '持久',
+        'その他',
+      ];
+      
+      return Array.from(map.entries()).sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a[0]);
+        const bi = CATEGORY_ORDER.indexOf(b[0]);
+        const aRank = ai === -1 ? 999 : ai;
+        const bRank = bi === -1 ? 999 : bi;
+        if (aRank !== bRank) return aRank - bRank;
+        return a[0].localeCompare(b[0], 'ja');
+      });
   }, [testTypes]);
 
   // ----------------------------
@@ -346,11 +357,7 @@ export function CoachRankingsView({ team }: Props) {
               <button
                 key={`${r.user_id}-${r.rank ?? 'x'}`}
                 className="w-full text-left px-4 sm:px-5 py-3 hover:bg-gray-50"
-                onClick={() => {
-                  // ✅ ここでモーダルを開く
-                  setModalAthlete({ userId: r.user_id, name: displayName(r) });
-                  setOpenModal(true);
-                }}
+                onClick={() => onOpenAthlete(r.user_id, selectedTestTypeId, metric)}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">

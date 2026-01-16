@@ -1357,7 +1357,13 @@ useEffect(() => {
                       }
                     >
                       <ChartErrorBoundary name="CoachRankingsView">
-                        <CoachRankingsViewLazy team={selectedTeam!} />
+                      <CoachRankingsViewLazy
+                        team={selectedTeam!}
+                        onOpenAthlete={(userId, testTypeId, metric) => {
+                          setModalAthlete({ userId, testTypeId, metric });
+                          setOpenModal(true);
+                        }}
+                      />
                       </ChartErrorBoundary>
                     </Suspense>
                   )}
