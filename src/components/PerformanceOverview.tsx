@@ -313,26 +313,35 @@ export function PerformanceOverview({
                 {selectedTestType.display_name} の成長グラフ
               </h3>
 
-              {/* ★追加：選択中種目のチーム比較（見出し下に軽く） */}
-              {teamBenchmarksByTestId[selectedTestType.id]?.team_n &&
-                teamBenchmarksByTestId[selectedTestType.id].team_n! >= 2 && (
-                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                    チーム平均:{' '}
-                    {teamBenchmarksByTestId[selectedTestType.id].team_avg !== null &&
-                    teamBenchmarksByTestId[selectedTestType.id].team_avg !== undefined
-                      ? Number(teamBenchmarksByTestId[selectedTestType.id].team_avg).toFixed(
-                          selectedTestType.name.includes('rsi') ? 2 : 1
-                        )
-                      : '-'}
-                    {unitFor(selectedTestType)} / {teamBenchmarksByTestId[selectedTestType.id].team_n}人中{' '}
-                    {teamBenchmarksByTestId[selectedTestType.id].team_rank ?? '-'}位（上位{' '}
-                    {teamBenchmarksByTestId[selectedTestType.id].team_top_percent !== null &&
-                    teamBenchmarksByTestId[selectedTestType.id].team_top_percent !== undefined
-                      ? Number(teamBenchmarksByTestId[selectedTestType.id].team_top_percent).toFixed(1)
-                      : '-'}
-                    %）
-                  </p>
-                )}
+            {/* ★選択中種目のチーム比較（見出し下） */}
+            {(() => {
+              if (!selectedTestType) return null;
+
+              const metric = benchMetricByTestId[selectedTestType.id] ?? 'primary_value';
+              const bench =
+                metric === 'relative_1rm'
+                  ? teamBenchRelByTestId[selectedTestType.id]
+                  : teamBenchAbsByTestId[selectedTestType.id];
+
+              const showBench = !!bench && !!bench.team_n && bench.team_n >= 2;
+              if (!showBench) return null;
+
+              const suffix = metric === 'relative_1rm' ? '×BW' : unitFor(selectedTestType);
+              const digits = selectedTestType.name.includes('rsi') ? 2 : 1;
+              const fmt = (v: any) =>
+                v === null || v === undefined ? '-' : Number(v).toFixed(digits);
+
+              return (
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  チーム平均: {fmt(bench.team_avg)}
+                  {suffix} / {bench.team_n}人中 {bench.team_rank ?? '-'}位（上位{' '}
+                  {bench.team_top_percent !== null && bench.team_top_percent !== undefined
+                    ? Number(bench.team_top_percent).toFixed(1)
+                    : '-'}
+                  %）
+                </p>
+              );
+            })()}
             </div>
 
             <button
