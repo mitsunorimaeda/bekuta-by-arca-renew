@@ -29,6 +29,7 @@ import {
   HelpCircle,
   FileText,
   Lock,
+  Trophy, 
 } from 'lucide-react';
 
 const TeamExportPanel = lazy(() =>
@@ -37,6 +38,10 @@ const TeamExportPanel = lazy(() =>
 const ReportView = lazy(() =>
   import('./ReportView').then((m) => ({ default: m.ReportView }))
 );
+const CoachRankingsViewLazy = lazy(async () => {
+  const m: any = await import('./CoachRankingsView');
+  return { default: m.CoachRankingsView ?? m.default };
+});
 
 /**
  * ✅ ここが超重要：
@@ -247,7 +252,7 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'reports'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports'>('athletes');
 
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -1154,6 +1159,20 @@ useEffect(() => {
                     </button>
 
                     <button
+                      onClick={() => setActiveTab('rankings')}
+                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
+                        activeTab === 'rankings'
+                          ? 'border-green-500 text-green-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <Trophy className="w-4 h-4 mr-2" />
+                        ランキング
+                      </div>
+                    </button>
+
+                    <button
                       onClick={() => setActiveTab('reports')}
                       className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
                         activeTab === 'reports'
@@ -1176,6 +1195,7 @@ useEffect(() => {
                     >
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
+                      <option value="rankings">ランキング</option>
                       <option value="reports">レポート</option>
                     </select>
                   </div>
@@ -1327,6 +1347,13 @@ useEffect(() => {
                         )}
                       </div>
                     </div>
+                  )}
+                  {activeTab === 'rankings' && (
+                    <Suspense fallback={...}>
+                      <ChartErrorBoundary name="CoachRankingsView">
+                        <CoachRankingsViewLazy team={selectedTeam!} />
+                      </ChartErrorBoundary>
+                    </Suspense>
                   )}
 
                   {activeTab === 'reports' && (
