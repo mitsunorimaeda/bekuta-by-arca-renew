@@ -16,6 +16,8 @@ type TestType = {
   category_id: string;
   is_active?: boolean | null;
   user_can_input?: boolean | null;
+  category_label?: string;
+  category_sort?: number | null;
 };
 
 type RankingRow = {
@@ -82,6 +84,32 @@ export function CoachRankingsView({ team }: Props) {
     []
   );
 
+  const grouped = useMemo(() => {
+    const map = new Map<string, TestType[]>();
+    for (const t of testTypes) {
+      const key = t.category_label || 'その他';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    }
+  
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a, b) => {
+        const sa = a.sort_order ?? 9999;
+        const sb = b.sort_order ?? 9999;
+        if (sa !== sb) return sa - sb;
+        return (a.display_name || '').localeCompare(b.display_name || '', 'ja');
+      });
+      map.set(k, arr);
+    }
+  
+    return Array.from(map.entries()).sort((a, b) => {
+      const sa = map.get(a[0])?.[0]?.category_sort ?? 999;
+      const sb = map.get(b[0])?.[0]?.category_sort ?? 999;
+      if (sa !== sb) return sa - sb;
+      return a[0].localeCompare(b[0], 'ja');
+    });
+  }, [testTypes]);
+
   // ----------------------------
   // 1) テスト種目一覧 取得
   // ----------------------------
@@ -93,12 +121,26 @@ export function CoachRankingsView({ team }: Props) {
         setTestTypesError(null);
 
         const { data, error } = await supabase
-          .from('performance_test_types')
-          .select('id,name,display_name,unit,higher_is_better,category_id,is_active,user_can_input,sort_order')
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true });
-
-        if (error) throw error;
+        .from('performance_test_types')
+        .select(`
+          id,
+          name,
+          display_name,
+          unit,
+          higher_is_better,
+          category_id,
+          sort_order,
+          is_active,
+          user_can_input,
+          performance_categories (
+            id,
+            name,
+            display_name,
+            sort_order
+          )
+        `)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
 
         const rows = (data ?? []) as any[];
         const types: TestType[] = rows.map((r) => ({
@@ -110,6 +152,8 @@ export function CoachRankingsView({ team }: Props) {
           category_id: r.category_id,
           is_active: r.is_active,
           user_can_input: r.user_can_input,
+          category_label: r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
+          category_sort: r.performance_categories?.sort_order ?? 999,
         }));
 
         if (cancelled) return;
@@ -227,11 +271,15 @@ export function CoachRankingsView({ team }: Props) {
               className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
               disabled={loadingTestTypes}
             >
-              {testTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.display_name}
-                </option>
-              ))}
+              {grouped.map(([label, items]) => (
+                <optgroup key={label} label={label}>
+                    {items.map((t) => (
+                    <option key={t.id} value={t.id}>
+                        {t.display_name}
+                    </option>
+                    ))}
+                </optgroup>
+                ))}
             </select>
             <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
