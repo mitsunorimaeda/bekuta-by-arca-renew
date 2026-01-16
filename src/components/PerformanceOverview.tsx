@@ -85,8 +85,17 @@ export function PerformanceOverview({
   }, [selectedTestTypeId, getRecordsByTestType]);
 
   const selectedPB = useMemo(() => {
-    return selectedTestTypeId ? getPersonalBest(selectedTestTypeId) : undefined;
-  }, [selectedTestTypeId, getPersonalBest]);
+    if (!selectedTestType || selectedRecords.length === 0) return undefined;
+  
+    const higherIsBetter = selectedTestType.higher_is_better ?? true;
+  
+    // ✅ 選択中の指標（metricKey）でPBを作り直す
+    return buildPersonalBestFromRecords(
+      selectedRecords,
+      selectedMetric,
+      higherIsBetter
+    );
+  }, [selectedTestType, selectedRecords, selectedMetric]);
 
   // 単位（表示）
   const unitFor = (testType: PerformanceTestType) => {
@@ -228,6 +237,31 @@ export function PerformanceOverview({
           const suffix = metric === 'relative_1rm' ? '×BW' : unitFor(testType);
           const digits = testType.name.includes('rsi') ? 2 : 1;
           const fmt = (v: any) => (v === null || v === undefined ? '-' : Number(v).toFixed(digits));
+
+
+          const buildPersonalBestFromRecords = (
+            recs: PerformanceRecordWithTest[],
+            metricKey: 'primary_value' | 'relative_1rm',
+            higherIsBetter: boolean
+          ): PersonalBest | undefined => {
+            let best: { value: number; date: string } | null = null;
+          
+            for (const r of recs) {
+              const raw = (r as any)?.values?.[metricKey];
+              const v = typeof raw === 'string' ? parseFloat(raw) : raw;
+              if (v === null || v === undefined || Number.isNaN(v)) continue;
+          
+              if (!best) {
+                best = { value: v, date: r.date };
+                continue;
+              }
+          
+              const better = higherIsBetter ? v > best.value : v < best.value;
+              if (better) best = { value: v, date: r.date };
+            }
+          
+            return best ? { value: best.value, date: best.date } : undefined;
+          };
 
           return (
             <button
