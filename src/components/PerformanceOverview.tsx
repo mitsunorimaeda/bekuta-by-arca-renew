@@ -159,7 +159,7 @@ export function PerformanceOverview({
 
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('get_my_team_monthly_latest', {
+        const { data, error } = await supabase.rpc('get_my_team_monthly_avg', {
           p_test_type_id: selectedTestTypeId,
           p_months: 6,
           p_metric: selectedMetric,
