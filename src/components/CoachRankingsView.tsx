@@ -267,6 +267,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
         p_metric: metric,
         p_team_id: team.id,
         p_test_type_id: selectedTestTypeId,
+        p_min_n: 5,
       });
 
       if (error) throw error;

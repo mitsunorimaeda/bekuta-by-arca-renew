@@ -19,6 +19,7 @@ import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/risk
 import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
 import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
+import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
 
 import {
   Users,
@@ -253,6 +254,25 @@ export function StaffView({
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports'>('athletes');
+
+    // =========================
+  // Rankings -> Performance Modal
+  // =========================
+  type MetricKey = 'primary_value' | 'relative_1rm';
+
+  const [perfModal, setPerfModal] = useState<{
+    open: boolean;
+    athleteUserId: string;
+    athleteName: string;
+    testTypeId: string;
+    metricKey: MetricKey;
+  }>({
+    open: false,
+    athleteUserId: '',
+    athleteName: '',
+    testTypeId: '',
+    metricKey: 'primary_value',
+  });
 
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -1360,9 +1380,15 @@ useEffect(() => {
                       <CoachRankingsViewLazy
                         team={selectedTeam!}
                         onOpenAthlete={(userId, testTypeId, metric) => {
-                          // ここでモーダルOPEN（あなたの実装に合わせて）
-                          setModalAthlete({ userId, testTypeId, metric });
-                          setOpenModal(true);
+                          const a = sortedAthletes?.find((x: any) => x.id === userId);
+
+                          setPerfModal({
+                            open: true,
+                            athleteUserId: userId,
+                            athleteName: a?.nickname || a?.name || '名前未設定',
+                            testTypeId,
+                            metricKey: metric,
+                          });
                         }}
                       />
                       </ChartErrorBoundary>
@@ -1418,6 +1444,18 @@ useEffect(() => {
           <TeamExportPanel team={selectedTeam} onClose={() => setShowExportPanel(false)} />
         </Suspense>
       )}
+
+      <CoachAthletePerformanceModal
+        open={perfModal.open}
+        onClose={() => setPerfModal((p) => ({ ...p, open: false }))}
+        teamId={selectedTeam?.id ?? ''}
+        athleteUserId={perfModal.athleteUserId}
+        athleteName={perfModal.athleteName}
+        testTypeId={perfModal.testTypeId}
+        metricKey={perfModal.metricKey}
+      />
+
+
 
       <TutorialController
         steps={getTutorialSteps('staff')}
