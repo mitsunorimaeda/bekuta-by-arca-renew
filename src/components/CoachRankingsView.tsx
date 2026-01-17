@@ -20,6 +20,7 @@ type TestType = {
 
   category_label?: string;
   category_sort?: number | null;
+  is_strength?: boolean | null;
 };
 
 type RankingRow = {
@@ -34,8 +35,9 @@ type RankingRow = {
 
 type Props = {
   team: Team;
-  onOpenAthlete?: (userId: string, testTypeId: string, metric: MetricKey) => void;
+  onOpenAthlete?: (userId: string, testTypeId: string, metric: MetricKey, athleteName: string) => void;
 };
+export type CoachRankingsViewProps = Props;
 
 const strengthTestNames = new Set([
   'bench_press',
@@ -109,7 +111,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   );
 
   const [metric, setMetric] = useState<MetricKey>('primary_value');
-  const isStrength = !!selectedTestType && strengthTestNames.has(selectedTestType.name);
+  const isStrength = !!selectedTestType?.is_strength;
 
   const unitLabel = useMemo(() => {
     if (!selectedTestType) return '';
@@ -190,6 +192,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
               display_name,
               unit,
               higher_is_better,
+              is_strength,
               category_id,
               sort_order,
               is_active,
@@ -221,6 +224,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
           category_label:
             r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
           category_sort: r.performance_categories?.sort_order ?? 999,
+          is_strength: r.is_strength ?? null,
         }));
 
         if (cancelled) return;
@@ -248,7 +252,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   // 種目が変わったら、筋力以外は metric を primary に戻す
   useEffect(() => {
     if (!selectedTestType) return;
-    if (!strengthTestNames.has(selectedTestType.name)) setMetric('primary_value');
+    if (!selectedTestType.is_strength) setMetric('primary_value');
   }, [selectedTestType?.id]);
 
   // ----------------------------
@@ -459,7 +463,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
                 key={`${r.user_id}-${r.rank ?? 'x'}`}
                 className="w-full text-left px-4 sm:px-5 py-3 hover:bg-gray-50"
                 onClick={() => {
-                  if (onOpenAthlete) onOpenAthlete(r.user_id, selectedTestTypeId, metric);
+                  if (onOpenAthlete) onOpenAthlete(r.user_id, selectedTestTypeId, metric, displayName(r));
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -475,6 +479,13 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
                     </div>
 
                     <div className="mt-1 text-xs text-gray-600">最終測定日：{r.date ?? '-'}</div>
+                    {benchmarkScope && (
+                      <div className="mt-0.5 text-[11px] text-gray-500">
+                        基準：{scopeLabel(benchmarkScope)}
+                        {typeof benchmarkN === 'number' ? `（n=${benchmarkN}）` : ''}
+                        {typeof minN === 'number' ? ` / 閾値=${minN}` : ''}
+                      </div>
+                    )}
                   </div>
 
                   <div className="text-right">

@@ -133,7 +133,7 @@ export const buildPerfInsight = (input: PerfInsightInput): PerfInsight | null =>
   if (prevValue != null && Number.isFinite(prevValue)) {
     const d = diff(latestValue, prevValue, direction);
     const sign = d >= 0 ? "+" : "";
-    bullets.push(`前回比：${sign}${roundTo(d, digits).toFixed(digits)}（良化方向 기준）`);
+    bullets.push(`前回比：${sign}${roundTo(d, digits).toFixed(digits)}（良化方向 基準）`);
     if (Math.abs(d) < Math.max(Math.abs(latestValue) * 0.003, 0.0001)) {
       nextActions.push("変化が小さいので、まずはフォーム/条件（シューズ・路面・ウォームアップ）を固定して再測定");
     }
@@ -144,7 +144,7 @@ export const buildPerfInsight = (input: PerfInsightInput): PerfInsight | null =>
     const g = gradeVsTeam(latestValue, teamAvg, direction);
     const d = diff(latestValue, teamAvg, direction);
     const sign = d >= 0 ? "+" : "";
-    bullets.push(`チーム平均：${formatVal(teamAvg, digits, unitLabel)}（平均との差：${sign}${roundTo(d, digits).toFixed(digits)} 良化方向 기준）`);
+    bullets.push(`チーム平均：${formatVal(teamAvg, digits, unitLabel)}（平均との差：${sign}${roundTo(d, digits).toFixed(digits)} 良化方向 基準）`);
 
     if (g === "above") {
       bullets.push("評価：平均以上（強み候補）");

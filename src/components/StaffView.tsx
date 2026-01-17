@@ -20,6 +20,7 @@ import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
 import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
 import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
+import type { CoachRankingsViewProps } from './CoachRankingsView';
 
 import {
   Users,
@@ -39,10 +40,13 @@ const TeamExportPanel = lazy(() =>
 const ReportView = lazy(() =>
   import('./ReportView').then((m) => ({ default: m.ReportView }))
 );
-const CoachRankingsViewLazy = lazy(async () => {
-  const m: any = await import('./CoachRankingsView');
-  return { default: m.CoachRankingsView ?? m.default };
-});
+
+
+const CoachRankingsViewLazy =
+  lazy(async () => {
+    const m = await import('./CoachRankingsView');
+    return { default: m.default }; // default export を使う
+  }) as React.LazyExoticComponent<React.ComponentType<CoachRankingsViewProps>>;
 
 /**
  * ✅ ここが超重要：
@@ -1378,14 +1382,12 @@ useEffect(() => {
                     >
                       <ChartErrorBoundary name="CoachRankingsView">
                       <CoachRankingsViewLazy
-                        team={selectedTeam!}
-                        onOpenAthlete={(userId, testTypeId, metric) => {
-                          const a = sortedAthletes?.find((x: any) => x.id === userId);
-
+                       team={selectedTeam!}
+                        onOpenAthlete={(userId, testTypeId, metric, athleteName) => {
                           setPerfModal({
                             open: true,
                             athleteUserId: userId,
-                            athleteName: a?.nickname || a?.name || '名前未設定',
+                            athleteName: athleteName || '名前未設定',
                             testTypeId,
                             metricKey: metric,
                           });
