@@ -12,6 +12,7 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from 'recharts';
+import { buildPerfInsight, inferDirection } from "../lib/perfInsight";
 
 type MetricKey = 'primary_value' | 'relative_1rm';
 
@@ -71,7 +72,7 @@ export default function CoachAthletePerformanceModal({
   const isStrength = !!testType?.is_strength;
 
   const metricLabel = !isStrength
-    ? '記録'
+    ? ''
     : metricKey === 'relative_1rm'
       ? '相対1RM'
       : '推定1RM';
@@ -162,6 +163,22 @@ export default function CoachAthletePerformanceModal({
   const last = series.length ? series[series.length - 1] : null;
   const d = digitsFor(testType?.display_name);
 
+  const insight = buildPerfInsight({
+    athleteName,
+    testDisplayName: testType?.display_name || "種目",
+    latestValue: last?.value ?? null,
+    prevValue: series.length >= 2 ? series[series.length - 2].value : null,
+    unitLabel,
+    direction: inferDirection(testType?.display_name || ""),
+    teamAvg: benchmark?.avg_value ?? null,
+    p10: benchmark?.p10 ?? null,
+    p90: benchmark?.p90 ?? null,
+    // rankingは今は渡せないなら null のままでOK
+    teamRank: null,
+    teamN: null,
+    topPercent: null,
+  });
+
   if (!open) return null;
 
   return (
@@ -175,7 +192,7 @@ export default function CoachAthletePerformanceModal({
           <div className="min-w-0">
             <div className="text-sm text-gray-500">成長グラフ</div>
             <div className="text-lg font-bold text-gray-900 truncate">
-              {athleteName} / {testType?.display_name || '種目'}（{metricLabel}）
+            {athleteName} / {testType?.display_name || '種目'}{metricLabel ? `（${metricLabel}）` : ''}
             </div>
             <div className="text-xs text-gray-600 mt-1">
               最新：{last ? `${last.date} / ${last.value.toFixed(d)} ${unitLabel}` : '—'}
@@ -197,6 +214,32 @@ export default function CoachAthletePerformanceModal({
           {err && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               {err}
+            </div>
+          )}
+
+                    {/* ✅ ここっ！内部コメント（MVP） */}
+                    {insight && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="text-sm font-semibold text-gray-900">{insight.title}</div>
+
+              <ul className="mt-2 space-y-1 text-sm text-gray-800 list-disc pl-5">
+                {insight.bullets.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+
+              {insight.nextActions.length > 0 && (
+                <>
+                  <div className="mt-3 text-xs font-semibold text-gray-700">次の一手</div>
+                  <ul className="mt-1 space-y-1 text-sm text-gray-800 list-disc pl-5">
+                    {insight.nextActions.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {insight.note && <div className="mt-2 text-xs text-gray-500">{insight.note}</div>}
             </div>
           )}
 
