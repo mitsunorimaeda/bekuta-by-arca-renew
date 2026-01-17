@@ -1,156 +1,146 @@
 // src/components/CoachAthletePerformanceModal.tsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { PerformanceChart } from './PerformanceChart';
-import type { PersonalBest } from '../hooks/usePerformanceData';
+import { X } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  ReferenceLine,
+} from 'recharts';
 
 type MetricKey = 'primary_value' | 'relative_1rm';
-
-type TeamMonthlyPoint = {
-  month_start: string; // 'YYYY-MM-DD'
-  team_n: number | null;
-  team_avg: number | null;
-};
-
-type TestTypeLite = {
-  id: string;
-  name: string;
-  display_name: string;
-  unit: string;
-  higher_is_better: boolean | null;
-};
-
-type PerformanceRecordWithTestLite = {
-  id: string;
-  user_id: string;
-  test_type_id: string;
-  date: string;
-  values: any;
-  notes: string | null;
-  test_type: TestTypeLite | null;
-};
 
 type Props = {
   open: boolean;
   onClose: () => void;
-
   teamId: string;
   athleteUserId: string;
   athleteName: string;
-
   testTypeId: string;
-  testTypeDisplayName?: string;
-
   metricKey: MetricKey;
-  unitLabel?: string;
 };
 
-const isFiniteNumber = (v: any) => typeof v === 'number' && Number.isFinite(v);
+type Point = {
+  date: string; // YYYY-MM-DD
+  value: number;
+};
 
-export function CoachAthletePerformanceModal({
+type TestTypeInfo = {
+  id: string;
+  display_name: string;
+  unit: string;
+};
+
+type Benchmark = {
+  avg_value: number | null;
+  p10: number | null;
+  p90: number | null;
+};
+
+const digitsFor = (name?: string) => (name?.includes('rsi') ? 2 : 1);
+
+const formatJP = (iso: string) => {
+  // YYYY-MM-DD -> M/D
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return `${m}/${d}`;
+};
+
+export default function CoachAthletePerformanceModal({
   open,
   onClose,
   teamId,
   athleteUserId,
   athleteName,
   testTypeId,
-  testTypeDisplayName,
   metricKey,
-  unitLabel,
 }: Props) {
-  const [records, setRecords] = useState<PerformanceRecordWithTestLite[]>([]);
-  const [teamMonthly, setTeamMonthly] = useState<TeamMonthlyPoint[]>([]);
-
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  // ----------------------------
-  // Fetch: athlete records + team monthly (parallel)
-  // ----------------------------
+  const [testType, setTestType] = useState<TestTypeInfo | null>(null);
+  const [series, setSeries] = useState<Point[]>([]);
+  const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
+
+  const metricLabel = metricKey === 'relative_1rm' ? '相対1RM' : '推定1RM';
+
+  const unitLabel = useMemo(() => {
+    if (!testType) return '';
+    if (metricKey === 'relative_1rm') return '×BW';
+    return testType.unit || '';
+  }, [testType, metricKey]);
+
   useEffect(() => {
     if (!open) return;
-    if (!athleteUserId || !testTypeId || !teamId) return;
 
     let cancelled = false;
 
     (async () => {
       try {
         setLoading(true);
-        setError(null);
+        setErr(null);
 
-        const [recRes, teamRes] = await Promise.all([
-          supabase
-            .from('performance_records')
-            .select(
-              `
-              id,
-              user_id,
-              test_type_id,
-              date,
-              values,
-              notes,
-              test_type:performance_test_types (
-                id,
-                name,
-                display_name,
-                unit,
-                higher_is_better
-              )
-            `
-            )
-            .eq('user_id', athleteUserId)
-            .eq('test_type_id', testTypeId)
-            .order('date', { ascending: true }),
+        // ① 種目情報
+        const tt = await supabase
+          .from('performance_test_types')
+          .select('id, display_name, unit')
+          .eq('id', testTypeId)
+          .single();
 
-          supabase.rpc('get_team_monthly_latest', {
-            p_team_id: teamId,
-            p_test_type_id: testTypeId,
-            p_metric: metricKey, // 'primary_value' | 'relative_1rm'
-            p_months: 12,
-          }),
-        ]);
+        if (tt.error) throw tt.error;
+        if (!cancelled) setTestType(tt.data as any);
 
-        if (recRes.error) throw recRes.error;
-        if (teamRes.error) throw teamRes.error;
+        // ② 選手の時系列（RPC）
+        const { data: ts, error: tsErr } = await supabase.rpc('get_athlete_test_timeseries', {
+          p_team_id: teamId,
+          p_user_id: athleteUserId,
+          p_test_type_id: testTypeId,
+          p_metric: metricKey,
+          p_days: 730,
+        });
+        if (tsErr) throw tsErr;
 
-        if (cancelled) return;
+        const points: Point[] = (ts ?? [])
+          .map((r: any) => ({
+            date: r.date,
+            value: Number(r.value),
+          }))
+          .filter((p: any) => p.date && Number.isFinite(p.value))
+          .sort((a, b) => a.date.localeCompare(b.date));
 
-        // records
-        const rows = (recRes.data ?? []) as any[];
-        const mapped: PerformanceRecordWithTestLite[] = rows.map((r) => ({
-          id: r.id,
-          user_id: r.user_id,
-          test_type_id: r.test_type_id,
-          date: r.date,
-          values: r.values,
-          notes: r.notes ?? '',
-          test_type: r.test_type
-            ? {
-                id: r.test_type.id,
-                name: r.test_type.name,
-                display_name: r.test_type.display_name,
-                unit: r.test_type.unit,
-                higher_is_better: r.test_type.higher_is_better,
-              }
-            : null,
-        }));
-        setRecords(mapped);
+        if (!cancelled) setSeries(points);
 
-        // team monthly
-        const trows = (teamRes.data ?? []) as any[];
-        const tMapped: TeamMonthlyPoint[] = trows.map((m) => ({
-          month_start: String(m.month_start),
-          team_n: m.team_n != null ? Number(m.team_n) : null,
-          team_avg: m.team_avg != null ? Number(m.team_avg) : null,
-        }));
-        setTeamMonthly(tMapped);
+        // ③ チームベンチ（任意：あるなら表示）
+        // 既にある get_my_team_benchmarks を流用する（metricごと）
+        // ※ 返却の列名が違う場合はここだけ調整
+        const { data: b, error: bErr } = await supabase.rpc('get_my_team_benchmarks', {
+          p_days: 90,
+          p_metric: metricKey,
+        });
+
+        if (!bErr && b) {
+          // b が配列/単体どっちでも吸う
+          const row = Array.isArray(b) ? b[0] : b;
+          const bm: Benchmark = {
+            avg_value: row?.avg_value ?? row?.avg ?? null,
+            p10: row?.p10 ?? null,
+            p90: row?.p90 ?? null,
+          };
+          if (!cancelled) setBenchmark(bm);
+        } else {
+          if (!cancelled) setBenchmark(null);
+        }
       } catch (e: any) {
-        console.error('[CoachAthletePerformanceModal] fetch error', e);
-        if (!cancelled) setError(e?.message ?? '取得に失敗しました');
+        console.error('[CoachAthletePerformanceModal] error', e);
         if (!cancelled) {
-          setRecords([]);
-          setTeamMonthly([]);
+          setErr(e?.message ?? '取得に失敗しました');
+          setSeries([]);
+          setBenchmark(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -160,104 +150,111 @@ export function CoachAthletePerformanceModal({
     return () => {
       cancelled = true;
     };
-  }, [open, athleteUserId, testTypeId, teamId, metricKey]);
+  }, [open, teamId, athleteUserId, testTypeId, metricKey]);
 
-  // ----------------------------
-  // Personal Best (computed locally)
-  // ----------------------------
-  const personalBest: PersonalBest | undefined = useMemo(() => {
-    if (!records || records.length === 0) return undefined;
-
-    const testType = records[0]?.test_type;
-    const higherIsBetter = testType?.higher_is_better ?? true;
-
-    const getMetric = (rec: PerformanceRecordWithTestLite): number | null => {
-      const raw = metricKey === 'relative_1rm' ? rec.values?.relative_1rm : rec.values?.primary_value;
-      const num = typeof raw === 'string' ? parseFloat(raw) : raw;
-      return Number.isFinite(num) ? num : null;
-    };
-
-    let bestV: number | null = null;
-    let bestDate: string | null = null;
-
-    for (const r of records) {
-      const v = getMetric(r);
-      if (!isFiniteNumber(v)) continue;
-
-      if (bestV == null) {
-        bestV = v;
-        bestDate = r.date;
-        continue;
-      }
-
-      if (higherIsBetter ? v > bestV : v < bestV) {
-        bestV = v;
-        bestDate = r.date;
-      }
-    }
-
-    if (bestV == null || !bestDate) return undefined;
-    return { value: bestV, date: bestDate };
-  }, [records, metricKey]);
-
-  const title = testTypeDisplayName || records?.[0]?.test_type?.display_name || '推移';
+  const last = series.length ? series[series.length - 1] : null;
+  const d = digitsFor(testType?.display_name);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-        <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" />
-                <div className="text-base sm:text-lg font-bold text-gray-900 truncate">
-                  {athleteName || '選手'}：{title}
-                </div>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                表示：{metricKey === 'relative_1rm' ? '相対（×BW）' : '通常'}
-              </div>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm text-gray-500">成長グラフ</div>
+            <div className="text-lg font-bold text-gray-900 truncate">
+              {athleteName} / {testType?.display_name || '種目'}（{metricLabel}）
             </div>
-
-            <button
-              onClick={onClose}
-              className="shrink-0 inline-flex items-center justify-center rounded-lg border bg-white hover:bg-gray-50 w-10 h-10"
-              aria-label="close"
-              title="閉じる"
-            >
-              <X className="w-5 h-5 text-gray-700" />
-            </button>
+            <div className="text-xs text-gray-600 mt-1">
+              最新：{last ? `${last.date} / ${last.value.toFixed(d)} ${unitLabel}` : '—'}
+            </div>
           </div>
 
-          <div className="p-4 sm:p-6 overflow-y-auto max-h-[calc(90vh-72px)]">
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+          <button
+            className="p-2 rounded-lg hover:bg-gray-100"
+            onClick={onClose}
+            aria-label="close"
+            title="閉じる"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* body */}
+        <div className="p-5 space-y-4">
+          {err && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {err}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+            </div>
+          ) : series.length === 0 ? (
+            <div className="py-12 text-center text-sm text-gray-500">この種目の記録がありません</div>
+          ) : (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tickFormatter={formatJP} minTickGap={18} />
+                  <YAxis />
+                  <Tooltip
+                    formatter={(v: any) => `${Number(v).toFixed(d)} ${unitLabel}`}
+                    labelFormatter={(l: any) => `日付: ${l}`}
+                  />
+                  {benchmark?.avg_value != null && (
+                    <ReferenceLine
+                      y={benchmark.avg_value}
+                      strokeDasharray="6 4"
+                      label={{ value: 'チーム平均', position: 'insideTopRight' }}
+                    />
+                  )}
+                  {benchmark?.p10 != null && (
+                    <ReferenceLine y={benchmark.p10} strokeDasharray="2 6" />
+                  )}
+                  {benchmark?.p90 != null && (
+                    <ReferenceLine y={benchmark.p90} strokeDasharray="2 6" />
+                  )}
+                  <Line type="monotone" dataKey="value" strokeWidth={3} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* list */}
+          {series.length > 0 && (
+            <div className="border rounded-xl overflow-hidden">
+              <div className="px-4 py-2 bg-gray-50 text-xs text-gray-600 flex justify-between">
+                <span>日付</span>
+                <span>値（{unitLabel || '-'}）</span>
               </div>
-            ) : error ? (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-                <div className="font-semibold mb-1">取得エラー</div>
-                <div className="mb-3">{error}</div>
+              <div className="max-h-48 overflow-auto divide-y">
+                {series
+                  .slice()
+                  .reverse()
+                  .map((p) => (
+                    <div key={p.date} className="px-4 py-2 text-sm flex justify-between">
+                      <span className="text-gray-700">{p.date}</span>
+                      <span className="font-semibold text-gray-900">{p.value.toFixed(d)}</span>
+                    </div>
+                  ))}
               </div>
-            ) : (
-              <PerformanceChart
-                records={records as any}
-                personalBest={personalBest}
-                testTypeName={title}
-                metricKey={metricKey}
-                unitLabel={unitLabel}
-                teamMonthly={teamMonthly}
-              />
-            )}
+            </div>
+          )}
+
+          <div className="text-xs text-gray-500">
+            ※ まずは「個人推移＋チーム基準線（あれば）」で完成。次に「チーム内順位の推移」など拡張できます。
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-export default CoachAthletePerformanceModal;

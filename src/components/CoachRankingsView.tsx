@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Team } from '../lib/supabase';
 import { Trophy, RefreshCw, ChevronDown } from 'lucide-react';
-import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
 
 type MetricKey = 'primary_value' | 'relative_1rm';
 
@@ -14,8 +13,13 @@ type TestType = {
   unit: string;
   higher_is_better: boolean | null;
   category_id: string;
+
+  // ✅ DBに合わせて optional で持つ
+  sort_order?: number | null;
+
   is_active?: boolean | null;
   user_can_input?: boolean | null;
+
   category_label?: string;
   category_sort?: number | null;
 };
@@ -31,9 +35,9 @@ type RankingRow = {
 };
 
 type Props = {
-    team: Team;
-    onOpenAthlete: (userId: string, testTypeId: string, metric: MetricKey) => void;
-  };
+  team: Team;
+  onOpenAthlete?: (userId: string, testTypeId: string, metric: MetricKey) => void;
+};
 
 const strengthTestNames = new Set([
   'bench_press',
@@ -45,7 +49,10 @@ const strengthTestNames = new Set([
 
 const digitsFor = (testTypeName?: string) => (testTypeName?.includes('rsi') ? 2 : 1);
 
-export function CoachRankingsView({ team }: Props) {
+// カテゴリ順（表示の好み）
+const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '持久', 'その他'];
+
+export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   const [testTypes, setTestTypes] = useState<TestType[]>([]);
   const [loadingTestTypes, setLoadingTestTypes] = useState(false);
   const [testTypesError, setTestTypesError] = useState<string | null>(null);
@@ -63,17 +70,13 @@ export function CoachRankingsView({ team }: Props) {
   const unitLabel = useMemo(() => {
     if (!selectedTestType) return '';
     if (isStrength && metric === 'relative_1rm') return '×BW';
-    return selectedTestType.unit;
+    return selectedTestType.unit || '';
   }, [selectedTestType, isStrength, metric]);
 
   // ランキング
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
   const [rankingError, setRankingError] = useState<string | null>(null);
-
-  // ✅ モーダル用 state
-  const [openModal, setOpenModal] = useState(false);
-  const [modalAthlete, setModalAthlete] = useState<{ userId: string; name: string } | null>(null);
 
   // ダミー（RPC未整備でも画面確認できる）
   const dummyRanking: RankingRow[] = useMemo(
@@ -85,14 +88,19 @@ export function CoachRankingsView({ team }: Props) {
     []
   );
 
+  // ----------------------------
+  // 種目一覧：カテゴリでoptgroup化
+  // ----------------------------
   const grouped = useMemo(() => {
     const map = new Map<string, TestType[]>();
+
     for (const t of testTypes) {
       const key = t.category_label || 'その他';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
-  
+
+    // 種目の並び：sort_order → display_name
     for (const [k, arr] of map.entries()) {
       arr.sort((a, b) => {
         const sa = a.sort_order ?? 9999;
@@ -102,23 +110,16 @@ export function CoachRankingsView({ team }: Props) {
       });
       map.set(k, arr);
     }
-    const CATEGORY_ORDER = [
-        '筋力',
-        'スプリント',
-        'ジャンプ',
-        '敏捷',
-        '持久',
-        'その他',
-      ];
-      
-      return Array.from(map.entries()).sort((a, b) => {
-        const ai = CATEGORY_ORDER.indexOf(a[0]);
-        const bi = CATEGORY_ORDER.indexOf(b[0]);
-        const aRank = ai === -1 ? 999 : ai;
-        const bRank = bi === -1 ? 999 : bi;
-        if (aRank !== bRank) return aRank - bRank;
-        return a[0].localeCompare(b[0], 'ja');
-      });
+
+    // カテゴリ順
+    return Array.from(map.entries()).sort((a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a[0]);
+      const bi = CATEGORY_ORDER.indexOf(b[0]);
+      const aRank = ai === -1 ? 999 : ai;
+      const bRank = bi === -1 ? 999 : bi;
+      if (aRank !== bRank) return aRank - bRank;
+      return a[0].localeCompare(b[0], 'ja');
+    });
   }, [testTypes]);
 
   // ----------------------------
@@ -126,32 +127,37 @@ export function CoachRankingsView({ team }: Props) {
   // ----------------------------
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         setLoadingTestTypes(true);
         setTestTypesError(null);
 
         const { data, error } = await supabase
-        .from('performance_test_types')
-        .select(`
-          id,
-          name,
-          display_name,
-          unit,
-          higher_is_better,
-          category_id,
-          sort_order,
-          is_active,
-          user_can_input,
-          performance_categories (
+          .from('performance_test_types')
+          .select(
+            `
             id,
             name,
             display_name,
-            sort_order
+            unit,
+            higher_is_better,
+            category_id,
+            sort_order,
+            is_active,
+            user_can_input,
+            performance_categories (
+              id,
+              name,
+              display_name,
+              sort_order
+            )
+          `
           )
-        `)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+
+        if (error) throw error;
 
         const rows = (data ?? []) as any[];
         const types: TestType[] = rows.map((r) => ({
@@ -161,9 +167,11 @@ export function CoachRankingsView({ team }: Props) {
           unit: r.unit,
           higher_is_better: r.higher_is_better,
           category_id: r.category_id,
+          sort_order: r.sort_order ?? null,
           is_active: r.is_active,
           user_can_input: r.user_can_input,
-          category_label: r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
+          category_label:
+            r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
           category_sort: r.performance_categories?.sort_order ?? 999,
         }));
 
@@ -192,9 +200,7 @@ export function CoachRankingsView({ team }: Props) {
   // 種目が変わったら、筋力以外は metric を primary に戻す
   useEffect(() => {
     if (!selectedTestType) return;
-    if (!strengthTestNames.has(selectedTestType.name)) {
-      setMetric('primary_value');
-    }
+    if (!strengthTestNames.has(selectedTestType.name)) setMetric('primary_value');
   }, [selectedTestType?.id]);
 
   // ----------------------------
@@ -284,13 +290,13 @@ export function CoachRankingsView({ team }: Props) {
             >
               {grouped.map(([label, items]) => (
                 <optgroup key={label} label={label}>
-                    {items.map((t) => (
+                  {items.map((t) => (
                     <option key={t.id} value={t.id}>
-                        {t.display_name}
+                      {t.display_name}
                     </option>
-                    ))}
+                  ))}
                 </optgroup>
-                ))}
+              ))}
             </select>
             <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
@@ -357,7 +363,10 @@ export function CoachRankingsView({ team }: Props) {
               <button
                 key={`${r.user_id}-${r.rank ?? 'x'}`}
                 className="w-full text-left px-4 sm:px-5 py-3 hover:bg-gray-50"
-                onClick={() => onOpenAthlete(r.user_id, selectedTestTypeId, metric)}
+                onClick={() => {
+                  // ✅ 親（StaffView）に委譲：未指定でも落ちない
+                  if (onOpenAthlete) onOpenAthlete(r.user_id, selectedTestTypeId, metric);
+                }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -388,21 +397,6 @@ export function CoachRankingsView({ team }: Props) {
       </div>
 
       <div className="text-xs text-gray-500">※ 仕様：各選手の「最新記録」で順位付け（同値は rank() で同順位）</div>
-
-      {/* ✅ 成長グラフモーダル */}
-      {openModal && modalAthlete && selectedTestTypeId && (
-        <CoachAthletePerformanceModal
-          open={openModal}
-          onClose={() => setOpenModal(false)}
-          teamId={team.id}
-          athleteUserId={modalAthlete.userId}
-          athleteName={modalAthlete.name}
-          testTypeId={selectedTestTypeId}
-          testTypeDisplayName={selectedTestType?.display_name}
-          metricKey={metric}
-          unitLabel={unitLabel}
-        />
-      )}
     </div>
   );
 }

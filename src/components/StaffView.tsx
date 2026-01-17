@@ -1360,6 +1360,7 @@ useEffect(() => {
                       <CoachRankingsViewLazy
                         team={selectedTeam!}
                         onOpenAthlete={(userId, testTypeId, metric) => {
+                          // ここでモーダルOPEN（あなたの実装に合わせて）
                           setModalAthlete({ userId, testTypeId, metric });
                           setOpenModal(true);
                         }}
