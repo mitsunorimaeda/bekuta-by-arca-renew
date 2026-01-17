@@ -1,7 +1,11 @@
 import React from 'react';
 import { Trophy, Calendar, FileText, TrendingUp, TrendingDown, Shield } from 'lucide-react';
 import { PerformanceRecordWithTest, PersonalBest } from '../hooks/usePerformanceData';
-import { getCalculatedUnit, getCalculatedValueLabel } from '../lib/performanceCalculations';
+import {
+  getCalculatedUnit,
+  getCalculatedValueLabel,
+  formatCalculatedValue, // ✅ 追加
+} from '../lib/performanceCalculations';
 
 interface PerformanceRecordsListProps {
   records: PerformanceRecordWithTest[];
@@ -139,12 +143,16 @@ export function PerformanceRecordsList({
                           {(() => {
                             const rawValue = record.values.primary_value;
                             const numValue = typeof rawValue === 'string' ? parseFloat(rawValue) : rawValue;
-                            return numValue.toFixed(record.test_type?.name.includes('rsi') ? 2 : 1);
+
+                            // ✅ 桁を統一：秒は2桁、kgは1桁…など util に任せる
+                            const name = record.test_type?.name || '';
+                            return formatCalculatedValue(name, Number(numValue));
                           })()}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
                           {getCalculatedUnit(record.test_type?.name || '') || record.test_type?.unit}
                         </span>
+
                         {improvement !== null && (
                           <span
                             className={`text-sm font-medium flex items-center ${
