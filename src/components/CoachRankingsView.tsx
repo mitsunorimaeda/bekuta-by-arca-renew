@@ -220,16 +220,15 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   // ----------------------------
   useEffect(() => {
     let cancelled = false;
-
+  
     (async () => {
       try {
         setLoadingTestTypes(true);
         setTestTypesError(null);
-
+  
         const { data, error } = await supabase
           .from('performance_test_types')
-          .select(
-            `
+          .select(`
             id,
             name,
             display_name,
@@ -245,13 +244,12 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
               display_name,
               sort_order
             )
-          `
-          )
+          `)
           .eq('is_active', true)
           .order('sort_order', { ascending: true });
-
+  
         if (error) throw error;
-
+  
         const rows = (data ?? []) as any[];
         const types: TestType[] = rows.map((r) => ({
           id: r.id,
@@ -267,30 +265,28 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
             r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
           category_sort: r.performance_categories?.sort_order ?? 999,
         }));
-
+  
         if (cancelled) return;
-
+  
         setTestTypes(types);
-
+  
         // 初期選択
         if (!selectedTestTypeId && types.length > 0) {
           setSelectedTestTypeId(types[0].id);
         }
       } catch (e: any) {
-        console.warn('[CoachRankingsView] ranking error', e);
-        setRankingError(e?.message ?? 'ランキング取得に失敗しました');
-        setRanking(dummyRanking); // ← 方向調整とかしない
+        console.warn('[CoachRankingsView] testTypes error', e);
+        if (!cancelled) setTestTypesError(e?.message ?? '種目の取得に失敗しました');
       } finally {
-        setLoadingRanking(false);
+        if (!cancelled) setLoadingTestTypes(false);
       }
     })();
-
+  
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team?.id]);
-
   // 種目が変わったら、筋力以外は metric を primary に戻す
   useEffect(() => {
     if (!selectedTestType) return;
@@ -377,26 +373,27 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
         </div>
 
         {/* 種目セレクタ */}
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="relative">
-            <select
-              value={selectedTestTypeId}
-              onChange={(e) => setSelectedTestTypeId(e.target.value)}
-              className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-              disabled={loadingTestTypes}
-            >
-              {grouped.map(([label, items]) => (
-                <optgroup key={label} label={label}>
-                  {items.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.display_name}
-                    </option>
-                  ))}
-                </optgroup>
+        <div className="relative z-[9999]">
+        <select
+          value={selectedTestTypeId}
+          onChange={(e) => setSelectedTestTypeId(e.target.value)}
+          onPointerDown={() => console.log('[select] pointer down')}
+          onTouchStart={() => console.log('[select] touch start')}
+          className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
+          disabled={loadingTestTypes}
+        >
+          {grouped.map(([label, items]) => (
+            <optgroup key={label} label={label}>
+              {items.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.display_name}
+                </option>
               ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+            </optgroup>
+          ))}
+        </select>
+        <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      </div>
 
           {/* 筋力のみ metric 切替 */}
           <div className="flex items-center justify-between">
