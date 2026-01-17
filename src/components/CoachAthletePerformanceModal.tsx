@@ -34,6 +34,7 @@ type TestTypeInfo = {
   id: string;
   display_name: string;
   unit: string;
+  is_strength: boolean;
 };
 
 type Benchmark = {
@@ -67,7 +68,13 @@ export default function CoachAthletePerformanceModal({
   const [series, setSeries] = useState<Point[]>([]);
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
 
-  const metricLabel = metricKey === 'relative_1rm' ? '相対1RM' : '推定1RM';
+  const isStrength = !!testType?.is_strength;
+
+  const metricLabel = !isStrength
+    ? '記録'
+    : metricKey === 'relative_1rm'
+      ? '相対1RM'
+      : '推定1RM';
 
   const unitLabel = useMemo(() => {
     if (!testType) return '';
@@ -88,7 +95,7 @@ export default function CoachAthletePerformanceModal({
         // ① 種目情報
         const tt = await supabase
           .from('performance_test_types')
-          .select('id, display_name, unit')
+          .select('id, display_name, unit, is_strength')
           .eq('id', testTypeId)
           .single();
 
