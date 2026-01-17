@@ -14,9 +14,7 @@ type TestType = {
   higher_is_better: boolean | null;
   category_id: string;
 
-  // ✅ DBに合わせて optional で持つ
   sort_order?: number | null;
-
   is_active?: boolean | null;
   user_can_input?: boolean | null;
 
@@ -48,7 +46,6 @@ const strengthTestNames = new Set([
 ]);
 
 // 表示桁（RSIは2桁、それ以外は1桁）
-// ※秒は 2 桁にしたければここを拡張してOK
 const digitsFor = (testTypeName?: string) => (testTypeName?.includes('rsi') ? 2 : 1);
 
 // カテゴリ順（表示の好み）
@@ -62,15 +59,12 @@ const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '
 const isLowerBetterByRule = (t: TestType | null) => {
   if (!t) return false;
 
-  // DBに明示されているならそれを最優先
   if (t.higher_is_better === false) return true;
   if (t.higher_is_better === true) return false;
 
-  // DBがnull等のときの安全策：カテゴリで判定
   const cat = t.category_label || '';
   if (cat === 'スプリント' || cat === '敏捷') return true;
 
-  // さらに保険：名前パターン（秒系の代表）
   const name = (t.name || '').toLowerCase();
   const timeLike =
     name.startsWith('sprint_') ||
@@ -81,65 +75,6 @@ const isLowerBetterByRule = (t: TestType | null) => {
     name.startsWith('arrowhead');
 
   return timeLike;
-};
-
-/**
- * ✅ ランキングを「方向に合わせて並び替え」＋「rank/top_percent 再計算」
- * - rank() 相当（同値は同順位、次の順位は飛ぶ）
- */
-const buildRankingWithDirection = (
-  rows: RankingRow[],
-  lowerIsBetter: boolean
-): RankingRow[] => {
-  const withValue = rows.filter(r => typeof r.value === 'number' && Number.isFinite(r.value as number));
-  const withoutValue = rows.filter(r => !(typeof r.value === 'number' && Number.isFinite(r.value as number)));
-
-  // 並び替え
-  withValue.sort((a, b) => {
-    const av = a.value as number;
-    const bv = b.value as number;
-    return lowerIsBetter ? av - bv : bv - av;
-  });
-
-  // n（チーム人数）を決定：RPCが返すならそれ優先、無ければ値がある人数
-  const n = rows?.[0]?.team_n ?? withValue.length ?? null;
-
-  // rank/top_percent 再計算（tie対応）
-  let lastValue: number | null = null;
-  let lastRank = 0;
-
-  const EPS = 1e-9;
-
-  const ranked = withValue.map((r, idx) => {
-    const v = r.value as number;
-
-    // 同値判定（小数誤差を少し吸収）
-    const isTie = lastValue !== null && Math.abs(v - lastValue) < EPS;
-
-    const rank = isTie ? lastRank : idx + 1;
-    lastRank = rank;
-    lastValue = v;
-
-    const top_percent =
-      typeof n === 'number' && n > 0 ? ((rank - 1) / n) * 100 : null;
-
-    return {
-      ...r,
-      rank,
-      top_percent,
-      team_n: typeof n === 'number' ? n : r.team_n ?? null,
-    };
-  });
-
-  // 値が無い人は最後に（rank/top_percentはnull）
-  const tail = withoutValue.map(r => ({
-    ...r,
-    rank: null,
-    top_percent: null,
-    team_n: typeof n === 'number' ? n : r.team_n ?? null,
-  }));
-
-  return [...ranked, ...tail];
 };
 
 export function CoachRankingsView({ team, onOpenAthlete }: Props) {
@@ -153,7 +88,6 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
     [testTypes, selectedTestTypeId]
   );
 
-  // 筋力だけ metric 切替（推定1RM / 相対1RM）
   const [metric, setMetric] = useState<MetricKey>('primary_value');
   const isStrength = !!selectedTestType && strengthTestNames.has(selectedTestType.name);
 
@@ -163,15 +97,13 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
     return selectedTestType.unit || '';
   }, [selectedTestType, isStrength, metric]);
 
-  // ✅ 低い方が良いか（ランキング方向）
   const lowerIsBetter = useMemo(() => isLowerBetterByRule(selectedTestType), [selectedTestType]);
 
-  // ランキング
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
   const [rankingError, setRankingError] = useState<string | null>(null);
 
-  // ダミー（RPC未整備でも画面確認できる）
+  // RPC死んでても画面が出るようにダミー
   const dummyRanking: RankingRow[] = useMemo(
     () => [
       { user_id: 'dummy1', name: '田中', date: '2026-01-10', value: 73.3, rank: 1, top_percent: 0, team_n: 12 },
@@ -193,7 +125,6 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       map.get(key)!.push(t);
     }
 
-    // 種目の並び：sort_order → display_name
     for (const [k, arr] of map.entries()) {
       arr.sort((a, b) => {
         const sa = a.sort_order ?? 9999;
@@ -204,7 +135,6 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       map.set(k, arr);
     }
 
-    // カテゴリ順
     return Array.from(map.entries()).sort((a, b) => {
       const ai = CATEGORY_ORDER.indexOf(a[0]);
       const bi = CATEGORY_ORDER.indexOf(b[0]);
@@ -220,36 +150,38 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   // ----------------------------
   useEffect(() => {
     let cancelled = false;
-  
+
     (async () => {
       try {
         setLoadingTestTypes(true);
         setTestTypesError(null);
-  
+
         const { data, error } = await supabase
           .from('performance_test_types')
-          .select(`
-            id,
-            name,
-            display_name,
-            unit,
-            higher_is_better,
-            category_id,
-            sort_order,
-            is_active,
-            user_can_input,
-            performance_categories (
+          .select(
+            `
               id,
               name,
               display_name,
-              sort_order
-            )
-          `)
+              unit,
+              higher_is_better,
+              category_id,
+              sort_order,
+              is_active,
+              user_can_input,
+              performance_categories (
+                id,
+                name,
+                display_name,
+                sort_order
+              )
+            `
+          )
           .eq('is_active', true)
           .order('sort_order', { ascending: true });
-  
+
         if (error) throw error;
-  
+
         const rows = (data ?? []) as any[];
         const types: TestType[] = rows.map((r) => ({
           id: r.id,
@@ -265,11 +197,11 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
             r.performance_categories?.display_name || r.performance_categories?.name || 'その他',
           category_sort: r.performance_categories?.sort_order ?? 999,
         }));
-  
+
         if (cancelled) return;
-  
+
         setTestTypes(types);
-  
+
         // 初期選択
         if (!selectedTestTypeId && types.length > 0) {
           setSelectedTestTypeId(types[0].id);
@@ -281,12 +213,13 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
         if (!cancelled) setLoadingTestTypes(false);
       }
     })();
-  
+
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team?.id]);
+
   // 種目が変わったら、筋力以外は metric を primary に戻す
   useEffect(() => {
     if (!selectedTestType) return;
@@ -314,21 +247,26 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       if (error) throw error;
 
       const rows = (data ?? []) as any[];
+
       const mapped: RankingRow[] = rows.map((r) => ({
         user_id: r.user_id,
         name: r.name ?? null,
-      
+
         // ✅ DB関数の戻りに合わせる（latest_* を表示に使う）
         date: r.latest_date ?? null,
         value: r.latest_value != null ? Number(r.latest_value) : null,
-      
+
         // ✅ DBで計算済みの順位を使う
         rank: r.team_rank != null ? Number(r.team_rank) : null,
         top_percent: r.top_percent != null ? Number(r.top_percent) : null,
         team_n: r.team_n != null ? Number(r.team_n) : null,
       }));
-      
+
       setRanking(mapped);
+    } catch (e: any) {
+      console.warn('[CoachRankingsView] ranking error', e);
+      setRankingError(e?.message ?? 'ランキング取得に失敗しました');
+      setRanking(dummyRanking);
     } finally {
       setLoadingRanking(false);
     }
@@ -337,7 +275,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   useEffect(() => {
     fetchRanking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team?.id, selectedTestTypeId, metric, lowerIsBetter]);
+  }, [team?.id, selectedTestTypeId, metric]);
 
   const displayName = (r: RankingRow) => r.name || '名前未設定';
 
@@ -373,27 +311,26 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
         </div>
 
         {/* 種目セレクタ */}
-        <div className="relative z-[9999]">
-        <select
-          value={selectedTestTypeId}
-          onChange={(e) => setSelectedTestTypeId(e.target.value)}
-          onPointerDown={() => console.log('[select] pointer down')}
-          onTouchStart={() => console.log('[select] touch start')}
-          className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-          disabled={loadingTestTypes}
-        >
-          {grouped.map(([label, items]) => (
-            <optgroup key={label} label={label}>
-              {items.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.display_name}
-                </option>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="relative">
+            <select
+              value={selectedTestTypeId}
+              onChange={(e) => setSelectedTestTypeId(e.target.value)}
+              className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
+              disabled={loadingTestTypes}
+            >
+              {grouped.map(([label, items]) => (
+                <optgroup key={label} label={label}>
+                  {items.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.display_name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
-            </optgroup>
-          ))}
-        </select>
-        <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-      </div>
+            </select>
+            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
 
           {/* 筋力のみ metric 切替 */}
           <div className="flex items-center justify-between">
@@ -434,7 +371,9 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       {/* ランキング表 */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="text-sm font-semibold text-gray-900">{selectedTestType?.display_name ?? '種目'} の順位</div>
+          <div className="text-sm font-semibold text-gray-900">
+            {selectedTestType?.display_name ?? '種目'} の順位
+          </div>
           <div className="text-xs text-gray-500">{ranking?.[0]?.team_n ? `n=${ranking[0].team_n}` : ''}</div>
         </div>
 
@@ -450,7 +389,9 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
           </div>
         ) : ranking.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">データがありません（この種目の測定がまだ無い可能性）</div>
+          <div className="py-12 text-center text-sm text-gray-500">
+            データがありません（この種目の測定がまだ無い可能性）
+          </div>
         ) : (
           <div className="divide-y">
             {ranking.map((r) => (
