@@ -45,7 +45,6 @@ const strengthTestNames = new Set([
   'bulgarian_squat_l',
 ]);
 
-
 // ✅ 表示桁を「単位」で決める
 const digitsForByUnit = (unit?: string) => {
   const u = (unit || '').trim();
@@ -57,6 +56,7 @@ const digitsForByUnit = (unit?: string) => {
   // それ以外は基本2桁
   return 2;
 };
+
 // カテゴリ順（表示の好み）
 const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '持久', 'その他'];
 
@@ -64,6 +64,9 @@ const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '
  * ✅ ランキング方向
  * - DBの higher_is_better が false なら「小さいほど良い」
  * - それ以外でも「スプリント」「敏捷」は小さいほど良い（要望）
+ *
+ * ※ 今回はDB側で team_rank を返している前提なので、
+ *    lowerIsBetter は「説明文表示」用途のみ（並び替えはしない）
  */
 const isLowerBetterByRule = (t: TestType | null) => {
   if (!t) return false;
@@ -84,6 +87,14 @@ const isLowerBetterByRule = (t: TestType | null) => {
     name.startsWith('arrowhead');
 
   return timeLike;
+};
+
+// ✅ 「ランキングがどこ参照か」をラベル化（DBが返す benchmark_scope を想定）
+const scopeLabel = (scope: string | null) => {
+  if (scope === 'team') return 'チーム内';
+  if (scope === 'org_sport') return '同校×同競技';
+  if (scope === 'sport') return '競技全体';
+  return '不明';
 };
 
 export function CoachRankingsView({ team, onOpenAthlete }: Props) {
@@ -111,6 +122,11 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
   const [rankingError, setRankingError] = useState<string | null>(null);
+
+  // ✅ 参照スコープ表示用（DBが返す meta を拾う）
+  const [benchmarkScope, setBenchmarkScope] = useState<string | null>(null);
+  const [benchmarkN, setBenchmarkN] = useState<number | null>(null);
+  const [minN, setMinN] = useState<number | null>(null);
 
   // RPC死んでても画面が出るようにダミー
   const dummyRanking: RankingRow[] = useMemo(
@@ -257,31 +273,32 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
 
       const rows = (data ?? []) as any[];
 
+      // ✅ 参照スコープを表示するためのメタ情報（DBが返す想定）
+      const meta = rows?.[0] ?? null;
+      setBenchmarkScope(meta?.benchmark_scope ?? null);
+      setBenchmarkN(meta?.benchmark_n != null ? Number(meta.benchmark_n) : null);
+      setMinN(meta?.min_n != null ? Number(meta.min_n) : null);
+
       const mapped: RankingRow[] = rows.map((r) => ({
         user_id: r.user_id,
         name: r.name ?? null,
-      
-        // ✅ latest が無ければ best にフォールバック（さらに旧キー date/value も吸う）
-        date: (r.latest_date ?? r.best_date ?? r.date ?? null) as any,
-        value:
-          r.latest_value != null
-            ? Number(r.latest_value)
-            : r.best_value != null
-              ? Number(r.best_value)
-              : r.value != null
-                ? Number(r.value)
-                : null,
-      
-        // ✅ team_rank が無ければ rank を吸う
-        rank: r.team_rank != null ? Number(r.team_rank) : r.rank != null ? Number(r.rank) : null,
+        date: r.latest_date ?? null,
+        value: r.latest_value != null ? Number(r.latest_value) : null,
+        rank: r.team_rank != null ? Number(r.team_rank) : null,
         top_percent: r.top_percent != null ? Number(r.top_percent) : null,
         team_n: r.team_n != null ? Number(r.team_n) : null,
       }));
+
       setRanking(mapped);
     } catch (e: any) {
       console.warn('[CoachRankingsView] ranking error', e);
       setRankingError(e?.message ?? 'ランキング取得に失敗しました');
       setRanking(dummyRanking);
+
+      // ✅ フォールバック時は参照スコープ表示は出さない
+      setBenchmarkScope(null);
+      setBenchmarkN(null);
+      setMinN(null);
     } finally {
       setLoadingRanking(false);
     }
@@ -296,13 +313,13 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
 
   const fmtValue = (v: number | null) => {
     if (v == null) return '-';
-  
+
     const d = digitsForByUnit(unitLabel); // ← unitLabel を使うのがポイント
     const n = Number(v);
-  
+
     // d=0 のときは 73.0 みたいなブレをなくす
     if (d === 0) return String(Math.round(n));
-  
+
     return n.toFixed(d);
   };
 
@@ -395,8 +412,29 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
           <div className="text-sm font-semibold text-gray-900">
             {selectedTestType?.display_name ?? '種目'} の順位
           </div>
-          <div className="text-xs text-gray-500">{ranking?.[0]?.team_n ? `n=${ranking[0].team_n}` : ''}</div>
+
+          {/* ✅ 参照スコープ表示（DBが返す時だけ表示） */}
+          <div className="text-xs text-gray-500">
+            {benchmarkScope ? (
+              <>
+                比較：{scopeLabel(benchmarkScope)}
+                {typeof benchmarkN === 'number' ? `（n=${benchmarkN}）` : ''}
+                {typeof minN === 'number' ? ` / 閾値=${minN}` : ''}
+              </>
+            ) : ranking?.[0]?.team_n ? (
+              `n=${ranking[0].team_n}`
+            ) : (
+              ''
+            )}
+          </div>
         </div>
+
+        {/* ✅ 自動拡張をしている場合の注意（任意だけど親切） */}
+        {benchmarkScope && benchmarkScope !== 'team' && (
+          <div className="px-4 sm:px-5 py-2 text-[11px] text-amber-700 bg-amber-50 border-b border-amber-100">
+            ※チーム内の母集団が少ないため、比較母集団を自動で拡張しています
+          </div>
+        )}
 
         {rankingError && (
           <div className="px-4 sm:px-5 py-3 text-sm text-amber-700 bg-amber-50 border-b border-amber-100">
