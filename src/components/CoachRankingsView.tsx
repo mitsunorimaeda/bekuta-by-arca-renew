@@ -47,10 +47,100 @@ const strengthTestNames = new Set([
   'bulgarian_squat_l',
 ]);
 
+// 表示桁（RSIは2桁、それ以外は1桁）
+// ※秒は 2 桁にしたければここを拡張してOK
 const digitsFor = (testTypeName?: string) => (testTypeName?.includes('rsi') ? 2 : 1);
 
 // カテゴリ順（表示の好み）
 const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '持久', 'その他'];
+
+/**
+ * ✅ ランキング方向
+ * - DBの higher_is_better が false なら「小さいほど良い」
+ * - それ以外でも「スプリント」「敏捷」は小さいほど良い（要望）
+ */
+const isLowerBetterByRule = (t: TestType | null) => {
+  if (!t) return false;
+
+  // DBに明示されているならそれを最優先
+  if (t.higher_is_better === false) return true;
+  if (t.higher_is_better === true) return false;
+
+  // DBがnull等のときの安全策：カテゴリで判定
+  const cat = t.category_label || '';
+  if (cat === 'スプリント' || cat === '敏捷') return true;
+
+  // さらに保険：名前パターン（秒系の代表）
+  const name = (t.name || '').toLowerCase();
+  const timeLike =
+    name.startsWith('sprint_') ||
+    name === '050_r' ||
+    name === '050_l' ||
+    name === '050-l' ||
+    name.startsWith('pro_agility') ||
+    name.startsWith('arrowhead');
+
+  return timeLike;
+};
+
+/**
+ * ✅ ランキングを「方向に合わせて並び替え」＋「rank/top_percent 再計算」
+ * - rank() 相当（同値は同順位、次の順位は飛ぶ）
+ */
+const buildRankingWithDirection = (
+  rows: RankingRow[],
+  lowerIsBetter: boolean
+): RankingRow[] => {
+  const withValue = rows.filter(r => typeof r.value === 'number' && Number.isFinite(r.value as number));
+  const withoutValue = rows.filter(r => !(typeof r.value === 'number' && Number.isFinite(r.value as number)));
+
+  // 並び替え
+  withValue.sort((a, b) => {
+    const av = a.value as number;
+    const bv = b.value as number;
+    return lowerIsBetter ? av - bv : bv - av;
+  });
+
+  // n（チーム人数）を決定：RPCが返すならそれ優先、無ければ値がある人数
+  const n = rows?.[0]?.team_n ?? withValue.length ?? null;
+
+  // rank/top_percent 再計算（tie対応）
+  let lastValue: number | null = null;
+  let lastRank = 0;
+
+  const EPS = 1e-9;
+
+  const ranked = withValue.map((r, idx) => {
+    const v = r.value as number;
+
+    // 同値判定（小数誤差を少し吸収）
+    const isTie = lastValue !== null && Math.abs(v - lastValue) < EPS;
+
+    const rank = isTie ? lastRank : idx + 1;
+    lastRank = rank;
+    lastValue = v;
+
+    const top_percent =
+      typeof n === 'number' && n > 0 ? ((rank - 1) / n) * 100 : null;
+
+    return {
+      ...r,
+      rank,
+      top_percent,
+      team_n: typeof n === 'number' ? n : r.team_n ?? null,
+    };
+  });
+
+  // 値が無い人は最後に（rank/top_percentはnull）
+  const tail = withoutValue.map(r => ({
+    ...r,
+    rank: null,
+    top_percent: null,
+    team_n: typeof n === 'number' ? n : r.team_n ?? null,
+  }));
+
+  return [...ranked, ...tail];
+};
 
 export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   const [testTypes, setTestTypes] = useState<TestType[]>([]);
@@ -72,6 +162,9 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
     if (isStrength && metric === 'relative_1rm') return '×BW';
     return selectedTestType.unit || '';
   }, [selectedTestType, isStrength, metric]);
+
+  // ✅ 低い方が良いか（ランキング方向）
+  const lowerIsBetter = useMemo(() => isLowerBetterByRule(selectedTestType), [selectedTestType]);
 
   // ランキング
   const [ranking, setRanking] = useState<RankingRow[]>([]);
@@ -184,10 +277,11 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
           setSelectedTestTypeId(types[0].id);
         }
       } catch (e: any) {
-        console.error('[CoachRankingsView] testTypes error', e);
-        if (!cancelled) setTestTypesError(e?.message ?? '種目の取得に失敗しました');
+        console.warn('[CoachRankingsView] ranking error', e);
+        setRankingError(e?.message ?? 'ランキング取得に失敗しました');
+        setRanking(dummyRanking); // ← 方向調整とかしない
       } finally {
-        if (!cancelled) setLoadingTestTypes(false);
+        setLoadingRanking(false);
       }
     })();
 
@@ -214,7 +308,6 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       setRankingError(null);
 
       const { data, error } = await supabase.rpc('get_team_test_ranking', {
-        p_team_id: team.id,
         p_test_type_id: selectedTestTypeId,
         p_metric: metric,
         p_days: 365,
@@ -227,18 +320,18 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       const mapped: RankingRow[] = rows.map((r) => ({
         user_id: r.user_id,
         name: r.name ?? null,
-        date: r.date ?? null,
-        value: r.value != null ? Number(r.value) : null,
-        rank: r.rank != null ? Number(r.rank) : null,
+      
+        // ✅ DB関数の戻りに合わせる（latest_* を表示に使う）
+        date: r.latest_date ?? null,
+        value: r.latest_value != null ? Number(r.latest_value) : null,
+      
+        // ✅ DBで計算済みの順位を使う
+        rank: r.team_rank != null ? Number(r.team_rank) : null,
         top_percent: r.top_percent != null ? Number(r.top_percent) : null,
         team_n: r.team_n != null ? Number(r.team_n) : null,
       }));
-
+      
       setRanking(mapped);
-    } catch (e: any) {
-      console.warn('[CoachRankingsView] ranking error', e);
-      setRankingError(e?.message ?? 'ランキング取得に失敗しました');
-      setRanking(dummyRanking);
     } finally {
       setLoadingRanking(false);
     }
@@ -247,7 +340,7 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
   useEffect(() => {
     fetchRanking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team?.id, selectedTestTypeId, metric]);
+  }, [team?.id, selectedTestTypeId, metric, lowerIsBetter]);
 
   const displayName = (r: RankingRow) => r.name || '名前未設定';
 
@@ -266,7 +359,10 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
               <Trophy className="w-5 h-5 text-amber-500" />
               <div className="text-base sm:text-lg font-semibold text-gray-900">ランキング</div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">種目ごとに「最新測定」の値で順位付け（チーム内）</div>
+            <div className="text-xs text-gray-500 mt-1">
+              種目ごとに「最新測定」の値で順位付け（チーム内）／
+              {lowerIsBetter ? '小さいほど上位' : '大きいほど上位'}
+            </div>
           </div>
 
           <button
@@ -364,7 +460,6 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
                 key={`${r.user_id}-${r.rank ?? 'x'}`}
                 className="w-full text-left px-4 sm:px-5 py-3 hover:bg-gray-50"
                 onClick={() => {
-                  // ✅ 親（StaffView）に委譲：未指定でも落ちない
                   if (onOpenAthlete) onOpenAthlete(r.user_id, selectedTestTypeId, metric);
                 }}
               >

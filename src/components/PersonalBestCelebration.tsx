@@ -4,7 +4,12 @@ import { Trophy, TrendingUp, Zap } from 'lucide-react';
 import { formatCalculatedValue } from '../lib/performanceCalculations';
 
 interface PersonalBestCelebrationProps {
+  // 表示名（例：DJ RSI（ドロップジャンプ））
   testName: string;
+
+  // ✅ 内部名（DBのname：dj_rsi / yoyo_ir2 / cooper_test など）
+  testTypeName?: string;
+
   value: number;
   unit: string;
   previousBest?: number;
@@ -13,6 +18,7 @@ interface PersonalBestCelebrationProps {
 
 export function PersonalBestCelebration({
   testName,
+  testTypeName,
   value,
   unit,
   previousBest,
@@ -27,7 +33,7 @@ export function PersonalBestCelebration({
       return Math.random() * (max - min) + min;
     }
 
-    const interval: any = setInterval(function() {
+    const interval: any = setInterval(function () {
       const timeLeft = animationEnd - Date.now();
 
       if (timeLeft <= 0) {
@@ -51,13 +57,14 @@ export function PersonalBestCelebration({
     return () => clearInterval(interval);
   }, []);
 
-  // 前回比（「小さいほど良い」種目もあるけど、ここは今の挙動を維持）
+  // 前回比（挙動維持：小さいほど良い種目への対応は別途）
   const improvement = previousBest ? ((value - previousBest) / previousBest) * 100 : null;
 
-  // ✅ 表示値はユーティリティに統一（秒=2桁、kg=1桁、RSI=そのまま等）
-  const displayValue = formatCalculatedValue(testName, value);
+  // ✅ 表示値はユーティリティに統一（内部名で判定する）
+  const keyName = (testTypeName || '').trim() || (testName || '').trim();
+  const displayValue = formatCalculatedValue(keyName, value);
 
-  // ✅ improvement は%なので小数1桁でOK（好みで2桁も可）
+  // ✅ improvement は%なので小数1桁
   const displayImprovement = improvement !== null ? improvement.toFixed(1) : null;
 
   return (
@@ -119,47 +126,20 @@ export function PersonalBestCelebration({
 
       <style>{`
         @keyframes scale-up {
-          from {
-            transform: scale(0.8);
-            opacity: 0;
-          }
-          to {
-            transform: scale(1);
-            opacity: 1;
-          }
+          from { transform: scale(0.8); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
         }
-
         @keyframes bounce-slow {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-10px);
-          }
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
         }
-
         @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-
-        .animate-scale-up {
-          animation: scale-up 0.4s ease-out;
-        }
-
-        .animate-bounce-slow {
-          animation: bounce-slow 2s infinite;
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.6s ease-out;
-        }
+        .animate-scale-up { animation: scale-up 0.4s ease-out; }
+        .animate-bounce-slow { animation: bounce-slow 2s infinite; }
+        .animate-fade-in { animation: fade-in 0.6s ease-out; }
       `}</style>
     </div>
   );

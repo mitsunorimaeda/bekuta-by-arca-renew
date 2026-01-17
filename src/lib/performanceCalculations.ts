@@ -4,8 +4,8 @@
  * cmj_as（腕振りCMJ）対応済み
  * 050_l（0-5-0 左）対応済み
  * 秒系フォーマット（小数2桁）対応済み
- * RSIフォーマット（小数2桁：小数第3位四捨五入）対応 ✅ 追加
- * VO2max系フォーマット（小数1桁：小数第2位四捨五入）対応 ✅ 追加
+ * VO2系（ml/kg/min 小数1桁）対応済み
+ * RSI（小数2桁）対応済み
  * -----------------------------------------------------
  */
 
@@ -106,7 +106,6 @@ export function calculatePrimaryValue(
 ): number | null {
   try {
     switch (testName) {
-
       // -------------------------------
       // ジャンプ系（跳躍高）
       // -------------------------------
@@ -197,8 +196,6 @@ export function calculatePrimaryValue(
 
       // -------------------------------
       // アジリティ（タイム）
-      // 050_l（DB名）を追加して左も計算できるようにする
-      // 050-l は過去互換（残してOK）
       // -------------------------------
       case '050_r':
       case '050_l':
@@ -361,23 +358,23 @@ export function getCalculatedValueLabel(testName: string): string {
 /**
  * -----------------------------------------------------
  * 追加：表示用フォーマッタ
+ * - 秒：小数2桁
+ * - VO2（ml/kg/min）：小数1桁
+ * - RSI：小数2桁
+ * - kg：小数1桁
  * -----------------------------------------------------
- * ✅ RSI系：小数2桁（小数第3位四捨五入）
- * ✅ VO2max系：小数1桁（小数第2位四捨五入）
- * ✅ 秒系：小数2桁
- * ✅ kg系：小数1桁
  */
 export function formatCalculatedValue(testName: string, value: number | null): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '-';
 
   const name = (testName || '').toLowerCase();
 
-  // ✅ RSI（dj_rsi / rj_rsi）：小数2桁
+  // RSI：小数2桁
   if (name.includes('rsi')) {
     return Number(value).toFixed(2);
   }
 
-  // ✅ VO2max 系：小数1桁
+  // VO2系：小数1桁
   const vo2Tests = new Set([
     'cooper_test',
     'yoyo_ir1',
@@ -388,27 +385,22 @@ export function formatCalculatedValue(testName: string, value: number | null): s
     return Number(value).toFixed(1);
   }
 
-  // ✅ 秒系：小数2桁
+  // 秒系：小数2桁
   const secTests = new Set([
     '050_r', '050_l', '050-l',
     'pro_agility_r', 'pro_agility_l',
     'arrowhead_r', 'arrowhead_l',
     'sprint_5m', 'sprint_10m', 'sprint_15m', 'sprint_20m', 'sprint_30m', 'sprint_50m',
-    '1000m_run', '1500m_run', // もし秒として表示したいなら（今は計算が秒なのでOK）
   ]);
-  if (secTests.has(name)) {
-    return Number(value).toFixed(2);
-  }
+  if (secTests.has(name)) return Number(value).toFixed(2);
 
-  // ✅ kg系：小数1桁
+  // kg系：小数1桁
   const kgTests = new Set([
     'bench_press', 'back_squat', 'deadlift',
     'bulgarian_squat_r', 'bulgarian_squat_l',
   ]);
-  if (kgTests.has(name)) {
-    return Number(value).toFixed(1);
-  }
+  if (kgTests.has(name)) return Number(value).toFixed(1);
 
-  // その他：整数なら整数、そうでなければ小数2桁（お好みで調整OK）
-  return Number.isInteger(value) ? String(value) : Number(value).toFixed(2);
+  // その他はそのまま
+  return String(value);
 }

@@ -5,7 +5,7 @@ import {
   calculatePrimaryValue,
   getCalculatedUnit,
   getCalculatedValueLabel,
-  formatCalculatedValue, // ✅ 追加（前回渡した util に入れたやつ）
+  formatCalculatedValue,
 } from '../lib/performanceCalculations';
 import { useWeightData } from '../hooks/useWeightData';
 import { PerformanceRecordWithTest } from '../hooks/usePerformanceData';
@@ -128,13 +128,11 @@ export function PerformanceRecordForm({
     return getCalculatedValueLabel(selectedTestType.name);
   };
 
-  // ✅ 計算値の表示（秒系は小数2桁）
+  // ✅ 計算値の表示（utilに統一）
   const getPrimaryValueDisplay = (): string => {
     if (!selectedTestType) return '-';
     const primaryValue = computePrimaryValue(formValues);
     if (primaryValue === null) return '-';
-
-    // util のフォーマッタに統一（秒は2桁）
     return formatCalculatedValue(selectedTestType.name, primaryValue);
   };
 
@@ -167,18 +165,27 @@ export function PerformanceRecordForm({
       return;
     }
 
-    // ✅ 秒系の入力はDBに綺麗に入れる（小数2桁に揃える）
-    const isSecondUnit = getDisplayUnit() === '秒';
-    const normalizedPrimary = isSecondUnit
-      ? Number(primaryValue.toFixed(2))
-      : primaryValue;
+    // ✅ primary_value をDBに綺麗に入れる（表示と同じ丸めに統一）
+    const unit = getDisplayUnit();
+    let normalizedPrimary: number;
+
+    if (unit === '秒') {
+      normalizedPrimary = Number(primaryValue.toFixed(2));
+    } else if (unit === 'ml/kg/min') {
+      normalizedPrimary = Number(primaryValue.toFixed(1));
+    } else if (unit === 'RSI') {
+      normalizedPrimary = Number(primaryValue.toFixed(2));
+    } else if (unit === 'kg') {
+      normalizedPrimary = Number(primaryValue.toFixed(1));
+    } else {
+      normalizedPrimary = primaryValue;
+    }
 
     // ✅ 筋力測定の場合、相対1RMと測定時体重を追加（ブルガリアン含む）
     const isStrengthTest = strengthTestNames.includes(selectedTestType.name);
 
     const valuesWithRelative = {
       ...formValues,
-      // primary_value は正規化した値を保存
       primary_value: normalizedPrimary,
       ...(isStrengthTest && latestWeight ? {
         relative_1rm: relative1RM,
@@ -384,7 +391,6 @@ export function PerformanceRecordForm({
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm">
                 <p className="text-blue-600 dark:text-blue-400 mb-1">前回の記録</p>
                 <p className="text-blue-700 dark:text-blue-300">
-                  {/* ✅ primary_value を表示・単位は getDisplayUnit() */}
                   {formatCalculatedValue(selectedTestType.name, Number(lastRecord.values?.primary_value))}
                   {' '}
                   {getDisplayUnit()}
@@ -401,7 +407,6 @@ export function PerformanceRecordForm({
                   パーソナルベスト
                 </p>
                 <p className="text-yellow-700 dark:text-yellow-300 font-semibold">
-                  {/* ✅ PBも2桁表示。単位も getDisplayUnit() */}
                   {formatCalculatedValue(selectedTestType.name, Number(personalBest.value))}
                   {' '}
                   {getDisplayUnit()}
