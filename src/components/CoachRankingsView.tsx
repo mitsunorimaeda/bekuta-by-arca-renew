@@ -251,17 +251,23 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       const mapped: RankingRow[] = rows.map((r) => ({
         user_id: r.user_id,
         name: r.name ?? null,
-
-        // ✅ DB関数の戻りに合わせる（latest_* を表示に使う）
-        date: r.latest_date ?? null,
-        value: r.latest_value != null ? Number(r.latest_value) : null,
-
-        // ✅ DBで計算済みの順位を使う
-        rank: r.team_rank != null ? Number(r.team_rank) : null,
+      
+        // ✅ latest が無ければ best にフォールバック（さらに旧キー date/value も吸う）
+        date: (r.latest_date ?? r.best_date ?? r.date ?? null) as any,
+        value:
+          r.latest_value != null
+            ? Number(r.latest_value)
+            : r.best_value != null
+              ? Number(r.best_value)
+              : r.value != null
+                ? Number(r.value)
+                : null,
+      
+        // ✅ team_rank が無ければ rank を吸う
+        rank: r.team_rank != null ? Number(r.team_rank) : r.rank != null ? Number(r.rank) : null,
         top_percent: r.top_percent != null ? Number(r.top_percent) : null,
         team_n: r.team_n != null ? Number(r.team_n) : null,
       }));
-
       setRanking(mapped);
     } catch (e: any) {
       console.warn('[CoachRankingsView] ranking error', e);
