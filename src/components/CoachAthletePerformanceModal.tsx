@@ -44,10 +44,23 @@ type Benchmark = {
   p90: number | null;
 };
 
-const digitsFor = (name?: string) => (name?.includes('rsi') ? 2 : 1);
+// ✅ 単位ベースで表示桁を決める（秒は必ず2桁）
+const digitsForByUnit = (unit?: string) => {
+  const u = (unit || '').trim();
 
+  // 秒は 1/100 まで表示
+  if (u === '秒' || u === 's' || u === 'sec') return 2;
+
+  // 整数にしたい単位
+  const intUnits = new Set(['回', '点']);
+  if (intUnits.has(u)) return 0;
+
+  // デフォルトは2桁
+  return 2;
+};
+
+// ✅ ISO -> M/D
 const formatJP = (iso: string) => {
-  // YYYY-MM-DD -> M/D
   const [y, m, d] = iso.split('-').map(Number);
   if (!y || !m || !d) return iso;
   return `${m}/${d}`;
@@ -82,6 +95,18 @@ export default function CoachAthletePerformanceModal({
     if (metricKey === 'relative_1rm') return '×BW';
     return testType.unit || '';
   }, [testType, metricKey]);
+
+  // ✅ 表示フォーマッタ（モーダル内はこれ1本に統一）
+  const fmtValue = useMemo(() => {
+    const d = digitsForByUnit(unitLabel);
+    return (v: number | null | undefined) => {
+      if (v == null) return '—';
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '—';
+      if (d === 0) return String(Math.round(n));
+      return n.toFixed(d);
+    };
+  }, [unitLabel]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,16 +148,13 @@ export default function CoachAthletePerformanceModal({
 
         if (!cancelled) setSeries(points);
 
-        // ③ チームベンチ（任意：あるなら表示）
-        // 既にある get_my_team_benchmarks を流用する（metricごと）
-        // ※ 返却の列名が違う場合はここだけ調整
+        // ③ チームベンチ（任意）
         const { data: b, error: bErr } = await supabase.rpc('get_my_team_benchmarks', {
           p_days: 90,
           p_metric: metricKey,
         });
 
         if (!bErr && b) {
-          // b が配列/単体どっちでも吸う
           const row = Array.isArray(b) ? b[0] : b;
           const bm: Benchmark = {
             avg_value: row?.avg_value ?? row?.avg ?? null,
@@ -161,7 +183,6 @@ export default function CoachAthletePerformanceModal({
   }, [open, teamId, athleteUserId, testTypeId, metricKey]);
 
   const last = series.length ? series[series.length - 1] : null;
-  const d = digitsFor(testType?.display_name);
 
   const insight = buildPerfInsight({
     athleteName,
@@ -173,7 +194,6 @@ export default function CoachAthletePerformanceModal({
     teamAvg: benchmark?.avg_value ?? null,
     p10: benchmark?.p10 ?? null,
     p90: benchmark?.p90 ?? null,
-    // rankingは今は渡せないなら null のままでOK
     teamRank: null,
     teamN: null,
     topPercent: null,
@@ -182,7 +202,10 @@ export default function CoachAthletePerformanceModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <div
         className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -192,10 +215,10 @@ export default function CoachAthletePerformanceModal({
           <div className="min-w-0">
             <div className="text-sm text-gray-500">成長グラフ</div>
             <div className="text-lg font-bold text-gray-900 truncate">
-            {athleteName} / {testType?.display_name || '種目'}{metricLabel ? `（${metricLabel}）` : ''}
+              {athleteName} / {testType?.display_name || '種目'}{metricLabel ? `（${metricLabel}）` : ''}
             </div>
             <div className="text-xs text-gray-600 mt-1">
-              最新：{last ? `${last.date} / ${last.value.toFixed(d)} ${unitLabel}` : '—'}
+              最新：{last ? `${last.date} / ${fmtValue(last.value)} ${unitLabel}` : '—'}
             </div>
           </div>
 
@@ -217,8 +240,8 @@ export default function CoachAthletePerformanceModal({
             </div>
           )}
 
-                    {/* ✅ ここっ！内部コメント（MVP） */}
-                    {insight && (
+          {/* ✅ 内部コメント（MVP） */}
+          {insight && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="text-sm font-semibold text-gray-900">{insight.title}</div>
 
@@ -257,7 +280,7 @@ export default function CoachAthletePerformanceModal({
                   <XAxis dataKey="date" tickFormatter={formatJP} minTickGap={18} />
                   <YAxis />
                   <Tooltip
-                    formatter={(v: any) => `${Number(v).toFixed(d)} ${unitLabel}`}
+                    formatter={(v: any) => `${fmtValue(Number(v))} ${unitLabel}`}
                     labelFormatter={(l: any) => `日付: ${l}`}
                   />
                   {benchmark?.avg_value != null && (
@@ -267,12 +290,8 @@ export default function CoachAthletePerformanceModal({
                       label={{ value: 'チーム平均', position: 'insideTopRight' }}
                     />
                   )}
-                  {benchmark?.p10 != null && (
-                    <ReferenceLine y={benchmark.p10} strokeDasharray="2 6" />
-                  )}
-                  {benchmark?.p90 != null && (
-                    <ReferenceLine y={benchmark.p90} strokeDasharray="2 6" />
-                  )}
+                  {benchmark?.p10 != null && <ReferenceLine y={benchmark.p10} strokeDasharray="2 6" />}
+                  {benchmark?.p90 != null && <ReferenceLine y={benchmark.p90} strokeDasharray="2 6" />}
                   <Line type="monotone" dataKey="value" strokeWidth={3} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -293,7 +312,7 @@ export default function CoachAthletePerformanceModal({
                   .map((p) => (
                     <div key={p.date} className="px-4 py-2 text-sm flex justify-between">
                       <span className="text-gray-700">{p.date}</span>
-                      <span className="font-semibold text-gray-900">{p.value.toFixed(d)}</span>
+                      <span className="font-semibold text-gray-900">{fmtValue(p.value)}</span>
                     </div>
                   ))}
               </div>
