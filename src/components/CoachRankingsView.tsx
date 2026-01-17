@@ -308,10 +308,11 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       setRankingError(null);
 
       const { data, error } = await supabase.rpc('get_team_test_ranking', {
-        p_test_type_id: selectedTestTypeId,
-        p_metric: metric,
         p_days: 365,
         p_limit: 50,
+        p_metric: metric,
+        p_team_id: team.id,
+        p_test_type_id: selectedTestTypeId,
       });
 
       if (error) throw error;
