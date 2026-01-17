@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { Trophy, TrendingUp, Zap } from 'lucide-react';
+import { formatCalculatedValue } from '../lib/performanceCalculations';
 
 interface PersonalBestCelebrationProps {
   testName: string;
@@ -50,7 +51,14 @@ export function PersonalBestCelebration({
     return () => clearInterval(interval);
   }, []);
 
+  // 前回比（「小さいほど良い」種目もあるけど、ここは今の挙動を維持）
   const improvement = previousBest ? ((value - previousBest) / previousBest) * 100 : null;
+
+  // ✅ 表示値はユーティリティに統一（秒=2桁、kg=1桁、RSI=そのまま等）
+  const displayValue = formatCalculatedValue(testName, value);
+
+  // ✅ improvement は%なので小数1桁でOK（好みで2桁も可）
+  const displayImprovement = improvement !== null ? improvement.toFixed(1) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -72,16 +80,16 @@ export function PersonalBestCelebration({
             <div className="flex items-center justify-center space-x-3 mb-4">
               <Zap className="w-8 h-8 text-yellow-500 animate-pulse" />
               <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-600 to-orange-600 dark:from-yellow-400 dark:to-orange-400">
-                {value.toFixed(testName.includes('RSI') ? 2 : 1)}
+                {displayValue}
               </div>
               <span className="text-2xl text-gray-600 dark:text-gray-300">{unit}</span>
             </div>
 
-            {improvement !== null && (
+            {displayImprovement !== null && (
               <div className="flex items-center justify-center space-x-2 text-green-600 dark:text-green-400">
                 <TrendingUp className="w-5 h-5" />
                 <span className="text-lg font-semibold">
-                  前回比 +{improvement.toFixed(1)}%
+                  前回比 +{displayImprovement}%
                 </span>
               </div>
             )}
