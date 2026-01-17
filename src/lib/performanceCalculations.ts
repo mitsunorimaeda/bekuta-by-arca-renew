@@ -4,6 +4,8 @@
  * cmj_as（腕振りCMJ）対応済み
  * 050_l（0-5-0 左）対応済み
  * 秒系フォーマット（小数2桁）対応済み
+ * RSIフォーマット（小数2桁：小数第3位四捨五入）対応 ✅ 追加
+ * VO2max系フォーマット（小数1桁：小数第2位四捨五入）対応 ✅ 追加
  * -----------------------------------------------------
  */
 
@@ -199,8 +201,8 @@ export function calculatePrimaryValue(
       // 050-l は過去互換（残してOK）
       // -------------------------------
       case '050_r':
-      case '050_l':  // ✅ 追加（これが左が保存できない原因の根治）
-      case '050-l':  // 互換用（不要なら消してOK）
+      case '050_l':
+      case '050-l':
       case 'pro_agility_r':
       case 'pro_agility_l':
       case 'arrowhead_r':
@@ -279,7 +281,7 @@ export function getCalculatedUnit(testName: string): string {
     case 'arrowhead_r':
     case 'arrowhead_l':
     case '050_r':
-    case '050_l':  // ✅ 追加
+    case '050_l':
     case '050-l':
     case 'pro_agility_r':
     case 'pro_agility_l':
@@ -334,7 +336,7 @@ export function getCalculatedValueLabel(testName: string): string {
     case 'arrowhead_r':
     case 'arrowhead_l':
     case '050_r':
-    case '050_l':  // ✅ 追加
+    case '050_l':
     case '050-l':
     case 'pro_agility_r':
     case 'pro_agility_l':
@@ -358,32 +360,55 @@ export function getCalculatedValueLabel(testName: string): string {
 
 /**
  * -----------------------------------------------------
- * 追加：表示用フォーマッタ（秒は小数2桁）
+ * 追加：表示用フォーマッタ
  * -----------------------------------------------------
- * 例）
- * formatCalculatedValue('050_l', 2.5) => "2.50"
- * formatCalculatedValue('bench_press', 102.34) => "102.3"（kgは小数1桁の例）
+ * ✅ RSI系：小数2桁（小数第3位四捨五入）
+ * ✅ VO2max系：小数1桁（小数第2位四捨五入）
+ * ✅ 秒系：小数2桁
+ * ✅ kg系：小数1桁
  */
 export function formatCalculatedValue(testName: string, value: number | null): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '-';
 
-  // 秒系は小数2桁で固定
+  const name = (testName || '').toLowerCase();
+
+  // ✅ RSI（dj_rsi / rj_rsi）：小数2桁
+  if (name.includes('rsi')) {
+    return Number(value).toFixed(2);
+  }
+
+  // ✅ VO2max 系：小数1桁
+  const vo2Tests = new Set([
+    'cooper_test',
+    'yoyo_ir1',
+    'yoyo_ir2',
+    'shuttle_run_20m',
+  ]);
+  if (vo2Tests.has(name)) {
+    return Number(value).toFixed(1);
+  }
+
+  // ✅ 秒系：小数2桁
   const secTests = new Set([
     '050_r', '050_l', '050-l',
     'pro_agility_r', 'pro_agility_l',
     'arrowhead_r', 'arrowhead_l',
     'sprint_5m', 'sprint_10m', 'sprint_15m', 'sprint_20m', 'sprint_30m', 'sprint_50m',
+    '1000m_run', '1500m_run', // もし秒として表示したいなら（今は計算が秒なのでOK）
   ]);
+  if (secTests.has(name)) {
+    return Number(value).toFixed(2);
+  }
 
-  if (secTests.has(testName)) return Number(value).toFixed(2);
-
-  // kg系：小数1桁（必要なら2桁にしてOK）
+  // ✅ kg系：小数1桁
   const kgTests = new Set([
     'bench_press', 'back_squat', 'deadlift',
     'bulgarian_squat_r', 'bulgarian_squat_l',
   ]);
-  if (kgTests.has(testName)) return (Math.round(value * 10) / 10).toFixed(1);
+  if (kgTests.has(name)) {
+    return Number(value).toFixed(1);
+  }
 
-  // それ以外はそのまま（必要ならここもルール化OK）
-  return String(value);
+  // その他：整数なら整数、そうでなければ小数2桁（お好みで調整OK）
+  return Number.isInteger(value) ? String(value) : Number(value).toFixed(2);
 }
