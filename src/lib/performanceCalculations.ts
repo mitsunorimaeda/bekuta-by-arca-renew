@@ -2,6 +2,8 @@
  * -----------------------------------------------------
  * パフォーマンス測定の計算式・共通ユーティリティ（完全統合版）
  * cmj_as（腕振りCMJ）対応済み
+ * 050_l（0-5-0 左）対応済み
+ * 秒系フォーマット（小数2桁）対応済み
  * -----------------------------------------------------
  */
 
@@ -103,25 +105,23 @@ export function calculatePrimaryValue(
   try {
     switch (testName) {
 
-      /**
-       * ジャンプ系（跳躍高）
-       * cmj = CMJ（腕振りなし）
-       * cmj_as = CMJ（腕振りあり）★追加
-       */
+      // -------------------------------
+      // ジャンプ系（跳躍高）
+      // -------------------------------
       case 'cmj':
-      case 'cmj_as':  // ←ここが重要！
+      case 'cmj_as':
         return parseFloat(values.height) || null;
 
-      /**
-       * 立ち幅跳び
-       */
+      // -------------------------------
+      // 立ち幅跳び
+      // -------------------------------
       case 'standing_long_jump':
       case 'standing_five_jump':
         return parseFloat(values.distance) || null;
 
-      /**
-       * 反応系ジャンプ（RSI）
-       */
+      // -------------------------------
+      // 反応系ジャンプ（RSI）
+      // -------------------------------
       case 'dj_rsi':
         if (values.height && values.contact_time) {
           return (parseFloat(values.height) / 100) /
@@ -136,9 +136,9 @@ export function calculatePrimaryValue(
         }
         return null;
 
-      /**
-       * 持久系
-       */
+      // -------------------------------
+      // 持久系
+      // -------------------------------
       case 'cooper_test':
         return calculateVO2max.cooperTest(parseFloat(values.distance));
 
@@ -157,9 +157,9 @@ export function calculatePrimaryValue(
       case 'shuttle_run_20m':
         return calculateVO2max.shuttleRun20m(parseFloat(values.count));
 
-      /**
-       * 筋力系：1RM
-       */
+      // -------------------------------
+      // 筋力系：1RM
+      // -------------------------------
       case 'bench_press':
       case 'back_squat':
       case 'deadlift':
@@ -173,14 +173,12 @@ export function calculatePrimaryValue(
         return calculate1RM.epley(
           parseFloat(values.weight),
           parseFloat(values.reps)
-         );
-  
-          
+        );
 
-      /**
-       * 新規追加種目
-       */
-      case 'sqj': // スクワットジャンプ
+      // -------------------------------
+      // 新規追加種目
+      // -------------------------------
+      case 'sqj':
         return parseFloat(values.height) || null;
 
       case '1000m_run':
@@ -195,8 +193,14 @@ export function calculatePrimaryValue(
       case 'side_step_test':
         return parseFloat(values.count) || null;
 
+      // -------------------------------
+      // アジリティ（タイム）
+      // 050_l（DB名）を追加して左も計算できるようにする
+      // 050-l は過去互換（残してOK）
+      // -------------------------------
       case '050_r':
-      case '050-l':
+      case '050_l':  // ✅ 追加（これが左が保存できない原因の根治）
+      case '050-l':  // 互換用（不要なら消してOK）
       case 'pro_agility_r':
       case 'pro_agility_l':
       case 'arrowhead_r':
@@ -204,7 +208,7 @@ export function calculatePrimaryValue(
         return parseFloat(values.time) || null;
 
       // -------------------------------
-      // Sprint 系（タイムを primary_value に使用）
+      // Sprint 系（タイム）
       // -------------------------------
       case 'sprint_5m':
       case 'sprint_10m':
@@ -213,7 +217,6 @@ export function calculatePrimaryValue(
       case 'sprint_30m':
       case 'sprint_50m':
         return parseFloat(values.time) || null;
-
 
       default:
         return null;
@@ -259,9 +262,8 @@ export function getLatestPrimaryValue(records: any[]) {
  */
 export function getCalculatedUnit(testName: string): string {
   switch (testName) {
-
     case 'cmj':
-    case 'cmj_as':  // ★ 追加
+    case 'cmj_as':
     case 'standing_long_jump':
     case 'standing_five_jump':
       return 'cm';
@@ -277,6 +279,7 @@ export function getCalculatedUnit(testName: string): string {
     case 'arrowhead_r':
     case 'arrowhead_l':
     case '050_r':
+    case '050_l':  // ✅ 追加
     case '050-l':
     case 'pro_agility_r':
     case 'pro_agility_l':
@@ -300,7 +303,6 @@ export function getCalculatedUnit(testName: string): string {
     case 'sprint_30m':
     case 'sprint_50m':
       return '秒';
-    
 
     default:
       return '';
@@ -312,10 +314,9 @@ export function getCalculatedUnit(testName: string): string {
  */
 export function getCalculatedValueLabel(testName: string): string {
   switch (testName) {
-
     case 'sqj':
     case 'cmj':
-    case 'cmj_as': // ★ 追加
+    case 'cmj_as':
       return '跳躍高';
 
     case 'standing_long_jump':
@@ -333,6 +334,7 @@ export function getCalculatedValueLabel(testName: string): string {
     case 'arrowhead_r':
     case 'arrowhead_l':
     case '050_r':
+    case '050_l':  // ✅ 追加
     case '050-l':
     case 'pro_agility_r':
     case 'pro_agility_l':
@@ -352,4 +354,36 @@ export function getCalculatedValueLabel(testName: string): string {
     default:
       return '計算値';
   }
+}
+
+/**
+ * -----------------------------------------------------
+ * 追加：表示用フォーマッタ（秒は小数2桁）
+ * -----------------------------------------------------
+ * 例）
+ * formatCalculatedValue('050_l', 2.5) => "2.50"
+ * formatCalculatedValue('bench_press', 102.34) => "102.3"（kgは小数1桁の例）
+ */
+export function formatCalculatedValue(testName: string, value: number | null): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+
+  // 秒系は小数2桁で固定
+  const secTests = new Set([
+    '050_r', '050_l', '050-l',
+    'pro_agility_r', 'pro_agility_l',
+    'arrowhead_r', 'arrowhead_l',
+    'sprint_5m', 'sprint_10m', 'sprint_15m', 'sprint_20m', 'sprint_30m', 'sprint_50m',
+  ]);
+
+  if (secTests.has(testName)) return Number(value).toFixed(2);
+
+  // kg系：小数1桁（必要なら2桁にしてOK）
+  const kgTests = new Set([
+    'bench_press', 'back_squat', 'deadlift',
+    'bulgarian_squat_r', 'bulgarian_squat_l',
+  ]);
+  if (kgTests.has(testName)) return (Math.round(value * 10) / 10).toFixed(1);
+
+  // それ以外はそのまま（必要ならここもルール化OK）
+  return String(value);
 }

@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
-// PerformanceRecordForm.tsx の先頭あたり
+import React, { useState, useEffect, useMemo } from 'react';
 import { getTodayJSTString } from '../lib/date';
 import { Plus, Calendar, AlertCircle, TrendingUp, Lock, Scale } from 'lucide-react';
-import { calculatePrimaryValue, getCalculatedUnit, getCalculatedValueLabel } from '../lib/performanceCalculations';
+import {
+  calculatePrimaryValue,
+  getCalculatedUnit,
+  getCalculatedValueLabel,
+  formatCalculatedValue, // ✅ 追加（前回渡した util に入れたやつ）
+} from '../lib/performanceCalculations';
 import { useWeightData } from '../hooks/useWeightData';
 import { PerformanceRecordWithTest } from '../hooks/usePerformanceData';
 import { DuplicateRecordModal } from './DuplicateRecordModal';
@@ -65,6 +69,7 @@ export function PerformanceRecordForm({
   personalBests
 }: PerformanceRecordFormProps) {
   const { getLatestWeight } = useWeightData(userId);
+
   const [selectedTestTypeId, setSelectedTestTypeId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(getTodayJSTString());
   const [formValues, setFormValues] = useState<Record<string, any>>({});
@@ -78,37 +83,63 @@ export function PerformanceRecordForm({
   const [existingRecord, setExistingRecord] = useState<PerformanceRecordWithTest | null>(null);
   const [pendingData, setPendingData] = useState<any>(null);
 
-  const selectedTestType = testTypes.find(t => t.id === selectedTestTypeId);
+  const selectedTestType = useMemo(
+    () => testTypes.find(t => t.id === selectedTestTypeId),
+    [testTypes, selectedTestTypeId]
+  );
 
   useEffect(() => {
-    if (selectedTestType) {
-      const initialValues: Record<string, any> = {};
-      if (Array.isArray(selectedTestType.fields)) {
-        selectedTestType.fields.forEach((field: any) => {
-          initialValues[field.name] = '';
-        });
-      }
-      setFormValues(initialValues);
+    if (!selectedTestType) return;
 
-      // ✅ 筋力測定種目の場合、最新体重を取得
-      const isStrengthTest =
-        selectedTestType && strengthTestNames.includes(selectedTestType.name);
-
-      if (isStrengthTest) {
-        const weight = getLatestWeight();
-        console.log('🏋️ Strength test selected, latest weight:', weight);
-        setLatestWeight(weight);
-      } else {
-        setLatestWeight(null);
-        setRelative1RM(null);
-      }
+    // 初期化
+    const initialValues: Record<string, any> = {};
+    if (Array.isArray(selectedTestType.fields)) {
+      selectedTestType.fields.forEach((field: any) => {
+        initialValues[field.name] = '';
+      });
     }
-  }, [selectedTestType]);
+    setFormValues(initialValues);
+
+    // ✅ 筋力測定種目の場合、最新体重を取得
+    const isStrengthTest = strengthTestNames.includes(selectedTestType.name);
+    if (isStrengthTest) {
+      const weight = getLatestWeight();
+      console.log('🏋️ Strength test selected, latest weight:', weight);
+      setLatestWeight(weight);
+    } else {
+      setLatestWeight(null);
+      setRelative1RM(null);
+    }
+  }, [selectedTestType, getLatestWeight]);
 
   const computePrimaryValue = (values: Record<string, any>): number | null => {
     if (!selectedTestType) return null;
     return calculatePrimaryValue(selectedTestType.name, values);
   };
+
+  const getDisplayUnit = (): string => {
+    if (!selectedTestType) return '';
+    const calculatedUnit = getCalculatedUnit(selectedTestType.name);
+    return calculatedUnit || selectedTestType.unit;
+  };
+
+  const getValueLabel = (): string => {
+    if (!selectedTestType) return '計算値';
+    return getCalculatedValueLabel(selectedTestType.name);
+  };
+
+  // ✅ 計算値の表示（秒系は小数2桁）
+  const getPrimaryValueDisplay = (): string => {
+    if (!selectedTestType) return '-';
+    const primaryValue = computePrimaryValue(formValues);
+    if (primaryValue === null) return '-';
+
+    // util のフォーマッタに統一（秒は2桁）
+    return formatCalculatedValue(selectedTestType.name, primaryValue);
+  };
+
+  const lastRecord = lastRecords?.get(selectedTestTypeId);
+  const personalBest = personalBests?.get(selectedTestTypeId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,13 +167,19 @@ export function PerformanceRecordForm({
       return;
     }
 
+    // ✅ 秒系の入力はDBに綺麗に入れる（小数2桁に揃える）
+    const isSecondUnit = getDisplayUnit() === '秒';
+    const normalizedPrimary = isSecondUnit
+      ? Number(primaryValue.toFixed(2))
+      : primaryValue;
+
     // ✅ 筋力測定の場合、相対1RMと測定時体重を追加（ブルガリアン含む）
-    const isStrengthTest =
-      selectedTestType && strengthTestNames.includes(selectedTestType.name);
+    const isStrengthTest = strengthTestNames.includes(selectedTestType.name);
 
     const valuesWithRelative = {
       ...formValues,
-      primary_value: primaryValue,
+      // primary_value は正規化した値を保存
+      primary_value: normalizedPrimary,
       ...(isStrengthTest && latestWeight ? {
         relative_1rm: relative1RM,
         weight_at_test: latestWeight
@@ -186,8 +223,8 @@ export function PerformanceRecordForm({
       setSelectedDate(getTodayJSTString());
       setRelative1RM(null);
       setLatestWeight(null);
-    } catch (error) {
-      console.error('Error submitting performance record:', error);
+    } catch (err) {
+      console.error('Error submitting performance record:', err);
       setError('記録の追加に失敗しました');
     } finally {
       setSubmitting(false);
@@ -196,16 +233,16 @@ export function PerformanceRecordForm({
 
   const handleOverwrite = async () => {
     if (!existingRecord || !pendingData) return;
-  
+
     setSubmitting(true);
     setShowDuplicateModal(false);
-  
+
     try {
       await onUpdate((existingRecord as any).id, {
         values: pendingData.values,
         notes: pendingData.notes
       });
-  
+
       setFormValues({});
       setNotes('');
       setSelectedTestTypeId('');
@@ -214,8 +251,8 @@ export function PerformanceRecordForm({
       setPendingData(null);
       setRelative1RM(null);
       setLatestWeight(null);
-    } catch (error) {
-      console.error('Error updating record:', error);
+    } catch (err) {
+      console.error('Error updating record:', err);
       setError('記録の更新に失敗しました');
     } finally {
       setSubmitting(false);
@@ -236,8 +273,7 @@ export function PerformanceRecordForm({
     setFormValues(newValues);
 
     // ✅ 筋力測定で重量または回数が入力された場合、相対1RMを計算（ブルガリアン含む）
-    const isStrengthTest =
-      selectedTestType && strengthTestNames.includes(selectedTestType.name);
+    const isStrengthTest = !!selectedTestType && strengthTestNames.includes(selectedTestType.name);
 
     if (isStrengthTest && (fieldName === 'weight' || fieldName === 'reps') && latestWeight) {
       const weight = parseFloat(newValues.weight || '0');
@@ -246,9 +282,7 @@ export function PerformanceRecordForm({
       console.log('💪 Calculating relative 1RM from:', { weight, reps, latestWeight });
 
       if (weight > 0 && reps > 0) {
-        // Epley式で1RMを計算: 1RM = 重量 × (1 + 回数 / 30)
         const oneRM = weight * (1 + reps / 30);
-        // 相対1RM = 1RM / 体重
         const relative = oneRM / latestWeight;
         console.log('✅ 1RM:', oneRM.toFixed(1), 'kg, Relative 1RM:', relative.toFixed(2));
         setRelative1RM(Math.round(relative * 100) / 100);
@@ -257,26 +291,6 @@ export function PerformanceRecordForm({
       }
     }
   };
-
-  const getPrimaryValueDisplay = (): string => {
-    const primaryValue = computePrimaryValue(formValues);
-    if (primaryValue === null) return '-';
-    return primaryValue.toFixed(1);
-  };
-
-  const getDisplayUnit = (): string => {
-    if (!selectedTestType) return '';
-    const calculatedUnit = getCalculatedUnit(selectedTestType.name);
-    return calculatedUnit || selectedTestType.unit;
-  };
-
-  const getValueLabel = (): string => {
-    if (!selectedTestType) return '計算値';
-    return getCalculatedValueLabel(selectedTestType.name);
-  };
-
-  const lastRecord = lastRecords?.get(selectedTestTypeId);
-  const personalBest = personalBests?.get(selectedTestTypeId);
 
   return (
     <>
@@ -328,6 +342,7 @@ export function PerformanceRecordForm({
             style={{ fontSize: '16px' }}
           >
             <option value="">測定種目を選択</option>
+
             {testTypes
               .filter(testType => testType.user_can_input !== false)
               .map(testType => (
@@ -335,6 +350,7 @@ export function PerformanceRecordForm({
                   {testType.display_name}
                 </option>
               ))}
+
             {testTypes
               .filter(testType => testType.user_can_input === false)
               .map(testType => (
@@ -343,6 +359,7 @@ export function PerformanceRecordForm({
                 </option>
               ))}
           </select>
+
           {selectedTestType && (
             <div className="mt-2">
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -367,7 +384,12 @@ export function PerformanceRecordForm({
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm">
                 <p className="text-blue-600 dark:text-blue-400 mb-1">前回の記録</p>
                 <p className="text-blue-700 dark:text-blue-300">
-                  {lastRecord.values.primary_value} {selectedTestType.unit} ({new Date(lastRecord.date).toLocaleDateString('ja-JP')})
+                  {/* ✅ primary_value を表示・単位は getDisplayUnit() */}
+                  {formatCalculatedValue(selectedTestType.name, Number(lastRecord.values?.primary_value))}
+                  {' '}
+                  {getDisplayUnit()}
+                  {' '}
+                  ({new Date(lastRecord.date).toLocaleDateString('ja-JP')})
                 </p>
               </div>
             )}
@@ -379,7 +401,12 @@ export function PerformanceRecordForm({
                   パーソナルベスト
                 </p>
                 <p className="text-yellow-700 dark:text-yellow-300 font-semibold">
-                  {personalBest.value} {selectedTestType.unit} ({new Date(personalBest.date).toLocaleDateString('ja-JP')})
+                  {/* ✅ PBも2桁表示。単位も getDisplayUnit() */}
+                  {formatCalculatedValue(selectedTestType.name, Number(personalBest.value))}
+                  {' '}
+                  {getDisplayUnit()}
+                  {' '}
+                  ({new Date(personalBest.date).toLocaleDateString('ja-JP')})
                 </p>
               </div>
             )}
@@ -400,7 +427,7 @@ export function PerformanceRecordForm({
                     <select
                       value={formValues[field.name] || ''}
                       onChange={(e) => handleValueChange(field.name, e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg白 dark:bg-gray-700 dark:text-white"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-base bg-white dark:bg-gray-700 dark:text-white"
                       style={{ fontSize: '16px' }}
                     >
                       <option value="">{field.label}を選択</option>
@@ -412,7 +439,6 @@ export function PerformanceRecordForm({
                     </select>
                   ) : (
                     <input
-                      // デフォルトは数字入力に統一。text と明示されたものだけテキスト扱い
                       type={field.type === 'text' ? 'text' : 'number'}
                       inputMode={field.type === 'text' ? 'text' : 'decimal'}
                       step={field.type === 'text' ? undefined : '0.01'}
@@ -522,10 +548,7 @@ export function PerformanceRecordForm({
           type="submit"
           disabled={submitting || loading || !selectedTestTypeId || selectedTestType?.user_can_input === false}
           className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center"
-          style={{
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation'
-          }}
+          style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
         >
           {submitting ? (
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
