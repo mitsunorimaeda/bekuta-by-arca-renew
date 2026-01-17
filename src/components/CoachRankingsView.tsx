@@ -45,9 +45,18 @@ const strengthTestNames = new Set([
   'bulgarian_squat_l',
 ]);
 
-// 表示桁（RSIは2桁、それ以外は1桁）
-const digitsFor = (testTypeName?: string) => (testTypeName?.includes('rsi') ? 2 : 1);
 
+// ✅ 表示桁を「単位」で決める
+const digitsForByUnit = (unit?: string) => {
+  const u = (unit || '').trim();
+
+  // 整数にしたい単位
+  const intUnits = new Set(['回', '点', 'm']); // 必要なら '本' '枚' など追加
+  if (intUnits.has(u)) return 0;
+
+  // それ以外は基本2桁
+  return 2;
+};
 // カテゴリ順（表示の好み）
 const CATEGORY_ORDER = ['筋力', 'スプリント', 'ジャンプ', '敏捷', '持久', 'その他'];
 
@@ -287,8 +296,14 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
 
   const fmtValue = (v: number | null) => {
     if (v == null) return '-';
-    const d = digitsFor(selectedTestType?.name);
-    return Number(v).toFixed(d);
+  
+    const d = digitsForByUnit(unitLabel); // ← unitLabel を使うのがポイント
+    const n = Number(v);
+  
+    // d=0 のときは 73.0 みたいなブレをなくす
+    if (d === 0) return String(Math.round(n));
+  
+    return n.toFixed(d);
   };
 
   return (
