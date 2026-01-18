@@ -114,6 +114,15 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
     return sortedPhases.filter((p) => !(p.end_date < today || end < p.start_date));
   }, [sortedPhases, today]);
 
+  const isSamePhase = (a: TeamSeasonPhase | null, b: TeamSeasonPhase | null) => {
+    if (!a || !b) return false;
+    return a.phase_type === b.phase_type && a.start_date === b.start_date && a.end_date === b.end_date;
+  };
+  
+  const next3WeeksNoDup = useMemo(() => {
+    return next3Weeks.filter((p) => !isSamePhase(p, currentPhase));
+  }, [next3Weeks, currentPhase]);
+
   const resetFormForCreate = () => {
     const t = todayISO();
     setStartDate(t);
@@ -267,28 +276,28 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
+      {/* ✅ Header（コンパクト） */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm text-gray-500">設定</div>
-            <div className="text-lg font-bold text-gray-900 truncate">
-              チームフェーズ（シーズン期分け）{teamName ? ` - ${teamName}` : ''}
+            <div className="text-xs text-gray-500">設定（フェーズ）</div>
+            <div className="text-base font-bold text-gray-900 truncate">
+              チームフェーズ{teamName ? ` - ${teamName}` : ''}
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              ※ 選手の「次の一手（3週間）」や「今のフェーズ表示」に使います
+            <div className="text-[11px] text-gray-500 mt-1">
+              ※ 選手側トップに「今日」と「今後3週間」を表示
             </div>
           </div>
-
+  
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm font-semibold"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-xs font-semibold shrink-0"
           >
             <Plus className="w-4 h-4" />
             追加
           </button>
         </div>
-
+  
         {err && (
           <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5" />
@@ -296,81 +305,137 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
           </div>
         )}
       </div>
-
-      {/* Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Today */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-          <div className="text-sm font-semibold text-gray-900">今日のフェーズ</div>
-          <div className="text-xs text-gray-500 mt-1">選手側のダッシュボードに出す想定</div>
-
-          <div className="mt-3">
-            {currentPhase ? (
-              <div className="rounded-lg border border-gray-200 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${PHASE_BADGE[currentPhase.phase_type]}`}>
-                    {PHASE_LABEL[currentPhase.phase_type]}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {currentPhase.start_date} 〜 {currentPhase.end_date}
-                  </span>
+  
+      {/* ✅ 今日（選手側の見え方に寄せる） */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-500">チームフェーズ</span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+              今日
+            </span>
+          </div>
+  
+          {currentPhase ? (
+            <span className="text-xs text-gray-500">
+              {(() => {
+                const s = currentPhase.start_date;
+                const e = currentPhase.end_date;
+                const sm = Number(s.slice(5, 7));
+                const sd = Number(s.slice(8, 10));
+                const em = Number(e.slice(5, 7));
+                const ed = Number(e.slice(8, 10));
+                if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
+                return `${sm}/${sd}–${em}/${ed}`;
+              })()}
+            </span>
+          ) : (
+            <span className="text-xs text-gray-500">未設定</span>
+          )}
+        </div>
+  
+        <div className="mt-3">
+          {currentPhase ? (
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xl font-semibold text-gray-900 truncate">
+                    {PHASE_LABEL[currentPhase.phase_type]?.replace('（準備）', '')?.replace('（通常）', '') ?? '未設定'}
+                  </div>
                 </div>
-
+  
+                <button
+                  onClick={() => openEdit(currentPhase)}
+                  className="text-xs text-blue-600 hover:underline shrink-0"
+                >
+                  編集
+                </button>
+              </div>
+  
+              {!!(currentPhase.focus_tags?.length) && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {(currentPhase.focus_tags ?? []).map((t) => (
-                    <span key={t} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                  {currentPhase.focus_tags.slice(0, 6).map((t) => (
+                    <span
+                      key={t}
+                      className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700"
+                    >
                       {t}
                     </span>
                   ))}
-                </div>
-
-                {currentPhase.note && <div className="mt-2 text-xs text-gray-600">{currentPhase.note}</div>}
-              </div>
-            ) : (
-              <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-                今日に該当するフェーズがありません（未設定）
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Next 3 weeks */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-          <div className="text-sm font-semibold text-gray-900">今後3週間のフェーズ</div>
-          <div className="text-xs text-gray-500 mt-1">「次の一手（3週間）」生成のベース</div>
-
-          <div className="mt-3 space-y-2">
-            {next3Weeks.length === 0 ? (
-              <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-                期間内のフェーズがありません
-              </div>
-            ) : (
-              next3Weeks.map((p) => (
-                <div key={p.id} className="rounded-lg border border-gray-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${PHASE_BADGE[p.phase_type]}`}>
-                      {PHASE_LABEL[p.phase_type]}
+                  {currentPhase.focus_tags.length > 6 && (
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                      +{currentPhase.focus_tags.length - 6}
                     </span>
-                    <span className="text-xs text-gray-500">
-                      {p.start_date} 〜 {p.end_date}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(p.focus_tags ?? []).map((t) => (
-                      <span key={t} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                  {p.note && <div className="mt-2 text-xs text-gray-600">{p.note}</div>}
+                  )}
                 </div>
-              ))
-            )}
-          </div>
+              )}
+  
+              {currentPhase.note && (
+                <p className="mt-2 text-sm text-gray-700 line-clamp-2">{currentPhase.note}</p>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
+              フェーズが未設定です（コーチが設定すると表示されます）
+            </div>
+          )}
         </div>
+  
+        {/* ✅ 今後3週間（横スクロール） */}
+        {next3WeeksNoDup.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-500">今後3週間</p>
+              <p className="text-[11px] text-gray-400">横にスクロール</p>
+            </div>
+  
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              {next3WeeksNoDup.slice(0, 6).map((p, idx) => {
+                const s = p.start_date;
+                const e = p.end_date;
+                const sm = Number(s.slice(5, 7));
+                const sd = Number(s.slice(8, 10));
+                const em = Number(e.slice(5, 7));
+                const ed = Number(e.slice(8, 10));
+                const range = !sm || !sd || !em || !ed ? `${s}〜${e}` : `${sm}/${sd}–${em}/${ed}`;
+  
+                return (
+                  <button
+                    key={`${p.id}-${idx}`}
+                    onClick={() => openEdit(p)}
+                    className="min-w-[170px] text-left rounded-lg border border-gray-100 bg-white p-3 hover:bg-gray-50"
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-gray-900 truncate">
+                        {PHASE_LABEL[p.phase_type]?.replace('（準備）', '')?.replace('（通常）', '') ?? '未設定'}
+                      </div>
+                      <div className="text-[11px] text-gray-500 whitespace-nowrap">{range}</div>
+                    </div>
+  
+                    {!!(p.focus_tags?.length) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {p.focus_tags.slice(0, 3).map((t) => (
+                          <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                            {t}
+                          </span>
+                        ))}
+                        {p.focus_tags.length > 3 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                            +{p.focus_tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* List */}
+  
+      {/* ✅ 登録済み（リスト：モバイル向けに圧縮） */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
           <div className="text-sm font-semibold text-gray-900">登録済みフェーズ</div>
@@ -382,9 +447,9 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
             {loading ? '更新中…' : '更新'}
           </button>
         </div>
-
+  
         {loading ? (
-          <div className="py-12 flex items-center justify-center">
+          <div className="py-10 flex items-center justify-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
           </div>
         ) : sortedPhases.length === 0 ? (
@@ -394,29 +459,38 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
         ) : (
           <div className="divide-y">
             {sortedPhases.map((p) => (
-              <div key={p.id} className="p-4 sm:p-5">
+              <div key={p.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${PHASE_BADGE[p.phase_type]}`}>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${PHASE_BADGE[p.phase_type]}`}
+                      >
                         {PHASE_LABEL[p.phase_type]}
                       </span>
                       <span className="text-xs text-gray-500">
-                        {p.start_date} 〜 {p.end_date}
+                        {p.start_date}〜{p.end_date}
                       </span>
                     </div>
-
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(p.focus_tags ?? []).map((t) => (
-                        <span key={t} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-
-                    {p.note && <div className="mt-2 text-xs text-gray-600">{p.note}</div>}
+  
+                    {!!(p.focus_tags?.length) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {p.focus_tags.slice(0, 4).map((t) => (
+                          <span key={t} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                            {t}
+                          </span>
+                        ))}
+                        {p.focus_tags.length > 4 && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                            +{p.focus_tags.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
+  
+                    {p.note && <div className="mt-2 text-xs text-gray-600 line-clamp-2">{p.note}</div>}
                   </div>
-
+  
                   <div className="shrink-0 flex items-center gap-2">
                     <button
                       onClick={() => openEdit(p)}
@@ -425,7 +499,7 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
                     >
                       <Pencil className="w-4 h-4 text-gray-700" />
                     </button>
-
+  
                     <button
                       onClick={() => onDelete(p)}
                       className="p-2 rounded-lg border bg-white hover:bg-red-50"
@@ -442,13 +516,16 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
         )}
       </div>
 
-      {/* Modal */}
+      div>
+
+      {/* ✅ Modal（ここはあなたの現行コードをそのまま残す） */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={closeModal}>
           <div
             className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
+     
             <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm text-gray-500">チームフェーズ</div>
