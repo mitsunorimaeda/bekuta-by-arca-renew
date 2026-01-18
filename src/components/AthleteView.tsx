@@ -41,14 +41,11 @@ import { useInbodyData } from '../hooks/useInbodyData';
 import { InBodyLatestCard } from './InBodyLatestCard';
 import { InBodyCharts } from './InBodyCharts';
 import { getTodayEnergySummary } from '../lib/getTodayEnergySummary';
-// ✅ 栄養カードはこれだけ残す
-import { NutritionCard } from './NutritionCard';
 import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import NutritionOverview from "./NutritionOverview";
 import { buildDailyTargets } from "../lib/nutritionCalc";
 import { FTTCheck } from './FTTCheck';
 import {AthleteGamificationView} from "./views/AthleteGamificationView";
-import { AthleteNutritionView } from "./views/AthleteNutritionView";
 import { AthleteCycleView } from "./views/AthleteCycleView";
 
 
@@ -115,6 +112,17 @@ type AthleteViewProps = {
   onUserUpdated?: () => Promise<void> | void;
 };
 
+// =========================
+// ✅ Team Season Phase（今日＋3週間）
+// =========================
+type TeamPhaseRow = {
+  phase_type: 'off' | 'pre' | 'in' | 'peak' | 'transition' | 'unknown';
+  focus_tags: string[];
+  note: string | null;
+  start_date: string; // YYYY-MM-DD
+  end_date: string;   // YYYY-MM-DD
+};
+
 export function AthleteView({
   user,
   alerts,
@@ -159,6 +167,97 @@ export function AthleteView({
 
 
   const today = useMemo(() => getTodayJSTString(), []);
+
+
+
+  const [todayPhase, setTodayPhase] = useState<TeamPhaseRow | null>(null);
+  const [nextPhases, setNextPhases] = useState<TeamPhaseRow[]>([]);
+  const [phaseLoading, setPhaseLoading] = useState(false);
+  const [phaseError, setPhaseError] = useState<string | null>(null);
+
+  const addDaysToDateString = (dateStr: string, addDays: number) => {
+    // dateStr: 'YYYY-MM-DD'（JST）を想定
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+    dt.setDate(dt.getDate() + addDays);
+
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  useEffect(() => {
+    const teamId = user.team_id;
+    if (!teamId) {
+      // team_id が無いユーザーは表示できない（staffなど）
+      setTodayPhase(null);
+      setNextPhases([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      setPhaseLoading(true);
+      setPhaseError(null);
+
+      try {
+        // 今日のフェーズ
+        const { data: d1, error: e1 } = await supabase.rpc('get_team_phase_on_date', {
+          p_team_id: teamId,
+          p_date: today,
+        });
+
+        if (e1) throw e1;
+
+        // 3週間レンジ（今日〜21日後）
+        const end = addDaysToDateString(today, 21);
+        const { data: d2, error: e2 } = await supabase.rpc('get_team_phases_in_range', {
+          p_team_id: teamId,
+          p_start: today,
+          p_end: end,
+        });
+
+        if (e2) throw e2;
+
+        if (cancelled) return;
+
+        const row1 = (Array.isArray(d1) ? d1[0] : d1) as TeamPhaseRow | null;
+        setTodayPhase(row1 ?? null);
+
+        const rows2 = (Array.isArray(d2) ? d2 : []) as TeamPhaseRow[];
+        setNextPhases(rows2 ?? []);
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error('[team phase fetch error]', err);
+        setPhaseError(err?.message ?? 'team phase fetch error');
+        setTodayPhase(null);
+        setNextPhases([]);
+      } finally {
+        if (!cancelled) setPhaseLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.team_id, today]);  
+  
+  
+  const phaseLabel = (t: TeamPhaseRow['phase_type']) => {
+    switch (t) {
+      case 'off': return 'オフ';
+      case 'pre': return 'プレ';
+      case 'in': return 'イン';
+      case 'peak': return 'ピーク';
+      case 'transition': return '移行';
+      default: return '未設定';
+    }
+  };
+
+
 
 
   const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
@@ -587,15 +686,9 @@ export function AthleteView({
   // 📷 iOS対応：hidden を使わない file input 用クラス
   const fileInputClass =
   "absolute -left-[9999px] top-0 w-px h-px opacity-0";
-  const handlePickPhoto = useCallback(
-    (file: File) => {
-      // ここで “栄養詳細へ” へ遷移（まずは確実に動く挙動）
-      setActiveTab("nutrition");
-      // 必要なら後で Nutrition 側にファイルを渡す設計に拡張できる
-      // 例：window.dispatchEvent(new CustomEvent("nutrition:photo", { detail: { file, date: today } }));
-    },
-    [today]
-  );
+  const handlePickPhoto = useCallback((file: File) => {
+    setActiveTab("nutrition");
+  }, []);
 
   const getCategoryDisplayName = useCallback((category: string) => {
     switch (category) {
@@ -962,6 +1055,69 @@ export function AthleteView({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
         {activeTab === 'unified' ? (
           <>
+            {/* ✅ チームフェーズ（今日 / 3週間） */}
+              <div className="mb-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-5 transition-colors border border-gray-100 dark:border-gray-700">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">チームフェーズ（今日）</p>
+
+                      {phaseLoading ? (
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">読み込み中…</p>
+                      ) : phaseError ? (
+                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">取得エラー：{phaseError}</p>
+                      ) : todayPhase ? (
+                        <>
+                          <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+                            {phaseLabel(todayPhase.phase_type)}
+                            <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                              {todayPhase.start_date}〜{todayPhase.end_date}
+                            </span>
+                          </p>
+
+                          {todayPhase.focus_tags?.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {todayPhase.focus_tags.slice(0, 6).map((tag, i) => (
+                                <span
+                                  key={`${tag}-${i}`}
+                                  className="text-xs px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {todayPhase.note && (
+                            <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+                              {todayPhase.note}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">フェーズ未設定</p>
+                      )}
+                    </div>
+
+                    {/* 3週間の流れ（簡易） */}
+                    <div className="min-w-[140px] text-right">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">今後3週間</p>
+                      {(!phaseLoading && !phaseError && nextPhases?.length > 0) ? (
+                        <div className="mt-1 space-y-1">
+                          {nextPhases.slice(0, 3).map((p, idx) => (
+                            <div key={`${p.start_date}-${idx}`} className="text-xs text-gray-700 dark:text-gray-200">
+                              {phaseLabel(p.phase_type)}：{p.start_date}〜{p.end_date}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">—</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             <ConsolidatedOverviewDashboard
               acwrData={acwrData}
               weightRecords={weightRecords}
