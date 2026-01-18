@@ -225,9 +225,23 @@ export function AthleteView({
 
         const row1 = (Array.isArray(d1) ? d1[0] : d1) as TeamPhaseRow | null;
         setTodayPhase(row1 ?? null);
-
+        
         const rows2 = (Array.isArray(d2) ? d2 : []) as TeamPhaseRow[];
-        setNextPhases(rows2 ?? []);
+        
+        // ✅ 「今日」と同じフェーズは “今後” から除外
+        const filtered = (rows2 ?? []).filter((p) => {
+          if (!row1) return true;
+          return !(
+            p.phase_type === row1.phase_type &&
+            p.start_date === row1.start_date &&
+            p.end_date === row1.end_date
+          );
+        });
+        
+        // ✅ 念のため日付順に（関数側で並んでるなら不要だけど安全）
+        filtered.sort((a, b) => (a.start_date > b.start_date ? 1 : a.start_date < b.start_date ? -1 : 0));
+        
+        setNextPhases(filtered);
       } catch (err: any) {
         if (cancelled) return;
         console.error('[team phase fetch error]', err);
