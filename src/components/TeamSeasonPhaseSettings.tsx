@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plus, Pencil, Trash2, X, AlertTriangle, Save } from 'lucide-react';
+import { getPhaseAdvice } from '../lib/phaseAdvice';
 
 type PhaseType = 'off' | 'pre' | 'in' | 'peak' | 'transition' | 'unknown';
 
@@ -369,11 +370,14 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
                 )}
 
                 {/* Note（2行で省略） */}
-                {currentPhase.note && (
-                  <p className="mt-3 text-sm text-gray-700 line-clamp-2">
-                    {currentPhase.note}
-                  </p>
-                )}
+                <p className="mt-3 text-sm text-gray-700 line-clamp-2">
+                  {getPhaseAdvice(
+                    currentPhase?.phase_type ?? 'unknown',
+                    currentPhase?.focus_tags ?? [],
+                    currentPhase?.note ?? null,
+                    { preferNote: true, appendTagHintsWhenNote: false, maxNoteChars: 80 }
+                  )}
+                </p>
               </>
             ) : (
               <div className="mt-3 text-sm text-gray-600">
@@ -425,7 +429,7 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
                         </div>
                       </div>
 
-                      
+
 
                       {Array.isArray(p.focus_tags) && p.focus_tags.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -445,11 +449,14 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
                         </div>
                       )}
 
-                      {p.note && (
-                        <div className="mt-2 text-xs text-gray-600 line-clamp-1">
-                          {p.note}
-                        </div>
-                      )}
+                      <div className="mt-2 text-xs text-gray-600 line-clamp-1">
+                        {getPhaseAdvice(
+                          p.phase_type ?? 'unknown',
+                          p.focus_tags ?? [],
+                          p.note ?? null,
+                          { preferNote: true, appendTagHintsWhenNote: false, maxNoteChars: 50 }
+                        )}
+                      </div>
                     </div>
                   );
                 })}
