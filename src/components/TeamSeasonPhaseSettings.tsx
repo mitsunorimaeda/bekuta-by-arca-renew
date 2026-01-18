@@ -39,6 +39,15 @@ const PHASE_BADGE: Record<PhaseType, string> = {
   unknown: 'bg-slate-50 text-slate-700 border-slate-200',
 };
 
+const toShortRange = (s: string, e: string) => {
+  const sm = Number(s.slice(5, 7));
+  const sd = Number(s.slice(8, 10));
+  const em = Number(e.slice(5, 7));
+  const ed = Number(e.slice(8, 10));
+  if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
+  return `${sm}/${sd}–${em}/${ed}`;
+};
+
 const todayISO = () => {
   const d = new Date();
   // JSTで "YYYY-MM-DD"
@@ -306,135 +315,146 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
         )}
       </div>
   
-      {/* ✅ 今日（選手側の見え方に寄せる） */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500">チームフェーズ</span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-              今日
-            </span>
-          </div>
-  
-          {currentPhase ? (
-            <span className="text-xs text-gray-500">
-              {(() => {
-                const s = currentPhase.start_date;
-                const e = currentPhase.end_date;
-                const sm = Number(s.slice(5, 7));
-                const sd = Number(s.slice(8, 10));
-                const em = Number(e.slice(5, 7));
-                const ed = Number(e.slice(8, 10));
-                if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
-                return `${sm}/${sd}–${em}/${ed}`;
-              })()}
-            </span>
-          ) : (
-            <span className="text-xs text-gray-500">未設定</span>
-          )}
-        </div>
-  
-        <div className="mt-3">
-          {currentPhase ? (
-            <div className="rounded-lg border border-gray-200 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-xl font-semibold text-gray-900 truncate">
-                    {PHASE_LABEL[currentPhase.phase_type]?.replace('（準備）', '')?.replace('（通常）', '') ?? '未設定'}
+      {/* Preview（モバイル最適） */}
+        <div className="space-y-4">
+          {/* 今日（選手側カード風） */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-gray-500">チームフェーズ</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                  今日
+                </span>
+              </div>
+
+              <span className="text-xs text-gray-500">
+                {currentPhase ? toShortRange(currentPhase.start_date, currentPhase.end_date) : '未設定'}
+              </span>
+            </div>
+
+            {/* Body */}
+            {currentPhase ? (
+              <>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-semibold text-gray-900 truncate">
+                        {PHASE_LABEL[currentPhase.phase_type]}
+                      </h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${PHASE_BADGE[currentPhase.phase_type]}`}>
+                        {currentPhase.phase_type}
+                      </span>
+                    </div>
                   </div>
                 </div>
-  
-                <button
-                  onClick={() => openEdit(currentPhase)}
-                  className="text-xs text-blue-600 hover:underline shrink-0"
-                >
-                  編集
-                </button>
-              </div>
-  
-              {!!(currentPhase.focus_tags?.length) && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {currentPhase.focus_tags.slice(0, 6).map((t) => (
-                    <span
-                      key={t}
-                      className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                  {currentPhase.focus_tags.length > 6 && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                      +{currentPhase.focus_tags.length - 6}
-                    </span>
-                  )}
-                </div>
-              )}
-  
-              {currentPhase.note && (
-                <p className="mt-2 text-sm text-gray-700 line-clamp-2">{currentPhase.note}</p>
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-              フェーズが未設定です（コーチが設定すると表示されます）
-            </div>
-          )}
-        </div>
-  
-        {/* ✅ 今後3週間（横スクロール） */}
-        {next3WeeksNoDup.length > 0 && (
-          <div className="mt-4 pt-3 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-500">今後3週間</p>
-              <p className="text-[11px] text-gray-400">横にスクロール</p>
-            </div>
-  
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-              {next3WeeksNoDup.slice(0, 6).map((p, idx) => {
-                const s = p.start_date;
-                const e = p.end_date;
-                const sm = Number(s.slice(5, 7));
-                const sd = Number(s.slice(8, 10));
-                const em = Number(e.slice(5, 7));
-                const ed = Number(e.slice(8, 10));
-                const range = !sm || !sd || !em || !ed ? `${s}〜${e}` : `${sm}/${sd}–${em}/${ed}`;
-  
-                return (
-                  <button
-                    key={`${p.id}-${idx}`}
-                    onClick={() => openEdit(p)}
-                    className="min-w-[170px] text-left rounded-lg border border-gray-100 bg-white p-3 hover:bg-gray-50"
-                    type="button"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-gray-900 truncate">
-                        {PHASE_LABEL[p.phase_type]?.replace('（準備）', '')?.replace('（通常）', '') ?? '未設定'}
-                      </div>
-                      <div className="text-[11px] text-gray-500 whitespace-nowrap">{range}</div>
-                    </div>
-  
-                    {!!(p.focus_tags?.length) && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {p.focus_tags.slice(0, 3).map((t) => (
-                          <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                            {t}
-                          </span>
-                        ))}
-                        {p.focus_tags.length > 3 && (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                            +{p.focus_tags.length - 3}
-                          </span>
-                        )}
-                      </div>
+
+                {/* Tags（最大6 +n） */}
+                {Array.isArray(currentPhase.focus_tags) && currentPhase.focus_tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {currentPhase.focus_tags.slice(0, 6).map((tag, i) => (
+                      <span
+                        key={`${tag}-${i}`}
+                        className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {currentPhase.focus_tags.length > 6 && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                        +{currentPhase.focus_tags.length - 6}
+                      </span>
                     )}
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+                )}
+
+                {/* Note（2行で省略） */}
+                {currentPhase.note && (
+                  <p className="mt-3 text-sm text-gray-700 line-clamp-2">
+                    {currentPhase.note}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="mt-3 text-sm text-gray-600">
+                フェーズが未設定です（＋追加 から登録すると表示されます）
+              </div>
+            )}
           </div>
-        )}
-      </div>
-  
+
+          {/* 今後3週間（横スクロールのミニカード） */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">今後3週間</div>
+                <div className="text-xs text-gray-500">横にスクロール</div>
+              </div>
+              <div className="text-[11px] text-gray-400">
+                {today}〜{addDays(today, 21)}
+              </div>
+            </div>
+
+            {next3Weeks.length === 0 ? (
+              <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
+                期間内のフェーズがありません
+              </div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                {next3Weeks.slice(0, 6).map((p, idx) => {
+                  const isSameAsToday =
+                    currentPhase &&
+                    p.phase_type === currentPhase.phase_type &&
+                    p.start_date === currentPhase.start_date &&
+                    p.end_date === currentPhase.end_date;
+
+                  return (
+                    <div
+                      key={`${p.id}-${idx}`}
+                      className={`min-w-[170px] rounded-lg border p-3 ${
+                        isSameAsToday
+                          ? 'border-blue-200 bg-blue-50/60'
+                          : 'border-gray-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-gray-900 truncate">
+                          {PHASE_LABEL[p.phase_type]}
+                        </div>
+                        <div className="text-[11px] text-gray-500 whitespace-nowrap">
+                          {toShortRange(p.start_date, p.end_date)}
+                        </div>
+                      </div>
+
+                      {Array.isArray(p.focus_tags) && p.focus_tags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {p.focus_tags.slice(0, 3).map((t, i) => (
+                            <span
+                              key={`${p.id}-${t}-${i}`}
+                              className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700"
+                            >
+                              {t}
+                            </span>
+                          ))}
+                          {p.focus_tags.length > 3 && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                              +{p.focus_tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {p.note && (
+                        <div className="mt-2 text-xs text-gray-600 line-clamp-1">
+                          {p.note}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       {/* ✅ 登録済み（リスト：モバイル向けに圧縮） */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
