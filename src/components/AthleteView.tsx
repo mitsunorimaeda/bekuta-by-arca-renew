@@ -600,25 +600,26 @@ export function AthleteView({
   // =========================
   // ✅ Phase/Risk/Sleep を統一ロジックで生成（今日の一言 + 各ヒント）
   // =========================
-  const phaseHints = useMemo(() => {
-    const assist = buildDailyAssistTexts({
-      phase: todayPhase,
-      // ✅ buildDailyAssistTexts が boolean 前提でも事故らないように
-      poorSleep: poorSleepFlag.isPoor,
-      risk: {
-        riskLevel: (latestACWR?.riskLevel ?? "unknown") as any,
-        hasHighPriorityAlert: (highPriorityAlerts?.length ?? 0) > 0,
-      },
-    });
+// =========================
+// ✅ Phase/Risk/Sleep を統一ロジックで生成（今日の一言 + 各ヒント）
+// =========================
+const phaseHints = useMemo(() => {
+  const assist = buildDailyAssistTexts({
+    phase: todayPhase,
+    poorSleep: poorSleepFlag, // isPoor含むオブジェクト丸ごと
+    risk: {
+      riskLevel: (latestACWR?.riskLevel ?? "unknown") as any,
+      hasHighPriorityAlert: (highPriorityAlerts?.length ?? 0) > 0,
+    },
+  });
 
-    return {
-      base: assist.oneWord,
-      training: assist.trainingHint,
-      sleep: assist.sleepHint,
-      nutrition: assist.nutritionHint,
-      pop: assist.popHint,
-    };
-  }, [todayPhase, poorSleepFlag?.isPoor, latestACWR?.riskLevel, highPriorityAlerts?.length]);
+  return {
+    base: assist.oneWord,
+    training: assist.trainingHint,
+    sleep: assist.sleepHint,
+    nutrition: assist.nutritionHint,
+  };
+}, [todayPhase, poorSleepFlag, latestACWR?.riskLevel, highPriorityAlerts?.length]);
 
 
 
@@ -640,7 +641,7 @@ export function AthleteView({
     if (entryPop.mode === "welcome_back") {
       return `おかえり！\nまずは「今日の状態」を軽く記録して、無理なく再始動しよう。`;
     }
-    return `${phaseHints.training}`;
+    return `${phaseHints.base}`;
   }, [entryPop.mode, phaseHints.base]);
 
   // =========================
@@ -1885,14 +1886,20 @@ export function AthleteView({
             />
             {/* ✅ Entry Popup（おかえり / 今日の一言） */}
             {shouldShowEntryPop && entryPop.mode !== "none" && (
-              <EntryPopup
-                open={shouldShowEntryPop}
-                mode={entryPop.mode === "welcome_back" ? "welcome_back" : "daily_tip"}
-                daysAway={entryPop.daysAway}
-                message={entryPopMessage}
-                onClose={entryPop.dismiss}
-              />
-            )}
-    </div>
+                <EntryPopup
+                  open={shouldShowEntryPop}
+                  mode={entryPop.mode}                 // ✅ "welcome_back" | "daily_one_word"
+                  daysAway={entryPop.daysAway}
+                  message={entryPopMessage}
+                  onClose={() => entryPop.dismiss("close")}
+                  onOk={() => {
+                    entryPop.dismiss("ok");
+                    setShowUnifiedCheckIn(true);
+                  }}
+                  okLabel="OK"
+                  closeLabel="閉じる"
+                />
+              )}    
+              </div>
   );
 }
