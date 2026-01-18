@@ -47,6 +47,7 @@ import { buildDailyTargets } from "../lib/nutritionCalc";
 import { FTTCheck } from './FTTCheck';
 import {AthleteGamificationView} from "./views/AthleteGamificationView";
 import { AthleteCycleView } from "./views/AthleteCycleView";
+import { getPhaseAdvice } from '../lib/phaseAdvice';
 
 
 
@@ -284,7 +285,6 @@ export function AthleteView({
 
 
 
-
   const [snapshotToday, setSnapshotToday] = useState<DailyEnergySnapshotRow | null>(null);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showUnifiedCheckIn, setShowUnifiedCheckIn] = useState(false);
@@ -446,6 +446,92 @@ export function AthleteView({
     getAverageSleepQuality,
     getLatestSleep,
   } = useSleepData(user.id);
+
+  // =========================
+  // ✅ Sleep-based flag（睡眠が悪い日）
+  // =========================
+  const latestSleepForHint = useMemo(() => {
+    // 直近の睡眠（記録が「今日」じゃなくても、直近を採用）
+    return getLatestSleep?.() ?? null;
+  }, [getLatestSleep]);
+
+  const poorSleepFlag = useMemo(() => {
+    const h = Number(latestSleepForHint?.sleep_hours ?? 0);
+    const q = Number(latestSleepForHint?.sleep_quality ?? 0);
+
+    // 目安：睡眠6h未満 or 質が2以下
+    const poorByHours = h > 0 && h < 6;
+    const poorByQuality = q > 0 && q <= 2;
+
+    return {
+      isPoor: poorByHours || poorByQuality,
+      hours: h || null,
+      quality: q || null,
+    };
+  }, [latestSleepForHint]);
+  
+    // =========================
+  // ✅ Phase-based UI hints（睡眠が悪い日は強める）
+  // =========================
+  const phaseHints = useMemo(() => {
+    const t = todayPhase?.phase_type ?? 'unknown';
+    const tags = todayPhase?.focus_tags ?? [];
+    const note = todayPhase?.note ?? null;
+
+    const base = getPhaseAdvice(t, tags, note, {
+      preferNote: true,
+      appendTagHintsWhenNote: false,
+      maxNoteChars: 70,
+    });
+
+    let training =
+      t === 'off'
+        ? '今日は回復優先。強度は控えめでOK。'
+        : t === 'pre'
+        ? '土台づくり期。フォーム優先、上げすぎ注意。'
+        : t === 'in'
+        ? '積み上げ期。狙いを決めて記録しよう。'
+        : t === 'peak'
+        ? '仕上げ期。疲労を溜めずにキレ重視。'
+        : t === 'transition'
+        ? '切り替え期。整える・軽めでOK。'
+        : '今日の感覚を正直に記録しよう。';
+
+    let sleep =
+      t === 'peak'
+        ? '睡眠は最優先（量と質どちらも）。'
+        : t === 'in'
+        ? '睡眠で回復を積む。短くても質を確保。'
+        : '睡眠は回復の土台。起床時の感覚も大事。';
+
+    let nutrition =
+      t === 'pre'
+        ? '土台づくり：まずは「主食＋たんぱく質」から。'
+        : t === 'in'
+        ? '積み上げ期：練習量に合わせて炭水化物を確保。'
+        : t === 'peak'
+        ? '仕上げ期：胃腸に優しく、当日のパフォーマンス優先。'
+        : '迷ったら「主食＋たんぱく質＋野菜」から。';
+
+    // ✅ 睡眠が悪い日は「練習の一言」を強める
+    if (poorSleepFlag.isPoor) {
+      const h = poorSleepFlag.hours;
+      const q = poorSleepFlag.quality;
+
+      const sleepBadge =
+        h
+          ? `（睡眠${h.toFixed(1)}h）`
+          : q
+          ? `（睡眠の質${q}/5）`
+          : '（睡眠不足）';
+
+      training = `⚠️ ${sleepBadge} 今日は上げすぎ注意。強度を抑えて精度重視で。`;
+      nutrition = `⚠️ ${sleepBadge} 回復優先：水分＋炭水化物＋たんぱく質を確実に。`;
+      sleep = `⚠️ ${sleepBadge} 今日は回復が最優先。昼寝や早寝も検討。`;
+    }
+
+    return { base, training, sleep, nutrition };
+  }, [todayPhase, poorSleepFlag]);
 
   const {
     records: motivationRecords,
@@ -1096,17 +1182,7 @@ export function AthleteView({
               <span className="text-xs text-red-600 dark:text-red-400">取得エラー</span>
             ) : todayPhase ? (
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {(() => {
-                  const toShortRange = (s: string, e: string) => {
-                    const sm = Number(s.slice(5, 7));
-                    const sd = Number(s.slice(8, 10));
-                    const em = Number(e.slice(5, 7));
-                    const ed = Number(e.slice(8, 10));
-                    if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
-                    return `${sm}/${sd}–${em}/${ed}`;
-                  };
-                  return toShortRange(todayPhase.start_date, todayPhase.end_date);
-                })()}
+                {toShortRange(todayPhase.start_date, todayPhase.end_date)}
               </span>
             ) : (
               <span className="text-xs text-gray-500 dark:text-gray-400">未設定</span>
@@ -1155,11 +1231,9 @@ export function AthleteView({
               )}
 
               {/* Note */}
-              {todayPhase.note && (
-                <p className="mt-3 text-sm text-gray-700 dark:text-gray-200">
-                  {todayPhase.note}
-                </p>
-              )}
+              <p className="mt-3 text-sm text-gray-700 dark:text-gray-200 line-clamp-2">
+                {phaseHints.base}
+              </p>
             </>
           ) : (
             <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
@@ -1229,12 +1303,12 @@ export function AthleteView({
                 aria-label="栄養の詳細へ"
               >
                 <div className="rounded-xl hover:opacity-95 active:opacity-90 transition">
-                  <NutritionOverview
-                    totals={nutritionTotalsToday}
-                    targets={targets}
-                    loading={nutritionLoading}
-                    subtitle={recordDate}
-                  />
+                <NutritionOverview
+                  totals={nutritionTotalsToday}
+                  targets={targets}
+                  loading={nutritionLoading}
+                  subtitle={`${recordDate} · ${phaseHints.nutrition}`}
+                />
                 </div>
               </button>
             </div>
@@ -1369,6 +1443,10 @@ export function AthleteView({
                   </div>
 
                   <DerivedStatsBar daysWithData={daysWithData} consecutiveDays={consecutiveDays} weeklyAverage={weeklyAverage} />
+
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                    {phaseHints.training}
+                  </p>
 
                   <TrainingForm
                     userId={user.id}
@@ -1616,6 +1694,10 @@ export function AthleteView({
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">睡眠記録</h2>
                   <Moon className="w-6 h-6 text-indigo-500" />
                 </div>
+
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                  {phaseHints.sleep}
+                </p>
 
                 <SleepForm
                   onSubmit={addSleepRecord}
