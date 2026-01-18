@@ -516,7 +516,6 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
         )}
       </div>
 
-      div>
 
       {/* ✅ Modal（ここはあなたの現行コードをそのまま残す） */}
       {modalOpen && (
