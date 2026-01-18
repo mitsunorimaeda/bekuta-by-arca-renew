@@ -1055,66 +1055,180 @@ export function AthleteView({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
         {activeTab === 'unified' ? (
           <>
-            {/* ✅ チームフェーズ（今日 / 3週間） */}
+            {/* ✅ チームフェーズ（モバイル最適版：今日 / 今後3週間） */}
               <div className="mb-4">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-5 transition-colors border border-gray-100 dark:border-gray-700">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">チームフェーズ（今日）</p>
-
-                      {phaseLoading ? (
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">読み込み中…</p>
-                      ) : phaseError ? (
-                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">取得エラー：{phaseError}</p>
-                      ) : todayPhase ? (
-                        <>
-                          <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                            {phaseLabel(todayPhase.phase_type)}
-                            <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                              {todayPhase.start_date}〜{todayPhase.end_date}
-                            </span>
-                          </p>
-
-                          {todayPhase.focus_tags?.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {todayPhase.focus_tags.slice(0, 6).map((tag, i) => (
-                                <span
-                                  key={`${tag}-${i}`}
-                                  className="text-xs px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {todayPhase.note && (
-                            <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">
-                              {todayPhase.note}
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">フェーズ未設定</p>
-                      )}
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5 transition-colors">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        チームフェーズ
+                      </span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                        今日
+                      </span>
                     </div>
 
-                    {/* 3週間の流れ（簡易） */}
-                    <div className="min-w-[140px] text-right">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">今後3週間</p>
-                      {(!phaseLoading && !phaseError && nextPhases?.length > 0) ? (
-                        <div className="mt-1 space-y-1">
-                          {nextPhases.slice(0, 3).map((p, idx) => (
-                            <div key={`${p.start_date}-${idx}`} className="text-xs text-gray-700 dark:text-gray-200">
-                              {phaseLabel(p.phase_type)}：{p.start_date}〜{p.end_date}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">—</div>
-                      )}
-                    </div>
+                    {/* status */}
+                    {phaseLoading ? (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">読み込み中…</span>
+                    ) : phaseError ? (
+                      <span className="text-xs text-red-600 dark:text-red-400">取得エラー</span>
+                    ) : todayPhase ? (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {(() => {
+                          const toShortRange = (s: string, e: string) => {
+                            // s,e: YYYY-MM-DD
+                            const sm = Number(s.slice(5, 7));
+                            const sd = Number(s.slice(8, 10));
+                            const em = Number(e.slice(5, 7));
+                            const ed = Number(e.slice(8, 10));
+                            if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
+                            return `${sm}/${sd}–${em}/${ed}`;
+                          };
+                          return toShortRange(todayPhase.start_date, todayPhase.end_date);
+                        })()}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">未設定</span>
+                    )}
                   </div>
+
+                  {/* Body */}
+                  {phaseLoading ? (
+                    <div className="mt-3">
+                      <div className="h-5 w-40 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+                      <div className="mt-3 flex gap-2">
+                        <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+                        <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+                        <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+                      </div>
+                      <div className="mt-3 h-4 w-full bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+                    </div>
+                  ) : phaseError ? (
+                    <div className="mt-3 text-sm text-red-700 dark:text-red-300">
+                      取得に失敗しました：{phaseError}
+                    </div>
+                  ) : todayPhase ? (
+                    <>
+                      {/* Phase title */}
+                      <div className="mt-2 flex items-end justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-semibold text-gray-900 dark:text-white truncate">
+                              {phaseLabel(todayPhase.phase_type)}
+                            </h3>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                              {todayPhase.phase_type}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tags */}
+                      {Array.isArray(todayPhase.focus_tags) && todayPhase.focus_tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {todayPhase.focus_tags.slice(0, 6).map((tag, i) => (
+                            <span
+                              key={`${tag}-${i}`}
+                              className="text-xs px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {todayPhase.focus_tags.length > 6 && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                              +{todayPhase.focus_tags.length - 6}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Note */}
+                      {todayPhase.note && (
+                        <p className="mt-3 text-sm text-gray-700 dark:text-gray-200 line-clamp-2">
+                          {todayPhase.note}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                      フェーズが未設定です（コーチが設定すると表示されます）
+                    </div>
+                  )}
+
+                  {/* Next 3 weeks: horizontal mini-timeline */}
+                  {!phaseLoading && !phaseError && Array.isArray(nextPhases) && nextPhases.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">今後3週間</p>
+                        <p className="text-[11px] text-gray-400 dark:text-gray-500">横にスクロール</p>
+                      </div>
+
+                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                        {nextPhases.slice(0, 6).map((p, idx) => {
+                          const toShortRange = (s: string, e: string) => {
+                            const sm = Number(s.slice(5, 7));
+                            const sd = Number(s.slice(8, 10));
+                            const em = Number(e.slice(5, 7));
+                            const ed = Number(e.slice(8, 10));
+                            if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
+                            return `${sm}/${sd}–${em}/${ed}`;
+                          };
+
+                          const isSameAsToday =
+                            todayPhase &&
+                            p.phase_type === todayPhase.phase_type &&
+                            p.start_date === todayPhase.start_date &&
+                            p.end_date === todayPhase.end_date;
+
+                          return (
+                            <div
+                              key={`${p.start_date}-${p.end_date}-${idx}`}
+                              className={`min-w-[170px] rounded-lg border p-3 ${
+                                isSameAsToday
+                                  ? 'border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10'
+                                  : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                  {phaseLabel(p.phase_type)}
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                  {toShortRange(p.start_date, p.end_date)}
+                                </div>
+                              </div>
+
+                              {Array.isArray(p.focus_tags) && p.focus_tags.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {p.focus_tags.slice(0, 3).map((tag, i) => (
+                                    <span
+                                      key={`${tag}-${i}`}
+                                      className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                  {p.focus_tags.length > 3 && (
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                                      +{p.focus_tags.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {p.note && (
+                                <p className="mt-2 text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
+                                  {p.note}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
