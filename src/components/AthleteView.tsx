@@ -1079,83 +1079,93 @@ export function AthleteView({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
         {activeTab === 'unified' ? (
           <>
-        {/* ✅ チームフェーズ（薄型：今日 / 今後） */}
-        <div className="mb-3">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-3 sm:p-4 transition-colors">
-            {/* Header（“今日”は消す。右上は期間だけ） */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  チームフェーズ
-                </span>
+      {/* ✅ チームフェーズ（薄め版：今日だけ表示） */}
+      <div className="mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5 transition-colors">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              チームフェーズ
+            </span>
 
-                {phaseLoading ? (
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500">読み込み中…</span>
-                ) : phaseError ? (
-                  <span className="text-[11px] text-red-600 dark:text-red-400">取得エラー</span>
-                ) : null}
-              </div>
-
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {todayPhase ? toShortRange(todayPhase.start_date, todayPhase.end_date) : '—'}
-              </span>
-            </div>
-
-            {/* Body */}
+            {/* 右上：期間 or 状態 */}
             {phaseLoading ? (
-              <div className="mt-2">
-                <div className="h-5 w-28 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
-                <div className="mt-2 flex gap-2">
-                  <div className="h-5 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
-                  <div className="h-5 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
-                  <div className="h-5 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
-                </div>
-                <div className="mt-2 h-4 w-full bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
-              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">読み込み中…</span>
             ) : phaseError ? (
-              <div className="mt-2 text-sm text-red-700 dark:text-red-300">
-                取得に失敗しました：{phaseError}
-              </div>
+              <span className="text-xs text-red-600 dark:text-red-400">取得エラー</span>
             ) : todayPhase ? (
-              <>
-                {/* Phase title（pre は消す） */}
-                <div className="mt-2 flex items-baseline justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-                    {phaseLabel(todayPhase.phase_type)}
-                  </h3>
-                </div>
-
-                {/* Tags（小さめ） */}
-                {Array.isArray(todayPhase.focus_tags) && todayPhase.focus_tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {todayPhase.focus_tags.slice(0, 6).map((tag, i) => (
-                      <span
-                        key={`${tag}-${i}`}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {todayPhase.focus_tags.length > 6 && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-                        +{todayPhase.focus_tags.length - 6}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Note（薄く・高さ安定） */}
-                {todayPhase.note && (
-                  <p className="mt-2 text-sm text-gray-700 dark:text-gray-200 line-clamp-2">
-                    {todayPhase.note}
-                  </p>
-                )}
-              </>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {(() => {
+                  const toShortRange = (s: string, e: string) => {
+                    const sm = Number(s.slice(5, 7));
+                    const sd = Number(s.slice(8, 10));
+                    const em = Number(e.slice(5, 7));
+                    const ed = Number(e.slice(8, 10));
+                    if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
+                    return `${sm}/${sd}–${em}/${ed}`;
+                  };
+                  return toShortRange(todayPhase.start_date, todayPhase.end_date);
+                })()}
+              </span>
             ) : (
-              <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                フェーズが未設定です（コーチが設定すると表示されます）
-              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">未設定</span>
             )}
+          </div>
+
+          {/* Body */}
+          {phaseLoading ? (
+            <div className="mt-3">
+              <div className="h-7 w-28 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+              <div className="mt-3 flex gap-2">
+                <div className="h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+                <div className="h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+                <div className="h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-full animate-pulse" />
+              </div>
+              <div className="mt-3 h-4 w-4/5 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+            </div>
+          ) : phaseError ? (
+            <div className="mt-3 text-sm text-red-700 dark:text-red-300">
+              取得に失敗しました：{phaseError}
+            </div>
+          ) : todayPhase ? (
+            <>
+              {/* タイトル：日本語だけ（preなどは出さない） */}
+              <h3 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                {phaseLabel(todayPhase.phase_type)}
+              </h3>
+
+              {/* Tags（薄め） */}
+              {Array.isArray(todayPhase.focus_tags) && todayPhase.focus_tags.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {todayPhase.focus_tags.slice(0, 6).map((tag, i) => (
+                    <span
+                      key={`${tag}-${i}`}
+                      className="text-xs px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/15 text-blue-700 dark:text-blue-200"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {todayPhase.focus_tags.length > 6 && (
+                    <span className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                      +{todayPhase.focus_tags.length - 6}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Note */}
+              {todayPhase.note && (
+                <p className="mt-3 text-sm text-gray-700 dark:text-gray-200">
+                  {todayPhase.note}
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+              フェーズが未設定です（コーチが設定すると表示されます）
+            </div>
+          )}
+ 
 
             {/* Next（“薄い横チップ”だけ：タグ/メモは出さない） */}
             {!phaseLoading && !phaseError && Array.isArray(nextPhases) && nextPhases.length > 0 && (
