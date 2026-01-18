@@ -56,6 +56,7 @@ import { buildDailyAssistTexts } from "../lib/dailyOneWord";
 
 
 
+
 import {
   Activity,
   TrendingUp,
@@ -104,6 +105,8 @@ const AthletePerformanceView = lazy(() =>
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type DailyEnergySnapshotRow = Database['public']['Tables']['daily_energy_snapshots']['Row'];
+
+
 
 type AthleteViewProps = {
   user: UserProfile;
@@ -285,6 +288,8 @@ export function AthleteView({
     if (!sm || !sd || !em || !ed) return `${s}〜${e}`;
     return `${sm}/${sd}–${em}/${ed}`;
   };
+
+
 
 
 
@@ -614,6 +619,8 @@ export function AthleteView({
     };
   }, [todayPhase, poorSleepFlag?.isPoor, latestACWR?.riskLevel, highPriorityAlerts?.length]);
 
+
+
   // =========================
   // ✅ Entry POP（おかえり > 今日の一言）
   // =========================
@@ -632,7 +639,7 @@ export function AthleteView({
     if (entryPop.mode === "welcome_back") {
       return `おかえり！\nまずは「今日の状態」を軽く記録して、無理なく再始動しよう。`;
     }
-    return `今日の一言：\n${phaseHints.base}`;
+    return `${phaseHints.training}`;
   }, [entryPop.mode, phaseHints.base]);
 
   // =========================
