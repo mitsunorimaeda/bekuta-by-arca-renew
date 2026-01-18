@@ -48,6 +48,9 @@ import { FTTCheck } from './FTTCheck';
 import {AthleteGamificationView} from "./views/AthleteGamificationView";
 import { AthleteCycleView } from "./views/AthleteCycleView";
 import { getPhaseAdvice } from '../lib/phaseAdvice';
+import { useEntryPopup } from "../hooks/useEntryPopup";
+import { EntryPopup } from "./EntryPopup";
+import { buildDailyAssistTexts } from "../lib/dailyOneWord";
 
 
 
@@ -425,6 +428,18 @@ export function AthleteView({
     acwrData,
   } = useTrainingData(user.id);
 
+  // =========================
+  // ✅ “最新ACWR”（phaseHintsで使うので先に定義）
+  // =========================
+  const latestACWR = useMemo(
+    () => (acwrData && acwrData.length > 0 ? acwrData[acwrData.length - 1] : null),
+    [acwrData]
+  );
+ 
+
+
+
+
   const {
     records: weightRecords,
     loading: weightLoading,
@@ -435,6 +450,13 @@ export function AthleteView({
     getLatestWeight,
     getWeightChange,
   } = useWeightData(user.id);
+
+  const latestWeight = useMemo(() => getLatestWeight(), [getLatestWeight]);
+
+  const lastWeightRecord = useMemo(() => {
+    if (weightRecords.length === 0) return null;
+    return weightRecords.reduce((latest, r) => (!latest || new Date(r.date) > new Date(latest.date) ? r : latest), null as any);
+  }, [weightRecords]);
 
   const {
     records: sleepRecords,
@@ -470,68 +492,7 @@ export function AthleteView({
     };
   }, [latestSleepForHint]);
   
-    // =========================
-  // ✅ Phase-based UI hints（睡眠が悪い日は強める）
-  // =========================
-  const phaseHints = useMemo(() => {
-    const t = todayPhase?.phase_type ?? 'unknown';
-    const tags = todayPhase?.focus_tags ?? [];
-    const note = todayPhase?.note ?? null;
 
-    const base = getPhaseAdvice(t, tags, note, {
-      preferNote: true,
-      appendTagHintsWhenNote: false,
-      maxNoteChars: 70,
-    });
-
-    let training =
-      t === 'off'
-        ? '今日は回復優先。強度は控えめでOK。'
-        : t === 'pre'
-        ? '土台づくり期。フォーム優先、上げすぎ注意。'
-        : t === 'in'
-        ? '積み上げ期。狙いを決めて記録しよう。'
-        : t === 'peak'
-        ? '仕上げ期。疲労を溜めずにキレ重視。'
-        : t === 'transition'
-        ? '切り替え期。整える・軽めでOK。'
-        : '今日の感覚を正直に記録しよう。';
-
-    let sleep =
-      t === 'peak'
-        ? '睡眠は最優先（量と質どちらも）。'
-        : t === 'in'
-        ? '睡眠で回復を積む。短くても質を確保。'
-        : '睡眠は回復の土台。起床時の感覚も大事。';
-
-    let nutrition =
-      t === 'pre'
-        ? '土台づくり：まずは「主食＋たんぱく質」から。'
-        : t === 'in'
-        ? '積み上げ期：練習量に合わせて炭水化物を確保。'
-        : t === 'peak'
-        ? '仕上げ期：胃腸に優しく、当日のパフォーマンス優先。'
-        : '迷ったら「主食＋たんぱく質＋野菜」から。';
-
-    // ✅ 睡眠が悪い日は「練習の一言」を強める
-    if (poorSleepFlag.isPoor) {
-      const h = poorSleepFlag.hours;
-      const q = poorSleepFlag.quality;
-
-      const sleepBadge =
-        h
-          ? `（睡眠${h.toFixed(1)}h）`
-          : q
-          ? `（睡眠の質${q}/5）`
-          : '（睡眠不足）';
-
-      training = `⚠️ ${sleepBadge} 今日は上げすぎ注意。強度を抑えて精度重視で。`;
-      nutrition = `⚠️ ${sleepBadge} 回復優先：水分＋炭水化物＋たんぱく質を確実に。`;
-      sleep = `⚠️ ${sleepBadge} 今日は回復が最優先。昼寝や早寝も検討。`;
-    }
-
-    return { base, training, sleep, nutrition };
-  }, [todayPhase, poorSleepFlag]);
 
   const {
     records: motivationRecords,
@@ -630,6 +591,50 @@ export function AthleteView({
 
   const todayWeight = useMemo(() => weightRecords.find((r) => r.date === today), [weightRecords, today]);
 
+
+  // =========================
+  // ✅ Phase/Risk/Sleep を統一ロジックで生成（今日の一言 + 各ヒント）
+  // =========================
+  const phaseHints = useMemo(() => {
+    const assist = buildDailyAssistTexts({
+      phase: todayPhase,
+      // ✅ buildDailyAssistTexts が boolean 前提でも事故らないように
+      poorSleep: poorSleepFlag.isPoor,
+      risk: {
+        riskLevel: (latestACWR?.riskLevel ?? "unknown") as any,
+        hasHighPriorityAlert: (highPriorityAlerts?.length ?? 0) > 0,
+      },
+    });
+
+    return {
+      base: assist.oneWord,
+      training: assist.trainingHint,
+      sleep: assist.sleepHint,
+      nutrition: assist.nutritionHint,
+    };
+  }, [todayPhase, poorSleepFlag?.isPoor, latestACWR?.riskLevel, highPriorityAlerts?.length]);
+
+  // =========================
+  // ✅ Entry POP（おかえり > 今日の一言）
+  // =========================
+  const entryPop = useEntryPopup({
+    userId: user.id,
+    keyPrefix: "athlete",
+    thresholdDays: 3,
+    enableDailyTip: true,
+  });
+
+  // ✅ unifiedタブ以外では出さない
+  const shouldShowEntryPop = activeTab === "unified" && entryPop.open;
+
+  // ✅ メッセージ
+  const entryPopMessage = useMemo(() => {
+    if (entryPop.mode === "welcome_back") {
+      return `おかえり！\nまずは「今日の状態」を軽く記録して、無理なく再始動しよう。`;
+    }
+    return `今日の一言：\n${phaseHints.base}`;
+  }, [entryPop.mode, phaseHints.base]);
+
   // =========================
   // ✅ 今日のスナップショット fetch（setStateでレンダー増えるのは正常）
   // =========================
@@ -710,16 +715,6 @@ export function AthleteView({
     }
   }, [loading, hasStartedTutorial, shouldShowTutorial, startTutorial]);
 
-  // =========================
-  // ✅ “最新値”系（useMemo）
-  // =========================
-  const latestACWR = useMemo(() => (acwrData.length > 0 ? acwrData[acwrData.length - 1] : null), [acwrData]);
-  const latestWeight = useMemo(() => getLatestWeight(), [getLatestWeight]);
-
-  const lastWeightRecord = useMemo(() => {
-    if (weightRecords.length === 0) return null;
-    return weightRecords.reduce((latest, r) => (!latest || new Date(r.date) > new Date(latest.date) ? r : latest), null as any);
-  }, [weightRecords]);
 
   // =========================
   // ✅ handlers（useCallbackで参照固定）
@@ -1880,6 +1875,16 @@ export function AthleteView({
                 if (file) handlePickPhoto(file);
               }}
             />
+            {/* ✅ Entry Popup（おかえり / 今日の一言） */}
+            {shouldShowEntryPop && entryPop.mode !== "none" && (
+              <EntryPopup
+                open={shouldShowEntryPop}
+                mode={entryPop.mode === "welcome_back" ? "welcome_back" : "daily_tip"}
+                daysAway={entryPop.daysAway}
+                message={entryPopMessage}
+                onClose={entryPop.dismiss}
+              />
+            )}
     </div>
   );
 }
