@@ -425,6 +425,8 @@ export function TeamSeasonPhaseSettings({ teamId, teamName }: Props) {
                         </div>
                       </div>
 
+                      
+
                       {Array.isArray(p.focus_tags) && p.focus_tags.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {p.focus_tags.slice(0, 3).map((t, i) => (
