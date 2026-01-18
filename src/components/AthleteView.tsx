@@ -51,6 +51,7 @@ import { getPhaseAdvice } from '../lib/phaseAdvice';
 import { useEntryPopup } from "../hooks/useEntryPopup";
 import { EntryPopup } from "./EntryPopup";
 import { buildDailyAssistTexts } from "../lib/dailyOneWord";
+import { SentryErrorButton } from "./SentryErrorButton";
 
 
 
@@ -1321,6 +1322,13 @@ const phaseHints = useMemo(() => {
             <div className="mt-6">
               <DailyReflectionCard userId={user.id} />
             </div>
+
+            {/* ✅ Sentry 動作確認（DEVのみ：確認が終わったら消す） */}
+            {import.meta.env.DEV && (
+              <div className="mt-6">
+                <SentryErrorButton />
+              </div>
+            )}
 
             {/* ✅ スタッフに共有ボタン */}
             <div className="mt-4">

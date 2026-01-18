@@ -21,6 +21,7 @@
     "push:test": "node scripts/push-test.mjs"
   },
   "dependencies": {
+    "@sentry/react": "^10.34.0",
     "@supabase/supabase-js": "^2.89.0",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^0.344.0",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.10",
     "@eslint/js": "^9.9.1",
+    "@sentry/vite-plugin": "^4.6.2",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
