@@ -33,6 +33,7 @@ export type DailyAssistTexts = {
   trainingHint: string;
   sleepHint: string;
   nutritionHint: string;
+  popHint: string;
   reason: DailyAssistReason;
 };
 
@@ -151,6 +152,7 @@ export function buildDailyAssistTexts(args: {
       trainingHint: `⚠️ ${badge} 今日は上げすぎ注意。強度を抑えて精度重視で。`,
       sleepHint: `⚠️ ${badge} 今日は回復が最優先。昼寝や早寝も検討。`,
       nutritionHint: `⚠️ ${badge} 回復優先：水分＋炭水化物＋たんぱく質を確実に。`,
+      popHint: `${badge} まず記録。今日は強度を抑える日に。`,
       reason: "poor_sleep",
     };
   }
@@ -162,6 +164,7 @@ export function buildDailyAssistTexts(args: {
       trainingHint: "⚠️ リスク高め。今日は強度を落として精度・回復優先で。",
       sleepHint: "睡眠で回復を最大化。入眠/起床リズムを整えよう。",
       nutritionHint: "回復優先：水分＋炭水化物＋たんぱく質を先に確保。",
+      popHint: "まず記録。今日は“回復寄り”で整えよう。",
       reason: "high_risk",
     };
   }
@@ -195,6 +198,7 @@ export function buildDailyAssistTexts(args: {
               : "迷ったら「主食＋たんぱく質＋野菜」から。"),
           80
         ),
+        popHint: "まず記録。今日の狙いを明確にしよう。",
         reason: "phase",
       };
     }
@@ -228,6 +232,7 @@ export function buildDailyAssistTexts(args: {
             : phaseType === "peak"
             ? "仕上げ期：胃腸に優しく、当日のパフォーマンス優先。"
             : "迷ったら「主食＋たんぱく質＋野菜」から。",
+        popHint: "まず記録。今日の狙いを明確にしよう。",
         reason: "phase",
       };
     }
@@ -267,6 +272,7 @@ export function buildDailyAssistTexts(args: {
           : phaseType === "peak"
           ? "仕上げ期：胃腸に優しく、当日のパフォーマンス優先。"
           : "迷ったら「主食＋たんぱく質＋野菜」から。",
+      popHint: "まず記録。今日の狙いを明確にしよう。",
       reason: "phase",
     };
   }
@@ -277,6 +283,7 @@ export function buildDailyAssistTexts(args: {
     trainingHint: "今日の練習を正直に記録しよう。",
     sleepHint: "睡眠は回復の土台。起床時の感覚も大事。",
     nutritionHint: "迷ったら「主食＋たんぱく質＋野菜」から。",
+    popHint: "まず1分で入力しよう。",
     reason: "default",
   };
 }

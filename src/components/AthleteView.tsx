@@ -616,6 +616,7 @@ export function AthleteView({
       training: assist.trainingHint,
       sleep: assist.sleepHint,
       nutrition: assist.nutritionHint,
+      pop: assist.popHint,
     };
   }, [todayPhase, poorSleepFlag?.isPoor, latestACWR?.riskLevel, highPriorityAlerts?.length]);
 
