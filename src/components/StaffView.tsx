@@ -21,6 +21,9 @@ import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
 import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
 import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
 import type { CoachRankingsViewProps } from './CoachRankingsView';
+import { Calendar } from 'lucide-react';
+import TeamSeasonPhaseSettings from './TeamSeasonPhaseSettings';
+
 
 import {
   Users,
@@ -257,7 +260,7 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports'|'settings'>('athletes');
 
     // =========================
   // Rankings -> Performance Modal
@@ -1209,6 +1212,23 @@ useEffect(() => {
                         レポート
                       </div>
                     </button>
+                    <button
+                      onClick={() => setActiveTab('settings')}
+                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
+                        activeTab === 'settings'
+                          ? 'border-green-500 text-green-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        設定（フェーズ）
+                      </div>
+                    </button>
+
+
+
+
                   </nav>
 
                   <div className="sm:hidden px-4 py-3">
@@ -1220,6 +1240,7 @@ useEffect(() => {
                       <option value="athletes">選手一覧</option>
                       <option value="team-average">チーム平均ACWR</option>
                       <option value="rankings">ランキング</option>
+                      <option value="settings">設定（フェーズ）</option>
                       <option value="reports">レポート</option>
                     </select>
                   </div>
@@ -1395,6 +1416,11 @@ useEffect(() => {
                       />
                       </ChartErrorBoundary>
                     </Suspense>
+                  )}
+                  {activeTab === 'settings' && selectedTeam && (
+                    <div className='space-y-4'>
+                      <TeamSeasonPhaseSettings teamId={selectedTeam.id} teamName={selectedTeam.name}  />
+                    </div>
                   )}
 
                   {activeTab === 'reports' && (
