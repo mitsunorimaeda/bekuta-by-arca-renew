@@ -52,6 +52,8 @@ import { useEntryPopup } from "../hooks/useEntryPopup";
 import { EntryPopup } from "./EntryPopup";
 import { buildDailyAssistTexts } from "../lib/dailyOneWord";
 import { SentryErrorButton } from "./SentryErrorButton";
+// ✅ Sentry
+import * as Sentry from "@sentry/react";
 
 
 
@@ -147,20 +149,37 @@ export function AthleteView({
   // ✅ DEVログは“必要な時だけ”
   // =========================
   const loggedOnceRef = useRef(false);
+  const renderLoggedRef = useRef(false);
+
+
   useEffect(() => {
+    // ✅ Sentry：ログイン後にユーザー紐付け（本番でも実行）
+    Sentry.setUser({
+      id: user.id,
+      email: (user as any)?.email ?? undefined,
+      username: user.name ?? undefined,
+    });
+  
+    // ✅ あると便利：チームやロールもタグに入れる（検索が楽）
+    Sentry.setTags({
+      role: String(user.role ?? ""),
+      team_id: String((user as any)?.team_id ?? ""),
+    });
+  
+    // ✅ DEVログは必要な時だけ
     if (!import.meta.env.DEV) return;
     if (loggedOnceRef.current) return;
     loggedOnceRef.current = true;
-
-    console.log('[AthleteView] mounted', {
+  
+    console.log("[AthleteView] mounted", {
       id: user.id,
       role: user.role,
       gender: user.gender,
       team_id: user.team_id,
     });
-  }, [user.id, user.role, user.gender, user.team_id]);
+  }, [user.id, user.name, (user as any)?.email, user.role, user.gender, (user as any)?.team_id]);
 
-  const renderLoggedRef = useRef(false);
+  
 
   
 
@@ -1154,6 +1173,10 @@ const phaseHints = useMemo(() => {
                   <button type="button"
                     onClick={async () => {
                       setMenuOpen(false);
+
+                      // ✅ Sentry：ログアウト時にユーザー情報を外す
+                      Sentry.setUser(null);
+
                       await onLogout();
                     }}
                     className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
