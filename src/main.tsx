@@ -21,23 +21,46 @@ Sentry.init({
         "localhost",
         "bekuta.netlify.app",
         /^https:\/\/bekuta\.netlify\.app\/.*/,
-        // APIが別ドメインなら追加
-        // /^https:\/\/api\.yourdomain\.com\/.*/,
       ],
     }),
     // Sentry.replayIntegration(),
   ],
 
-  // ✅ 本番は控えめ推奨
   tracesSampleRate: 0.2,
-
   sendDefaultPii: false,
-
-  // ✅ envから（固定でもOKだが、切り替えられる方が便利）
   environment: import.meta.env.MODE,
 });
 
 console.log("🚀 main.tsx is executing");
+
+// ✅✅ ここに差し込み（createRoot より前）
+if (import.meta.env.PROD) {
+  // Vite の preload 失敗（Safariで起きやすい）
+  window.addEventListener("vite:preloadError", () => {
+    const key = "__bekuta_preload_reload__";
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+    window.location.reload();
+  });
+
+  // 動的import失敗（"Importing a module script failed" 等）
+  window.addEventListener("unhandledrejection", (e: any) => {
+    const msg = String(e?.reason?.message ?? e?.reason ?? "");
+    if (
+      msg.includes("Importing a module script failed") ||
+      msg.includes("Failed to fetch dynamically imported module")
+    ) {
+      const key = "__bekuta_import_reload__";
+      try {
+        if (sessionStorage.getItem(key)) return;
+        sessionStorage.setItem(key, "1");
+      } catch {}
+      window.location.reload();
+    }
+  });
+}
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
