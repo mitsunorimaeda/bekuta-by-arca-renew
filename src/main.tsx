@@ -12,33 +12,29 @@ import * as Sentry from "@sentry/react";
 Sentry.init({
   dsn: "https://ef38d8a37ebc8c6e3960fbe47f15123b@o4510731847008256.ingest.us.sentry.io/4510731981881344",
 
-  // ✅ 重要：Performanceを見たいならTracingを入れる
+  // ✅ これがソースマップに必須（vite plugin の release と揃える）
+  release: import.meta.env.VITE_SENTRY_RELEASE,
+
   integrations: [
     Sentry.browserTracingIntegration({
-      // ✅ 自分のAPIだけ tracing 対象に（必要に応じて追加）
       tracePropagationTargets: [
         "localhost",
         "bekuta.netlify.app",
         /^https:\/\/bekuta\.netlify\.app\/.*/,
-        // もしAPIドメインが別ならここに追加
+        // APIが別ドメインなら追加
         // /^https:\/\/api\.yourdomain\.com\/.*/,
       ],
     }),
-    // （任意）Session Replayも見たいなら有効化（無料枠だと量に注意）
     // Sentry.replayIntegration(),
   ],
 
-  // ✅ 本番は 0.05〜0.2 推奨（いきなり 1.0 は多い）
+  // ✅ 本番は控えめ推奨
   tracesSampleRate: 0.2,
-
-  // （任意）Replay
-  // replaysSessionSampleRate: 0.0,
-  // replaysOnErrorSampleRate: 1.0,
 
   sendDefaultPii: false,
 
-  // （任意）環境名を固定したい場合
-  environment: "production",
+  // ✅ envから（固定でもOKだが、切り替えられる方が便利）
+  environment: import.meta.env.MODE,
 });
 
 console.log("🚀 main.tsx is executing");
@@ -58,7 +54,15 @@ root.render(
   </StrictMode>
 );
 
-// ✅ 「Sentryが本当に届いてるか」確認用（最初だけ）
-// これが Sentry > Issues に出れば “接続OK”
-// ※確認できたら消してOK
-Sentry.captureMessage("Bekuta Sentry test: main mounted", "info");
+// ✅ 接続確認用：DEVだけ 1回だけ（確認できたら消してOK）
+if (import.meta.env.DEV) {
+  const k = "bekuta:sentry_test_main_mounted";
+  try {
+    if (!localStorage.getItem(k)) {
+      localStorage.setItem(k, "1");
+      Sentry.captureMessage("Bekuta Sentry test: main mounted", "info");
+    }
+  } catch {
+    Sentry.captureMessage("Bekuta Sentry test: main mounted", "info");
+  }
+}
