@@ -319,9 +319,7 @@ export default function CoachAthletePerformanceModal({
             </div>
           )}
 
-          <div className="text-xs text-gray-500">
-            ※ まずは「個人推移＋チーム基準線（あれば）」で完成。次に「チーム内順位の推移」など拡張できます。
-          </div>
+         
         </div>
       </div>
     </div>

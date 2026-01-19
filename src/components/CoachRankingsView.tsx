@@ -28,6 +28,8 @@ type RankingRow = {
   name: string | null;
   date: string | null; // YYYY-MM-DD
   value: number | null;
+  best_value?: number | null;
+  best_date?: string | null;
   rank: number | null;
   top_percent: number | null;
   team_n: number | null;
@@ -287,10 +289,18 @@ export function CoachRankingsView({ team, onOpenAthlete }: Props) {
       const mapped: RankingRow[] = rows.map((r) => ({
         user_id: r.user_id,
         name: r.name ?? null,
+      
+        // ✅ latest
         date: r.latest_date ?? null,
         value: r.latest_value != null ? Number(r.latest_value) : null,
+      
+        // ✅ best（将来用）
+        best_date: r.best_date ?? null,
+        best_value: r.best_value != null ? Number(r.best_value) : null,
+      
+        // ✅ rank / percent / n
         rank: r.team_rank != null ? Number(r.team_rank) : null,
-        top_percent: r.top_percent != null ? Number(r.top_percent) : null,
+        top_percent: r.top_percent != null ? Number(r.top_percent) : null, // ← "25.0" を数値化
         team_n: r.team_n != null ? Number(r.team_n) : null,
       }));
 

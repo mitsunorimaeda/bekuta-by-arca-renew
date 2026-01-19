@@ -1,3 +1,4 @@
+// src/components/PerformanceOverview.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, TrendingUp, Calendar } from 'lucide-react';
 import { PerformanceRecordWithTest, PersonalBest } from '../hooks/usePerformanceData';
@@ -5,6 +6,7 @@ import { PerformanceTestType } from '../lib/supabase';
 import { PerformanceChart } from './PerformanceChart';
 import { supabase } from '../lib/supabase';
 import { getCalculatedUnit } from '../lib/performanceCalculations';
+import { PerformanceSuggestionCard } from './PerformanceSuggestionCard';
 
 type TeamBenchmarkRow = {
   test_type_id: string;
@@ -63,18 +65,8 @@ function normalizeMonthlyRows(rows: any[]): TeamMonthlyPoint[] {
         r?.month_begin ??
         null;
 
-      const team_avg =
-        r?.team_avg ??
-        r?.avg ??
-        r?.mean ??
-        r?.team_mean ??
-        null;
-
-      const team_n =
-        r?.team_n ??
-        r?.n ??
-        r?.count ??
-        null;
+      const team_avg = r?.team_avg ?? r?.avg ?? r?.mean ?? r?.team_mean ?? null;
+      const team_n = r?.team_n ?? r?.n ?? r?.count ?? null;
 
       if (!month_start) return null;
 
@@ -195,7 +187,6 @@ export function PerformanceOverview({
 
     (async () => {
       try {
-        // ★ここがポイント：get_my_team_monthly_averages を使う（p_metricあり）
         const { data, error } = await supabase.rpc('get_my_team_monthly_averages', {
           p_test_type_id: selectedTestTypeId,
           p_metric: selectedMetric,
@@ -259,10 +250,11 @@ export function PerformanceOverview({
           const latestRecord = testRecords[0];
 
           const metric: MetricKey =
-            strengthTests.includes(testType.name) ? (benchMetricByTestId[testType.id] ?? 'primary_value') : 'primary_value';
+            strengthTests.includes(testType.name)
+              ? (benchMetricByTestId[testType.id] ?? 'primary_value')
+              : 'primary_value';
 
-          const bench =
-            metric === 'relative_1rm' ? teamBenchRelByTestId[testType.id] : teamBenchAbsByTestId[testType.id];
+          const bench = metric === 'relative_1rm' ? teamBenchRelByTestId[testType.id] : teamBenchAbsByTestId[testType.id];
 
           const showBench = !!bench && !!bench.team_n && bench.team_n >= 2;
 
@@ -291,7 +283,9 @@ export function PerformanceOverview({
                       {pb.value.toFixed(testType.name.includes('rsi') ? 2 : 1)}
                       <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{unitFor(testType)}</span>
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(pb.date).toLocaleDateString('ja-JP')}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {new Date(pb.date).toLocaleDateString('ja-JP')}
+                    </p>
                   </div>
 
                   {latestRecord && latestRecord.date !== pb.date && (
@@ -311,7 +305,9 @@ export function PerformanceOverview({
                     {formatValue(latestRecord.values.primary_value, testType.name)}
                     <span className="text-sm ml-1 text-gray-600 dark:text-gray-400">{unitFor(testType)}</span>
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(latestRecord.date).toLocaleDateString('ja-JP')}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {new Date(latestRecord.date).toLocaleDateString('ja-JP')}
+                  </p>
                 </div>
               ) : (
                 <div className="text-center py-4">
@@ -467,6 +463,64 @@ export function PerformanceOverview({
               閉じる
             </button>
           </div>
+
+          {/* ✅ 提案カード（グラフ直前に差し込み） */}
+          {(() => {
+            const bench =
+              selectedMetric === 'relative_1rm'
+                ? teamBenchRelByTestId[selectedTestType.id]
+                : teamBenchAbsByTestId[selectedTestType.id];
+
+            const n = bench?.team_n ?? null;
+            const basisLabel = typeof n === 'number' && n < 10 ? '組織（n少のため拡大）' : 'チーム';
+
+            const top = typeof bench?.team_top_percent === 'number' ? bench.team_top_percent : null;
+            const diff = typeof bench?.diff_vs_team_avg === 'number' ? bench.diff_vs_team_avg : null;
+            const rank = typeof bench?.team_rank === 'number' ? bench.team_rank : null;
+
+            const title = '次の一手（提案）';
+            const summary =
+              top !== null
+                ? `現在は上位 ${top.toFixed(1)}%（${rank ?? '-'}位）です。平均との差を踏まえて、次の行動を提案します。`
+                : '現在の立ち位置（ランキング/平均との差）から、次の行動を提案します。';
+
+            const bullets: string[] = [];
+
+            if (diff !== null) {
+              if (diff >= 0) {
+                bullets.push('良い流れ：次回測定まで「維持＋微増」を狙う（頻度/質を落とさない）');
+              } else {
+                bullets.push('平均との差がマイナス：次回までに「弱点補強」を優先（週2回の重点刺激）');
+              }
+            } else {
+              bullets.push('データが増えるほど提案精度が上がります（まずは継続測定）');
+            }
+
+            const name = selectedTestType.name || '';
+            if (strengthTests.includes(name)) {
+              bullets.push(
+                selectedMetric === 'relative_1rm'
+                  ? '体重あたり出力：筋力維持＋体重管理（or 筋肥大）をセットで'
+                  : '推定1RM：メイン種目を週2回、低回数×高品質で'
+              );
+            } else if (name.includes('sprint') || name.includes('10m') || name.includes('20m')) {
+              bullets.push('スプリント：加速局面（0-10m）に絞ったドリル＋短距離反復を優先');
+            } else if (name.includes('jump') || name.includes('rsi')) {
+              bullets.push('ジャンプ：接地時間と跳躍高の両立（低回数の高品質プライオ）');
+            } else {
+              bullets.push('この種目の「改善レバー（技術/筋力/持久）」を次で確定して提案を深くします');
+            }
+
+            return (
+              <PerformanceSuggestionCard
+                title={title}
+                summary={summary}
+                basisLabel={basisLabel}
+                basisN={n}
+                bullets={bullets}
+              />
+            );
+          })()}
 
           <PerformanceChart
             records={selectedRecords}
