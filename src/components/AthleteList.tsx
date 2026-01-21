@@ -86,25 +86,26 @@ export function AthleteList({
     const s = search.trim().toLowerCase();
 
     return athletes.filter((athlete) => {
-      const acwrInfo = athleteACWRMap[athlete.id];
-
-      // ✅ days は DB（athlete_acwr_daily.days_of_data）だけを見る
+      const key =
+        (athlete as any)?.id ??
+        (athlete as any)?.user_id ??
+        (athlete as any)?.athlete_user_id;
+    
+      const acwrInfo = key ? (athleteACWRMap as any)[key] : undefined;
+    
       const daysOfData =
         typeof acwrInfo?.daysOfData === 'number' && Number.isFinite(acwrInfo.daysOfData)
           ? acwrInfo.daysOfData
           : null;
-
+    
       const acwrNum =
         typeof acwrInfo?.currentACWR === 'number' && Number.isFinite(acwrInfo.currentACWR)
           ? acwrInfo.currentACWR
           : null;
-
-      // ✅ hasACWR：ACWRが数値で入っていて、日数も満たしている（ただし days がnullなら ACWR優先で表示はする）
-      const hasACWR =
-        acwrNum != null &&
-        acwrNum > 0 &&
-        (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
-
+    
+      const hasValue = acwrNum != null && Number.isFinite(acwrNum) && acwrNum > 0;
+      const hasACWR = hasValue && (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
+    
       const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
       // ✅ 「高リスクのみ」は high のみ（caution を混ぜない）
@@ -286,7 +287,8 @@ export function AthleteList({
                 : null;
 
             // 値があるか（0も表示したいので >=0 判定にする）
-            const hasValue = acwrNum != null;
+            const hasValue =
+              typeof acwrNum === 'number' && Number.isFinite(acwrNum) && acwrNum >= 0;
 
             // 準備完了（リスク判定に使う）
             const isReady =
@@ -360,7 +362,6 @@ export function AthleteList({
                       直近7日Load： <b>{acute7d != null ? Math.round(acute7d) : '-'}</b>
 
                       {(() => {
-                        const lastDate = acwrInfo?.lastDate ?? (acwrInfo as any)?.latestDate ?? null;
                         return lastDate ? (
                           <span className="ml-2 text-gray-400">（{formatDate(lastDate)}時点）</span>
                         ) : null;
@@ -418,7 +419,7 @@ export function AthleteList({
                   </div>
 
                   {/* 21日未満のときだけ「進捗/残日数」を表示 */}
-                  {!hasACWR && (
+                  {!isReady && (
                     <p className="mt-1 text-[10px] sm:text-xs text-gray-400 text-right">
                       ACWR準備：{daysOfData ?? 0}/{MIN_DAYS_FOR_ACWR}日
                       {remainingDays !== null && remainingDays > 0 ? `（あと${remainingDays}日）` : ''}
