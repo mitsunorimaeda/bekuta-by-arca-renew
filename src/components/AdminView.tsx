@@ -681,7 +681,10 @@ export function AdminView({
                   ) : usersSubTab === 'manage' ? (
                     <div>
                       {/* ✅ ここが重要：selectedOrganizationId を渡す */}
-                      <UserManagement teams={teams} restrictToOrganizationId={selectedOrganizationId} />
+                      <UserManagement
+                        teams={teams}
+                        restrictToOrganizationId={selectedOrganizationId === 'ALL' ? undefined : selectedOrganizationId}
+                      />
                     </div>
                   ) : usersSubTab === 'inbody' ? (
                     <div className="space-y-4">
