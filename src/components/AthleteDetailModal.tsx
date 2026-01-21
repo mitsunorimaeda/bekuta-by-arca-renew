@@ -119,6 +119,11 @@ const acwrDelta =
 
 const acwrTrend = trend(acwrDelta);
 
+const displayACWR =
+  latestACWRValue != null
+    ? latestACWRValue
+    : (typeof risk?.acwr === 'number' && Number.isFinite(risk.acwr) ? risk.acwr : null);
+
   // ===== 体重データ =====
   const weightChartData = useMemo(() => {
     const source = Array.isArray(weightRecords) ? weightRecords : [];
@@ -307,12 +312,13 @@ const loadTrend = trend(loadDelta);
                     <span className={`text-xs px-2 py-1 rounded-full border ${getRiskColor(risk.riskLevel)}`}>
                       {getRiskLabel(risk.riskLevel)}
                     </span>
-
-                    {typeof risk.acwr === 'number' && (
+                    
+                    {displayACWR != null && (
                       <span className="text-xs text-gray-600">
-                        ACWR <b>{risk.acwr.toFixed(2)}</b>
+                        ACWR <b>{displayACWR.toFixed(2)}</b>
                       </span>
                     )}
+
 
                     {weekCard?.is_sharing_active === false && (
                       <span className="text-xs px-2 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
@@ -393,7 +399,7 @@ const loadTrend = trend(loadDelta);
                 <div className="bg-blue-50 rounded-xl p-4">
                   <p className="text-xs text-blue-700 mb-1">最新 ACWR</p>
                   <p className="text-2xl font-bold text-blue-900">
-                    {latestACWR?.acwr != null ? Number(latestACWR.acwr).toFixed(2) : '--'}
+                  {latestACWRValue != null ? latestACWRValue.toFixed(2) : '--'}
                   </p>
                   <div className="mt-1 text-xs flex items-center gap-2">
                     <span className={`${acwrTrend.tone} font-semibold`}>

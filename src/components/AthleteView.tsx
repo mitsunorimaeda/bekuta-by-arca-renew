@@ -460,6 +460,12 @@ export function AthleteView({
     () => (acwrData && acwrData.length > 0 ? acwrData[acwrData.length - 1] : null),
     [acwrData]
   );
+  // ✅ 表示用に必ず number に正規化（表示ブレ防止）
+  const latestACWRValue = useMemo(() => {
+    const v = latestACWR?.acwr;
+    const n = v != null ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  }, [latestACWR?.acwr]);
  
 
 
@@ -1505,7 +1511,7 @@ const phaseHints = useMemo(() => {
                     </div>
                     <div className="text-center">
                       <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
-                        {latestACWR.acwr}
+                        {latestACWRValue != null ? latestACWRValue.toFixed(2) : '--'}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</div>
                       <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
@@ -1565,7 +1571,7 @@ const phaseHints = useMemo(() => {
                     <div>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">現在のACWR</p>
                       <p className="text-2xl font-bold" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
-                        {latestACWR.acwr}
+                        {latestACWRValue != null ? latestACWRValue.toFixed(2) : '--'}
                       </p>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</p>
                     </div>
