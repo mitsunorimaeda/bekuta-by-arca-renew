@@ -211,6 +211,7 @@ type AthleteACWRInfo = {
   currentACWR: number | null;
   riskLevel?: RiskLevel;
   daysOfData?: number | null;
+  latestDate?: string | null;
 };
 
 type AthleteACWRDailyRow = {
@@ -630,59 +631,66 @@ useEffect(() => {
       }
       return;
     }
-
+  
     const reqSeq = ++acwrRequestSeqRef.current;
     const reqIdsKey = athleteIds.slice().sort().join(',');
-
+  
     try {
       setAcwrLoading(true);
-
+  
       const today = new Date();
       const from = new Date(today);
       from.setDate(from.getDate() - 90);
-
+  
       const fromKey = getJSTDateKey(from);
       const toKey = getJSTDateKey(today);
-
+  
       const idChunks = chunk(athleteIds, 50);
       const allRows: AthleteACWRDailyRow[] = [];
-
+  
       for (const ids of idChunks) {
         const { data, error } = await supabase
           .from('athlete_acwr_daily')
-          .select('user_id,date,acwr')
+          // ✅ days_of_data と risk_level も取る（viewにあるなら）
+          .select('user_id,date,acwr,days_of_data,risk_level')
           .in('user_id', ids)
           .gte('date', fromKey)
           .lte('date', toKey)
           .order('date', { ascending: false });
-
+  
         if (error) throw error;
         allRows.push(...((data || []) as AthleteACWRDailyRow[]));
       }
-
+  
       if (selectedTeamIdRef.current !== teamId) return;
       if (reqSeq !== acwrRequestSeqRef.current) return;
-
-      const currentIdsKey = athletesIdsKeyRef.current;
-      if (currentIdsKey !== reqIdsKey) return;
-
+      if (athletesIdsKeyRef.current !== reqIdsKey) return;
+  
       const newMap: Record<string, AthleteACWRInfo> = {};
-
+  
       for (const r of allRows) {
-        if (newMap[r.user_id]) continue;
+        if (newMap[r.user_id]) continue; // 最新日を採用
+  
         const acwr = typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
-
+        const days = typeof r.days_of_data === 'number' && Number.isFinite(r.days_of_data) ? r.days_of_data : null;
+  
+        // ✅ risk_level がviewにあるならそれを優先。無ければ calcRisk
+        const rl =
+          (r.risk_level as any) ??
+          (acwr != null ? calcRisk(acwr) : undefined);
+  
         newMap[r.user_id] = {
-          currentACWR: acwr != null ? round2(acwr) : null,
-          riskLevel: acwr != null ? calcRisk(acwr) : undefined,
-          daysOfData: 28,
+          // ✅ ここは丸めないで保持 → 表示側で toFixed(2) 推奨（ズレ防止）
+          currentACWR: acwr,
+          riskLevel: rl,
+          daysOfData: days,
         };
       }
-
+  
       for (const id of athleteIds) {
         if (!newMap[id]) newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null };
       }
-
+  
       setAthleteACWRMap(newMap);
     } catch (e) {
       console.error('[fetchAthleteACWRFromDaily] failed', e);

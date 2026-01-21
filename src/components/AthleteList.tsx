@@ -14,9 +14,14 @@ import {
 type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
 
 interface AthleteACWRInfo {
+  // ✅ athlete_acwr_daily の最新日の値を入れる想定
   currentACWR: number | null;
+  acute7d?: number | null;       // ✅ athlete_acwr_daily.acute_7d
+  chronicLoad?: number | null;   // ✅ athlete_acwr_daily.chronic_load（28d/4）
+  dailyLoad?: number | null;     // ✅ athlete_acwr_daily.daily_load（当日）
+  lastDate?: string | null;      // ✅ athlete_acwr_daily.date（YYYY-MM-DD）
   riskLevel?: RiskLevel;
-  daysOfData?: number | null;
+  daysOfData?: number | null;    // ✅ athlete_acwr_daily.days_of_data
 }
 
 // StaffAthleteWithActivity 相当の拡張（あってもなくても動くようにオプショナル）
@@ -83,17 +88,22 @@ export function AthleteList({
     return athletes.filter((athlete) => {
       const acwrInfo = athleteACWRMap[athlete.id];
 
-      // daysOfData は acwrInfo があればそれを優先、なければ training_days_28d を代用
+      // ✅ days は DB（athlete_acwr_daily.days_of_data）だけを見る
       const daysOfData =
-        acwrInfo?.daysOfData ??
-        (typeof athlete.training_days_28d === 'number' ? athlete.training_days_28d : null);
+        typeof acwrInfo?.daysOfData === 'number' && Number.isFinite(acwrInfo.daysOfData)
+          ? acwrInfo.daysOfData
+          : null;
 
+      const acwrNum =
+        typeof acwrInfo?.currentACWR === 'number' && Number.isFinite(acwrInfo.currentACWR)
+          ? acwrInfo.currentACWR
+          : null;
+
+      // ✅ hasACWR：ACWRが数値で入っていて、日数も満たしている（ただし days がnullなら ACWR優先で表示はする）
       const hasACWR =
-        daysOfData !== null &&
-        daysOfData >= MIN_DAYS_FOR_ACWR &&
-        typeof acwrInfo?.currentACWR === 'number' &&
-        Number.isFinite(acwrInfo.currentACWR) &&
-        acwrInfo.currentACWR > 0;
+        acwrNum != null &&
+        acwrNum > 0 &&
+        (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
 
       const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
@@ -103,7 +113,7 @@ export function AthleteList({
       const card = weekCardMap[athlete.id];
       const sharingMatch = filterSharing === 'all' ? true : !!card?.is_sharing_active;
 
-      const text = `${displayName(athlete)}`.toLowerCase()
+      const text = `${displayName(athlete)}`.toLowerCase();
       const searchMatch = s === '' ? true : text.includes(s);
 
       return riskMatch && sharingMatch && searchMatch;
@@ -157,7 +167,6 @@ export function AthleteList({
       return dateStr;
     }
 
-    // timestamp系は従来通り（安全に）
     try {
       const d = new Date(dateStr);
       if (Number.isNaN(d.getTime())) return dateStr;
@@ -260,28 +269,36 @@ export function AthleteList({
             const acwrInfo = athleteACWRMap[athlete.id];
 
             const daysOfData =
-              acwrInfo?.daysOfData ??
-              (typeof athlete.training_days_28d === 'number' ? athlete.training_days_28d : null);
+              typeof acwrInfo?.daysOfData === 'number' && Number.isFinite(acwrInfo.daysOfData)
+                ? acwrInfo.daysOfData
+                : null;
+
+            const acwrNum =
+              typeof acwrInfo?.currentACWR === 'number' && Number.isFinite(acwrInfo.currentACWR)
+                ? acwrInfo.currentACWR
+                : null;
 
             const hasACWR =
-              daysOfData !== null &&
-              daysOfData >= MIN_DAYS_FOR_ACWR &&
-              typeof acwrInfo?.currentACWR === 'number' &&
-              Number.isFinite(acwrInfo.currentACWR) &&
-              acwrInfo.currentACWR > 0;
+              acwrNum != null &&
+              acwrNum > 0 &&
+              (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
 
             const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
-            const acwrValue = hasACWR ? acwrInfo!.currentACWR!.toFixed(2) : '準備中';
+            const acwrValue = hasACWR ? acwrNum!.toFixed(2) : '準備中';
 
             const remainingDays =
               daysOfData !== null ? Math.max(MIN_DAYS_FOR_ACWR - daysOfData, 0) : null;
 
-            // 週次カード
+            // ✅ 直近7日 Load は DBの acute_7d を表示（当日含む7日）
+            const acute7d =
+              typeof acwrInfo?.acute7d === 'number' && Number.isFinite(acwrInfo.acute7d)
+                ? acwrInfo.acute7d
+                : null;
+
             const card = weekCardMap[athlete.id];
             const shareOn = !!card?.is_sharing_active;
 
-            // 共有OFFはクリック不可（UI側で担保）
             const disabled = !shareOn;
 
             return (
@@ -308,21 +325,30 @@ export function AthleteList({
                       <p className="text-xs text-gray-400 truncate">({athlete.name})</p>
                     )}
 
-                    {/* 共有バッジ */}
                     {renderSharingBadge(card)}
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-gray-500">
+                    {/* ここは “活動量の目安” として残してOK */}
                     <span>
                       直近28日： {athlete.training_days_28d ?? 0}日 / {athlete.training_sessions_28d ?? 0}回
                     </span>
                     <span>最終入力： {formatDate(athlete.last_training_date ?? null)}</span>
                   </div>
 
+                  {/* ✅ 直近7日Load（DBのacute_7d） */}
+                  {shareOn && (
+                    <div className="mt-2 text-[11px] sm:text-xs text-gray-600">
+                      直近7日Load： <b>{acute7d != null ? Math.round(acute7d) : '-'}</b>
+                      {acwrInfo?.lastDate ? (
+                        <span className="ml-2 text-gray-400">（{formatDate(acwrInfo.lastDate)}時点）</span>
+                      ) : null}
+                    </div>
+                  )}
+
                   {/* 今週サマリー（共有ONの時だけ） */}
                   {shareOn && card && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
-                      {/* 行動目標 */}
                       {card.action_total > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                           <CheckCircle2 className="w-3 h-3" />
@@ -334,19 +360,16 @@ export function AthleteList({
                         </span>
                       )}
 
-                      {/* 睡眠 */}
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
                         睡眠 {fmt1(card.sleep_hours_avg)}h / 質 {fmt1(card.sleep_quality_avg)}
                       </span>
 
-                      {/* 気分 */}
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                         モチ {fmt0(card.motivation_avg)}・エネ {fmt0(card.energy_avg)}・スト {fmt0(card.stress_avg)}
                       </span>
                     </div>
                   )}
 
-                  {/* 共有OFFの補足 */}
                   {!shareOn && (
                     <div className="mt-2 text-[11px] sm:text-xs text-gray-500">
                       🔒 共有がOFFのため、詳細データは表示できません

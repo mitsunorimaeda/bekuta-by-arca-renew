@@ -1,7 +1,6 @@
 // src/hooks/useTrainingData.ts
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase, TrainingRecord, WeightRecord } from "../lib/supabase";
-import { calculateACWR, ACWRData, RecordLike } from "../lib/acwr";
 import { logEvent } from "../lib/logEvent";
 
 type TrainingUpsertPayload = {
@@ -12,18 +11,24 @@ type TrainingUpsertPayload = {
   signal_score: number;
 };
 
+type ACWRDailyRow = {
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  daily_load: number | string | null;
+  acute_7d: number | string | null;
+  chronic_28d: number | string | null;
+  chronic_load: number | string | null;
+  acwr: number | string | null;
+  days_of_data: number | null;
+  updated_at?: string | null;
+};
+
 /**
  * DBの training_records.date の型に合わせる
  * - 'date'        : "YYYY-MM-DD"
  * - 'timestamptz' : ISO
  */
 const DATE_MODE: "date" | "timestamptz" = "date";
-
-function toNumber(v: any): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
 function toYMD(input: string) {
   if (!input) return null;
@@ -43,19 +48,8 @@ function jstDayRangeISO(ymd: string) {
 function toDbDateValue(input: string): string {
   const ymd = toYMD(input);
   if (!ymd) throw new Error("Invalid date");
-
   if (DATE_MODE === "date") return ymd;
-
   return jstDayRangeISO(ymd).startISO;
-}
-
-function toACWRDateKey(dbDate: any): string | null {
-  if (!dbDate) return null;
-
-  if (typeof dbDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dbDate)) return dbDate;
-
-  const ymd = toYMD(String(dbDate));
-  return ymd ?? null;
 }
 
 function sortByDateAsc(a: any, b: any) {
@@ -82,17 +76,14 @@ function removeLocalTrainingRecord(prev: TrainingRecord[], recordId: string) {
 export function useTrainingData(userId: string) {
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([]);
-  const [acwrData, setACWRData] = useState<ACWRData[]>([]);
+  const [acwrDaily, setAcwrDaily] = useState<ACWRDailyRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ DEVの時だけログを出す（本番は黙る）
   const DEBUG_FETCH = import.meta.env.DEV;
 
-  // ✅ 連続fetch/多重fetch防止
   const inFlightRef = useRef(false);
   const lastFetchKeyRef = useRef<string | null>(null);
 
-  // ✅ logEvent の呼び方が揺れても落ちないように吸収
   const safeLogEvent = useCallback(
     async (eventType: string, payload: Record<string, any>) => {
       await logEvent({ userId, eventType, payload });
@@ -103,13 +94,9 @@ export function useTrainingData(userId: string) {
   const fetchAll = useCallback(async () => {
     if (!userId) return;
 
-    // 同一 userId で、同じマウント中に連打されても弾く（最低限）
     const fetchKey = `user:${userId}`;
     if (inFlightRef.current) return;
-    if (lastFetchKeyRef.current === fetchKey && trainingRecords.length > 0) {
-      // すでにデータ持ってるなら再取得しない（手動Refreshは別でやる想定）
-      return;
-    }
+    if (lastFetchKeyRef.current === fetchKey && trainingRecords.length > 0) return;
 
     inFlightRef.current = true;
     lastFetchKeyRef.current = fetchKey;
@@ -120,10 +107,9 @@ export function useTrainingData(userId: string) {
 
     setLoading(true);
     try {
-      const [trainingRes, weightRes] = await Promise.all([
+      const [trainingRes, weightRes, acwrRes] = await Promise.all([
         supabase
           .from("training_records")
-          // 重ければ必要列だけに変えてOK（例: "id,user_id,date,rpe,duration_min,load,arrow_score,signal_score,created_at"）
           .select("*")
           .eq("user_id", userId)
           .order("date", { ascending: true }),
@@ -133,19 +119,27 @@ export function useTrainingData(userId: string) {
           .select("*")
           .eq("user_id", userId)
           .order("date", { ascending: true }),
+
+        // ✅ DBの正: athlete_acwr_daily（0埋め日次が入っている想定）
+        supabase
+          .from("athlete_acwr_daily")
+          .select("user_id,date,daily_load,acute_7d,chronic_28d,chronic_load,acwr,days_of_data,updated_at")
+          .eq("user_id", userId)
+          .order("date", { ascending: true }),
       ]);
 
       if (trainingRes.error) throw trainingRes.error;
       if (weightRes.error) throw weightRes.error;
+      if (acwrRes.error) throw acwrRes.error;
 
       setTrainingRecords((trainingRes.data || []) as TrainingRecord[]);
       setWeightRecords((weightRes.data || []) as WeightRecord[]);
+      setAcwrDaily((acwrRes.data || []) as ACWRDailyRow[]);
     } catch (error) {
       console.error("[useTrainingData] Error fetching data:", error);
       setTrainingRecords([]);
       setWeightRecords([]);
-      setACWRData([]);
-      // 失敗時は次回 fetchAll を許可
+      setAcwrDaily([]);
       lastFetchKeyRef.current = null;
     } finally {
       inFlightRef.current = false;
@@ -153,37 +147,10 @@ export function useTrainingData(userId: string) {
     }
   }, [userId, DEBUG_FETCH, trainingRecords.length]);
 
-  // userIdが決まったら1回
   useEffect(() => {
     if (!userId) return;
     fetchAll();
   }, [userId, fetchAll]);
-
-  // ACWRを計算
-  useEffect(() => {
-    const normalized: RecordLike[] =
-      (trainingRecords || [])
-        .map((r: any) => {
-          const date = toACWRDateKey(r?.date);
-          if (!date) return null;
-
-          const loadRaw = toNumber(r?.load);
-          const rpe = toNumber(r?.rpe);
-          const duration = toNumber(r?.duration_min);
-
-          const load =
-            loadRaw != null
-              ? loadRaw
-              : rpe != null && duration != null
-              ? rpe * duration
-              : null;
-
-          return { date, load };
-        })
-        .filter(Boolean) as RecordLike[];
-
-    setACWRData(calculateACWR(normalized));
-  }, [trainingRecords]);
 
   const checkExistingRecord = useCallback(
     async (date: string): Promise<TrainingRecord | null> => {
@@ -255,6 +222,9 @@ export function useTrainingData(userId: string) {
         overwrite: false,
       });
 
+      // ✅ ACWRはDBの refresh 関数で更新される想定。必要ならここで fetchAll() して追従。
+      // await fetchAll();
+
       return data as TrainingRecord;
     },
     [userId, safeLogEvent]
@@ -288,16 +258,16 @@ export function useTrainingData(userId: string) {
 
       setTrainingRecords((prev) => upsertLocalTrainingRecord(prev, data as TrainingRecord));
 
-      const eventYmd = ymd ?? toACWRDateKey((data as any)?.date) ?? undefined;
-
       await safeLogEvent("training_completed", {
-        date: eventYmd,
+        date: ymd ?? undefined,
         rpe: recordData.rpe ?? (data as any)?.rpe,
         duration_min: recordData.duration_min ?? (data as any)?.duration_min,
         arrow_score: recordData.arrow_score ?? (data as any)?.arrow_score,
         signal_score: recordData.signal_score ?? (data as any)?.signal_score,
         overwrite: true,
       });
+
+      // await fetchAll();
 
       return data as TrainingRecord;
     },
@@ -315,6 +285,8 @@ export function useTrainingData(userId: string) {
       if (error) throw error;
 
       setTrainingRecords((prev) => removeLocalTrainingRecord(prev, recordId));
+
+      // await fetchAll();
     },
     [userId]
   );
@@ -322,7 +294,7 @@ export function useTrainingData(userId: string) {
   return {
     records: trainingRecords,
     weightRecords,
-    acwrData,
+    acwrDaily, // ✅ これが正
     loading,
 
     fetchAll,
