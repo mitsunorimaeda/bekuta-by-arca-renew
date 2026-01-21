@@ -28,18 +28,30 @@
 # Headers
 # -----------------------------
 
-# キャッシュ最適化（Viteの成果物は assets 配下）
+# ✅ キャッシュ最適化（Viteの成果物は assets 配下）
 [[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# ✅ 重要：index.html は絶対に古いのを掴ませない（古いchunk参照＝import失敗の元）
 [[headers]]
   for = "/index.html"
   [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate"
+
+# ✅ PWA系：manifest / service worker も更新が伝播しないと地獄なので no-cache
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
     Cache-Control = "no-cache"
 
-# セキュリティヘッダー
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# ✅ セキュリティヘッダー
 [[headers]]
   for = "/*"
   [headers.values]

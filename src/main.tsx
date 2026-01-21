@@ -35,17 +35,49 @@ console.log("🚀 main.tsx is executing");
 
 // ✅✅ ここに差し込み（createRoot より前）
 if (import.meta.env.PROD) {
-  // Vite の preload 失敗（Safariで起きやすい）
+  // ✅ chunk / module 読み込み失敗をSentryに残す（どのURLが落ちたか取る）
+  window.addEventListener(
+    "error",
+    (e: any) => {
+      const t = e?.target as any;
+
+      // <script src="..."> のロード失敗（404/ネットワーク/ブロック等）
+      if (t?.tagName === "SCRIPT" && t?.src) {
+        Sentry.captureMessage(`Script load failed: ${t.src}`, "error");
+      }
+
+      // <link rel="modulepreload" href="..."> の失敗（Safariで起きやすい）
+      if (t?.tagName === "LINK" && t?.rel === "modulepreload" && t?.href) {
+        Sentry.captureMessage(`Modulepreload failed: ${t.href}`, "error");
+      }
+    },
+    true
+  );
+
+  // ✅ Vite の preload 失敗（Safariで起きやすい）
   window.addEventListener("vite:preloadError", () => {
     const key = "__bekuta_preload_reload__";
+    let already = false;
+
     try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
-    window.location.reload();
+      already = sessionStorage.getItem(key) === "1";
+      if (!already) sessionStorage.setItem(key, "1");
+    } catch {
+      // sessionStorage が死んでる環境向けフォールバック
+      try {
+        already = localStorage.getItem(key) === "1";
+        if (!already) localStorage.setItem(key, "1");
+      } catch {}
+    }
+
+    if (already) return;
+
+    Sentry.captureMessage("vite:preloadError -> reload", "error");
+    // 送信をちょい待ってからリロード（最大1秒だけ）
+    Sentry.flush(1000).finally(() => window.location.reload());
   });
 
-  // 動的import失敗（"Importing a module script failed" 等）
+  // ✅ 動的import失敗（"Importing a module script failed" 等）
   window.addEventListener("unhandledrejection", (e: any) => {
     const msg = String(e?.reason?.message ?? e?.reason ?? "");
     if (
@@ -53,11 +85,24 @@ if (import.meta.env.PROD) {
       msg.includes("Failed to fetch dynamically imported module")
     ) {
       const key = "__bekuta_import_reload__";
+      let already = false;
+
       try {
-        if (sessionStorage.getItem(key)) return;
-        sessionStorage.setItem(key, "1");
-      } catch {}
-      window.location.reload();
+        already = sessionStorage.getItem(key) === "1";
+        if (!already) sessionStorage.setItem(key, "1");
+      } catch {
+        // sessionStorage が死んでる環境向けフォールバック
+        try {
+          already = localStorage.getItem(key) === "1";
+          if (!already) localStorage.setItem(key, "1");
+        } catch {}
+      }
+
+      if (already) return;
+
+      Sentry.captureMessage(`Dynamic import failed -> reload: ${msg}`, "error");
+      // 送信をちょい待ってからリロード（最大1秒だけ）
+      Sentry.flush(1000).finally(() => window.location.reload());
     }
   });
 }
