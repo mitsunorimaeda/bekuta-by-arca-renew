@@ -219,7 +219,7 @@ type AthleteACWRDailyRow = {
   date: string;
   acwr: number | null;
   days_of_data?: number | null;
-  risk_level?: RiskLevel | null;
+  //risk_level?: RiskLevel | null;
 };
 
 const chunk = <T,>(arr: T[], size: number) => {
@@ -623,6 +623,11 @@ useEffect(() => {
     }
   };
 
+  const calcRiskLevelFromACWR = (acwr: number | null): RiskLevel | undefined => {
+    if (acwr == null || !Number.isFinite(acwr) || acwr <= 0) return undefined;
+    return calcRisk(acwr); // すでに上で定義してる calcRisk を使う
+  };
+  
   const fetchAthleteACWRFromDaily = async (teamId: string, athleteIds: string[]) => {
     if (!athleteIds || athleteIds.length === 0) {
       if (selectedTeamIdRef.current === teamId) {
@@ -646,22 +651,28 @@ useEffect(() => {
       const toKey = getJSTDateKey(today);
   
       const idChunks = chunk(athleteIds, 50);
-      const allRows: AthleteACWRDailyRow[] = [];
+      const allRows: Array<{
+        user_id: string;
+        date: string;
+        acwr: number | null;
+        days_of_data?: number | null;
+      }> = [];
   
       for (const ids of idChunks) {
         const { data, error } = await supabase
           .from('athlete_acwr_daily')
-          // ✅ days_of_data と risk_level も取る（viewにあるなら）
-          .select('user_id,date,acwr,days_of_data,risk_level')
+          // ✅ risk_level を取らない（存在しないため 400）
+          .select('user_id,date,acwr,days_of_data')
           .in('user_id', ids)
           .gte('date', fromKey)
           .lte('date', toKey)
           .order('date', { ascending: false });
   
         if (error) throw error;
-        allRows.push(...((data || []) as AthleteACWRDailyRow[]));
+        allRows.push(...((data || []) as any[]));
       }
   
+      // ---- request guard ----
       if (selectedTeamIdRef.current !== teamId) return;
       if (reqSeq !== acwrRequestSeqRef.current) return;
       if (athletesIdsKeyRef.current !== reqIdsKey) return;
@@ -669,26 +680,28 @@ useEffect(() => {
       const newMap: Record<string, AthleteACWRInfo> = {};
   
       for (const r of allRows) {
-        if (newMap[r.user_id]) continue; // 最新日を採用
+        if (newMap[r.user_id]) continue; // user_idごとに最新1件
   
-        const acwr = typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
-        const days = typeof r.days_of_data === 'number' && Number.isFinite(r.days_of_data) ? r.days_of_data : null;
+        const acwr =
+          typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
   
-        // ✅ risk_level がviewにあるならそれを優先。無ければ calcRisk
-        const rl =
-          (r.risk_level as any) ??
-          (acwr != null ? calcRisk(acwr) : undefined);
+        const days =
+          typeof r.days_of_data === 'number' && Number.isFinite(r.days_of_data)
+            ? r.days_of_data
+            : null;
   
         newMap[r.user_id] = {
-          // ✅ ここは丸めないで保持 → 表示側で toFixed(2) 推奨（ズレ防止）
           currentACWR: acwr,
-          riskLevel: rl,
+          // ✅ フロント計算
+          riskLevel: calcRiskLevelFromACWR(acwr),
           daysOfData: days,
+          latestDate: r.date ?? null,
         };
       }
   
+      // 取得できなかった選手もキーは作っておく（UIが安定する）
       for (const id of athleteIds) {
-        if (!newMap[id]) newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null };
+        if (!newMap[id]) newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null, latestDate: null };
       }
   
       setAthleteACWRMap(newMap);
