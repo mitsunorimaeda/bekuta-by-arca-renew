@@ -5,14 +5,12 @@ import { Alert } from '../lib/alerts';
 import { UserInvitation } from './UserInvitation';
 import { BulkUserInvitation } from './BulkUserInvitation';
 import { UserManagement } from './UserManagement';
-import { AlertSummary } from './AlertSummary';
 import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
-import NutritionDev from "./NutritionDev"; // ✅ 追加
+import NutritionDev from "./NutritionDev";
 import NutritionPhotoUploader from "./NutritionPhotoUploader";
 import {
-  Settings,
   Users,
   UserPlus,
   AlertTriangle,
@@ -27,8 +25,6 @@ import {
   Layout,
   ShieldCheck,
   MessageSquare,
-  Menu,
-  Shield,
   FileText
 } from 'lucide-react';
 import { OrganizationManagement } from './OrganizationManagement';
@@ -40,7 +36,7 @@ import { AthleteTransferManagement } from './AthleteTransferManagement';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 import { useOrganizations } from '../hooks/useOrganizations';
 
-// ✅ 追加：InBody CSV Import
+// ✅ InBody CSV Import
 import AdminInbodyCsvImport from './AdminInbodyCsvImport';
 
 interface AdminViewProps {
@@ -78,39 +74,54 @@ export function AdminView({
   const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization'>('system');
   const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
 
-  // ✅ 変更：'inbody' を追加
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody'>('invite');
+  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
+
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [organizationSubTab, setOrganizationSubTab] = useState<
     'overview' | 'list' | 'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'
   >('overview');
+
   const [inbodyUsers, setInbodyUsers] = useState<{ user_id: string; name?: string }[]>([]);
   const [inbodyUsersLoading, setInbodyUsersLoading] = useState(false);
 
-  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | undefined>();
+  // ✅ 重要：ALL を許可（全組織）
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string>('ALL');
+
   const [loading, setLoading] = useState(true);
-  const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
   const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } =
     useTutorialContext();
+
   const { organizations, loading: orgsLoading } = useOrganizations(user.id);
 
+  const highPriorityAlerts = alerts.filter((alert) => alert.priority === 'high');
+  const systemAlerts = alerts.filter((alert) => alert.type === 'no_data' || alert.type === 'reminder');
+
+  // ✅ チュートリアル
   useEffect(() => {
     if (shouldShowTutorial() && !loading) {
       startTutorial();
     }
   }, [shouldShowTutorial, startTutorial, loading]);
 
+  // ✅ 修正：global_admin はデフォルト ALL
   useEffect(() => {
     const savedOrgId = localStorage.getItem('admin_selected_organization');
+
+    if (savedOrgId === 'ALL') {
+      setSelectedOrganizationId('ALL');
+      return;
+    }
+
     if (savedOrgId && organizations.some((org) => org.id === savedOrgId)) {
       setSelectedOrganizationId(savedOrgId);
-    } else if (organizations.length > 0 && !selectedOrganizationId) {
-      setSelectedOrganizationId(organizations[0].id);
-      localStorage.setItem('admin_selected_organization', organizations[0].id);
+      return;
     }
+
+    setSelectedOrganizationId('ALL');
+    localStorage.setItem('admin_selected_organization', 'ALL');
   }, [organizations]);
 
   const handleOrganizationSelect = (orgId: string) => {
@@ -118,11 +129,12 @@ export function AdminView({
     localStorage.setItem('admin_selected_organization', orgId);
   };
 
-  const selectedOrganization = organizations.find((org) => org.id === selectedOrganizationId);
+  const selectedOrganization =
+    selectedOrganizationId !== 'ALL'
+      ? organizations.find((org) => org.id === selectedOrganizationId)
+      : undefined;
 
-  const highPriorityAlerts = alerts.filter((alert) => alert.priority === 'high');
-  const systemAlerts = alerts.filter((alert) => alert.type === 'no_data' || alert.type === 'reminder');
-
+  // ✅ critical alert dismiss
   useEffect(() => {
     const dismissed = localStorage.getItem('criticalAlertDismissed');
     const dismissedTime = dismissed ? parseInt(dismissed, 10) : 0;
@@ -140,57 +152,8 @@ export function AdminView({
     setCriticalAlertDismissed(true);
     localStorage.setItem('criticalAlertDismissed', Date.now().toString());
   };
-  const fetchInbodyUsers = async () => {
-    try {
-      setInbodyUsersLoading(true);
-  
-      // inbody_records に存在する user_id を重複なしで取得
-      const { data, error } = await supabase
-        .from('inbody_records')
-        .select('user_id')
-        .not('user_id', 'is', null);
-  
-      if (error) throw error;
-  
-      const unique = Array.from(new Set((data ?? []).map((r) => r.user_id))).filter(Boolean);
-  
-      // 表示用に app_users から名前も引く（テーブル名が users なら読み替え）
-      const { data: usersData, error: usersErr } = await supabase
-        .from('app_users')
-        .select('id, nickname, email') // ← nickname無ければ name などに変更
-        .in('id', unique);
-  
-      if (usersErr) {
-        // 名前が取れなくても user_id だけで動くので握りつぶしOK
-        console.warn('fetchInbodyUsers: failed to fetch app_users info:', usersErr);
-        setInbodyUsers(unique.map((id) => ({ user_id: id })));
-        return;
-      }
-  
-      const mapped =
-        (usersData ?? []).map((u: any) => ({
-          user_id: u.id,
-          name: u.nickname || u.email || u.id,
-        })) ?? [];
-  
-      setInbodyUsers(mapped);
-    } catch (e) {
-      console.error('fetchInbodyUsers error:', e);
-    } finally {
-      setInbodyUsersLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    fetchTeams();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'system' && systemSubTab === 'nutrition-dev') {
-      fetchInbodyUsers();
-    }
-  }, [activeTab, systemSubTab]);
-
+  // ✅ teams
   const fetchTeams = async () => {
     try {
       const { data, error } = await supabase.from('teams').select('*').order('name');
@@ -203,21 +166,72 @@ export function AdminView({
     }
   };
 
+  useEffect(() => {
+    fetchTeams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ inbody users (dev)
+  const fetchInbodyUsers = async () => {
+    try {
+      setInbodyUsersLoading(true);
+
+      const { data, error } = await supabase
+        .from('inbody_records')
+        .select('user_id')
+        .not('user_id', 'is', null);
+
+      if (error) throw error;
+
+      const unique = Array.from(new Set((data ?? []).map((r: any) => r.user_id))).filter(Boolean);
+
+      const { data: usersData, error: usersErr } = await supabase
+        .from('app_users')
+        .select('id, nickname, email')
+        .in('id', unique);
+
+      if (usersErr) {
+        console.warn('fetchInbodyUsers: failed to fetch app_users info:', usersErr);
+        setInbodyUsers(unique.map((id: string) => ({ user_id: id })));
+        return;
+      }
+
+      const mapped =
+        (usersData ?? []).map((u: any) => ({
+          user_id: u.id,
+          name: u.nickname || u.email || u.id,
+        })) ?? [];
+
+      setInbodyUsers(mapped);
+    } catch (e) {
+      console.error('fetchInbodyUsers error:', e);
+    } finally {
+      setInbodyUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'system' && systemSubTab === 'nutrition-dev') {
+      fetchInbodyUsers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, systemSubTab]);
+
   const testCalculateMetabolism = async () => {
     try {
       if (!targetUserId) {
         alert("user_id を入れてください");
         return;
       }
-  
+
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token;
-  
+
       if (!accessToken) {
         alert("セッションが取得できません（未ログイン？）");
         return;
       }
-  
+
       const res = await fetch(
         "https://cymnqmbdwaveccoooics.supabase.co/functions/v1/calculate-metabolism",
         {
@@ -232,24 +246,21 @@ export function AdminView({
           }),
         }
       );
-  
+
       const json = await res.json();
       console.log("🧪 calculate-metabolism result:", json);
-  
+
       if (!res.ok) {
         alert(`失敗: ${res.status}\n` + JSON.stringify(json, null, 2));
         return;
       }
-  
+
       alert(JSON.stringify(json, null, 2));
     } catch (e) {
       console.error(e);
       alert("エラー発生（consoleを確認）");
     }
   };
- 
-
-
 
   if (loading) {
     return (
@@ -266,17 +277,6 @@ export function AdminView({
           <div className="flex items-center justify-between py-3">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">管理者ダッシュボード</h1>
             <div className="flex items-center space-x-1">
-              {highPriorityAlerts.length > 0 && (
-                <button
-                  onClick={() => setShowAlertPanel(true)}
-                  className="p-2 text-gray-600 hover:text-red-600 transition-colors relative"
-                  title="アラート"
-                >
-                  <AlertTriangle className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                </button>
-              )}
-
               <button
                 onClick={startTutorial}
                 className="p-2 text-gray-600 hover:text-purple-600 transition-colors"
@@ -287,16 +287,17 @@ export function AdminView({
             </div>
           </div>
 
-          {/* Organization Selector in Header */}
-          {!orgsLoading && organizations.length > 1 && (
+          {/* ✅ Organization Selector in Header (ALL対応) */}
+          {!orgsLoading && organizations.length >= 1 && (
             <div className="pb-3 border-t border-gray-100">
               <div className="flex items-center gap-3 pt-3">
                 <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <select
-                  value={selectedOrganizationId || ''}
+                  value={selectedOrganizationId || 'ALL'}
                   onChange={(e) => handleOrganizationSelect(e.target.value)}
                   className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 >
+                  <option value="ALL">（全組織）</option>
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name}
@@ -311,6 +312,7 @@ export function AdminView({
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="space-y-6 sm:space-y-8">
+
           {/* Critical Alert Banner */}
           {highPriorityAlerts.length > 0 && !criticalAlertDismissed && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -372,7 +374,6 @@ export function AdminView({
                       ? 'border-blue-500 text-blue-600 bg-blue-50'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
-                  data-tutorial="system-tab"
                 >
                   <BarChart3 className="w-4 h-4" />
                   <span>システム</span>
@@ -385,7 +386,6 @@ export function AdminView({
                       ? 'border-green-500 text-green-600 bg-green-50'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
-                  data-tutorial="users-tab"
                 >
                   <Users className="w-4 h-4" />
                   <span>ユーザー管理</span>
@@ -398,7 +398,6 @@ export function AdminView({
                       ? 'border-orange-500 text-orange-600 bg-orange-50'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
-                  data-tutorial="organization-tab"
                 >
                   <Building2 className="w-4 h-4" />
                   <span>組織管理</span>
@@ -406,12 +405,7 @@ export function AdminView({
               </nav>
             </div>
 
-            
-
-
-
-
-            {/* Sub-tabs Section */}
+            {/* Sub-tabs */}
             {(activeTab === 'system' || activeTab === 'users' || activeTab === 'organization') && (
               <div className="border-b border-gray-100 bg-gray-50">
                 <nav className="flex px-6 overflow-x-auto">
@@ -574,81 +568,78 @@ export function AdminView({
               </div>
             )}
 
+            {/* Content */}
             <div className="p-6">
-            {activeTab === 'system' ? (
-              <div className="space-y-6">
-                {systemSubTab === 'overview' ? (
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">システム監視</h3>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-gray-600 text-center">
-                        リアルタイムでシステム全体のACWRデータを監視しています。
-                        アラートが発生した場合は即座に通知されます。
-                      </p>
-                    </div>
-                  </div>
-                ) : systemSubTab === 'nutrition-dev' ? (
-                  <div className="space-y-4">
+              {activeTab === 'system' ? (
+                <div className="space-y-6">
+                  {systemSubTab === 'overview' ? (
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">栄養サポート（Dev）</h3>
-                      <p className="text-sm text-gray-600">
-                        非公開の開発用画面です（一般ユーザーには見せない想定）。
-                      </p>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">システム監視</h3>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-gray-600 text-center">
+                          リアルタイムでシステム全体のACWRデータを監視しています。
+                          アラートが発生した場合は即座に通知されます。
+                        </p>
+                      </div>
                     </div>
+                  ) : systemSubTab === 'nutrition-dev' ? (
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">栄養サポート（Dev）</h3>
+                        <p className="text-sm text-gray-600">
+                          非公開の開発用画面です（一般ユーザーには見せない想定）。
+                        </p>
+                      </div>
+
                       <div className="space-y-4">
                         <NutritionPhotoUploader />
                         <NutritionDev />
                       </div>
 
-                  {/* 🧪 calculate-metabolism テスト */}
-                    <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">テスト対象 user_id</p>
-                        <p className="text-xs text-gray-500">
-                          測定データ（inbody_records）が入っている選手の user_id を貼ってください
-                        </p>
+                      <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">テスト対象 user_id</p>
+                          <p className="text-xs text-gray-500">
+                            測定データ（inbody_records）が入っている選手の user_id を貼ってください
+                          </p>
+                        </div>
+
+                        {inbodyUsers.length > 0 && (
+                          <select
+                            value={targetUserId}
+                            onChange={(e) => setTargetUserId(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                          >
+                            <option value="">（InBodyありユーザーを選択）</option>
+                            {inbodyUsers.map((u) => (
+                              <option key={u.user_id} value={u.user_id}>
+                                {u.name} — {u.user_id.slice(0, 8)}…
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        <input
+                          value={targetUserId}
+                          onChange={(e) => setTargetUserId(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="例: f7f3aea1-764f-4013-b51d-c7bca2ed6d20"
+                        />
+
+                        <button
+                          onClick={testCalculateMetabolism}
+                          disabled={!targetUserId}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          🧪 代謝計算 Edge Function テスト
+                        </button>
+
+                        <p className="text-xs text-gray-500">※ console / alert に結果を表示します</p>
                       </div>
-                      {inbodyUsers.length > 0 && (
-                      <select
-                        value={targetUserId}
-                        onChange={(e) => setTargetUserId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                      >
-                        <option value="">（InBodyありユーザーを選択）</option>
-                        {inbodyUsers.map((u) => (
-                          <option key={u.user_id} value={u.user_id}>
-                            {u.name} — {u.user_id.slice(0, 8)}…
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-
-                      <input
-                        value={targetUserId}
-                        onChange={(e) => setTargetUserId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="例: f7f3aea1-764f-4013-b51d-c7bca2ed6d20"
-                      />
-
-                      <button
-                        onClick={testCalculateMetabolism}
-                        disabled={!targetUserId}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        🧪 代謝計算 Edge Function テスト
-                      </button>
-
-                      <p className="text-xs text-gray-500">
-                        ※ console / alert に結果を表示します
-                      </p>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : activeTab === 'users' ? (
-              
-
+                  ) : null}
+                </div>
+              ) : activeTab === 'users' ? (
                 <div>
                   {usersSubTab === 'invite' ? (
                     <div>
@@ -678,21 +669,21 @@ export function AdminView({
                       </div>
 
                       {inviteSubTab === 'single' ? (
-                        <div data-tutorial="single-invite">
+                        <div>
                           <UserInvitation teams={teams} onUserInvited={() => {}} />
                         </div>
                       ) : (
-                        <div data-tutorial="bulk-invite">
+                        <div>
                           <BulkUserInvitation teams={teams} onUsersInvited={() => {}} />
                         </div>
                       )}
                     </div>
                   ) : usersSubTab === 'manage' ? (
-                    <div data-tutorial="user-list">
-                      <UserManagement teams={teams} />
+                    <div>
+                      {/* ✅ ここが重要：selectedOrganizationId を渡す */}
+                      <UserManagement teams={teams} selectedOrganizationId={selectedOrganizationId} />
                     </div>
                   ) : usersSubTab === 'inbody' ? (
-                    // ✅ 追加：ここに差し込み
                     <div className="space-y-4">
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-1">InBody データ取り込み</h3>
@@ -707,11 +698,13 @@ export function AdminView({
               ) : activeTab === 'organization' ? (
                 <div>
                   {organizationSubTab === 'overview' ? (
-                    selectedOrganizationId && selectedOrganization ? (
+                    selectedOrganizationId && selectedOrganizationId !== 'ALL' && selectedOrganization ? (
                       <OrganizationOverview organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} />
                     ) : (
                       <div className="text-center py-12">
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">組織を選択してください</p>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                          組織を選択してください（全組織では表示できません）
+                        </p>
                         <button
                           onClick={() => setOrganizationSubTab('list')}
                           className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -724,11 +717,13 @@ export function AdminView({
                     <OrganizationManagement userId={user.id} />
                   ) : organizationSubTab === 'members' ? (
                     <div>
-                      {selectedOrganizationId && selectedOrganization ? (
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' && selectedOrganization ? (
                         <OrganizationMembersManagement organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">組織メンバーを管理するには、まず組織を選択してください</p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            組織メンバーを管理するには、まず組織を選択してください
+                          </p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -740,11 +735,13 @@ export function AdminView({
                     </div>
                   ) : organizationSubTab === 'settings' ? (
                     <div>
-                      {selectedOrganizationId ? (
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
                         <OrganizationSettings organizationId={selectedOrganizationId} />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">設定を表示するには、まず組織を選択してください</p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            設定を表示するには、まず組織を選択してください
+                          </p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -756,11 +753,13 @@ export function AdminView({
                     </div>
                   ) : organizationSubTab === 'subscription' ? (
                     <div>
-                      {selectedOrganizationId ? (
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
                         <SubscriptionManagement organizationId={selectedOrganizationId} organizationName="デモ組織" />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">サブスクリプションを表示するには、まず組織を選択してください</p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            サブスクリプションを表示するには、まず組織を選択してください
+                          </p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -772,15 +771,17 @@ export function AdminView({
                     </div>
                   ) : organizationSubTab === 'transfers' ? (
                     <div>
-                      {selectedOrganizationId ? (
-                      <AthleteTransferManagement
-                      userId={user.id}
-                      organizationId={selectedOrganizationId}
-                      isAdmin={isGlobalAdmin(user.role)}
-                    />
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
+                        <AthleteTransferManagement
+                          userId={user.id}
+                          organizationId={selectedOrganizationId}
+                          isAdmin={isGlobalAdmin(user.role)}
+                        />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">選手移籍管理を表示するには、まず組織を選択してください</p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            選手移籍管理を表示するには、まず組織を選択してください
+                          </p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
@@ -792,15 +793,17 @@ export function AdminView({
                     </div>
                   ) : organizationSubTab === 'team-access' ? (
                     <div>
-                      {selectedOrganizationId ? (
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
                         <TeamAccessRequestManagement
-                        userId={user.id}
-                        organizationId={selectedOrganizationId}
-                        isAdmin={isGlobalAdmin(user.role)}
-                      />
+                          userId={user.id}
+                          organizationId={selectedOrganizationId}
+                          isAdmin={isGlobalAdmin(user.role)}
+                        />
                       ) : (
                         <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400 mb-4">チームアクセスリクエストを表示するには、まず組織を選択してください</p>
+                          <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            チームアクセスリクエストを表示するには、まず組織を選択してください
+                          </p>
                           <button
                             onClick={() => setOrganizationSubTab('list')}
                             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
