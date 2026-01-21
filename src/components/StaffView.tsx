@@ -151,7 +151,7 @@ const getThisWeekRange = () => {
 // -------------------------
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type RiskLevel = 'high' | 'caution' | 'good' | 'low';
+type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
 
 const calcRisk = (acwr: number): RiskLevel => {
   if (acwr >= 1.5) return 'high';
@@ -211,7 +211,7 @@ type AthleteACWRInfo = {
   currentACWR: number | null;
   riskLevel?: RiskLevel;
   daysOfData?: number | null;
-  latestDate?: string | null;
+  lastDate?: string | null;
 };
 
 type AthleteACWRDailyRow = {
@@ -567,22 +567,26 @@ useEffect(() => {
     try {
       setAthletesLoading(true);
       setAthletesError(null);
-
+  
       const currentTeamId = teamId;
-
+  
       const { data, error } = await supabase
         .from('staff_team_athletes_with_activity' as any)
         .select('*')
         .eq('team_id', teamId);
-
+  
       if (error) throw error;
-
+  
       if (selectedTeamIdRef.current !== currentTeamId) return;
-
+  
       const rows = (data || []) as StaffAthleteWithActivity[];
       setAthletes(rows);
-
+  
       const ids = rows.map((r) => r.id);
+  
+      // ✅ ここが超重要：useEffect待たずに同期更新（guardで弾かれない）
+      athletesIdsKeyRef.current = ids.slice().sort().join(',');
+  
       fetchAthleteACWRFromDaily(teamId, ids);
     } catch (e) {
       console.error(e);
@@ -661,7 +665,7 @@ useEffect(() => {
       for (const ids of idChunks) {
         const { data, error } = await supabase
           .from('athlete_acwr_daily')
-          // ✅ risk_level を取らない（存在しないため 400）
+          // ✅ risk_level は取らない（存在しないなら400になる）
           .select('user_id,date,acwr,days_of_data')
           .in('user_id', ids)
           .gte('date', fromKey)
@@ -675,12 +679,14 @@ useEffect(() => {
       // ---- request guard ----
       if (selectedTeamIdRef.current !== teamId) return;
       if (reqSeq !== acwrRequestSeqRef.current) return;
+  
+      // ✅ ここ：idsKeyRef は fetchTeamAthletesWithActivity で同期更新済み
       if (athletesIdsKeyRef.current !== reqIdsKey) return;
   
       const newMap: Record<string, AthleteACWRInfo> = {};
   
       for (const r of allRows) {
-        if (newMap[r.user_id]) continue; // user_idごとに最新1件
+        if (newMap[r.user_id]) continue; // user_idごとに最新1件のみ
   
         const acwr =
           typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
@@ -692,16 +698,22 @@ useEffect(() => {
   
         newMap[r.user_id] = {
           currentACWR: acwr,
-          // ✅ フロント計算
-          riskLevel: calcRiskLevelFromACWR(acwr),
+          riskLevel: calcRiskLevelFromACWR(acwr) ?? 'unknown', // ✅ unknownに倒す
           daysOfData: days,
-          latestDate: r.date ?? null,
+          lastDate: r.date ?? null, // ✅ AthleteList の参照に合わせる
         };
       }
   
-      // 取得できなかった選手もキーは作っておく（UIが安定する）
+      // ✅ 取得できなかった選手もキーは作る（UIの安定）
       for (const id of athleteIds) {
-        if (!newMap[id]) newMap[id] = { currentACWR: null, riskLevel: undefined, daysOfData: null, latestDate: null };
+        if (!newMap[id]) {
+          newMap[id] = {
+            currentACWR: null,
+            riskLevel: 'unknown',
+            daysOfData: null,
+            lastDate: null,
+          };
+        }
       }
   
       setAthleteACWRMap(newMap);
