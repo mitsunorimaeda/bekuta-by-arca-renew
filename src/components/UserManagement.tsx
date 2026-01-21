@@ -27,64 +27,59 @@ export function UserManagement({ teams, restrictToOrganizationId }: UserManageme
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
-
+  
     try {
-      if (!isAllMode) {
-        // ✅ 組織指定：organization_members + staff_team_links を union して user_id を作る
-        const orgId = restrictToOrganizationId as string;
-
-        const [{ data: orgMembers, error: orgError }, { data: staffLinks, error: staffError }] =
-          await Promise.all([
-            supabase
-              .from('organization_members')
-              .select('user_id')
-              .eq('organization_id', orgId),
-            supabase
-              .from('staff_team_links')
-              .select('staff_user_id')
-              .eq('organization_id', orgId),
-          ]);
-
-        if (orgError) throw orgError;
-        if (staffError) throw staffError;
-
-        const memberIds = (orgMembers ?? []).map((m: any) => m.user_id).filter(Boolean);
-        const staffIds = (staffLinks ?? []).map((s: any) => s.staff_user_id).filter(Boolean);
-
-        const userIds = Array.from(new Set([...memberIds, ...staffIds]));
-
-        if (userIds.length === 0) {
-          setUsers([]);
-          return;
-        }
-
+      // ✅ 組織で絞る場合：organization_members -> users をJOINで取得
+      if (restrictToOrganizationId) {
         const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .in('id', userIds)
-          .order('created_at', { ascending: false });
-
+          .from('organization_members')
+          .select(`
+            role,
+            users:users (
+              id,
+              user_id,
+              name,
+              nickname,
+              email,
+              role,
+              team_id,
+              created_at
+            )
+          `)
+          .eq('organization_id', restrictToOrganizationId);
+  
         if (error) throw error;
-
-        setUsers(data || []);
+  
+        // organization_members の行から users を取り出して平坦化
+        const mapped = (data ?? [])
+          .map((row: any) => row.users)
+          .filter(Boolean);
+  
+        // 重複排除（複数行JOIN等に備えて）
+        const uniq = Array.from(new Map(mapped.map((u: any) => [u.id, u])).values());
+  
+        // created_at desc
+        uniq.sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''));
+  
+        setUsers(uniq as any);
         return;
       }
-
-      // ✅ 全ユーザー（admin view）
+  
+      // ✅ 全件（global admin）
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .order('created_at', { ascending: false });
-
+  
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) {
       console.error('Error fetching users:', err);
-      setError('ユーザーの取得に失敗しました: ' + (err?.message ?? String(err)));
+      setError('ユーザーの取得に失敗しました: ' + err.message);
     } finally {
       setLoading(false);
     }
-  }, [isAllMode, restrictToOrganizationId]);
+  }, [restrictToOrganizationId]);
 
   useEffect(() => {
     fetchUsers();
