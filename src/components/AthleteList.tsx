@@ -266,29 +266,47 @@ export function AthleteList({
           <div className="p-6 text-center text-sm text-gray-500">条件に合う選手がいません</div>
         ) : (
           filteredAthletes.map((athlete) => {
-            const acwrInfo = athleteACWRMap[athlete.id];
+            const key =
+              (athlete as any)?.id ??
+              (athlete as any)?.user_id ??
+              (athlete as any)?.athlete_user_id;
 
+            const acwrInfo = key ? (athleteACWRMap as any)[key] : undefined;
+
+            // ✅ days
             const daysOfData =
               typeof acwrInfo?.daysOfData === 'number' && Number.isFinite(acwrInfo.daysOfData)
                 ? acwrInfo.daysOfData
                 : null;
 
+            // ✅ ACWR “値があるか” と “準備完了か” を分離
             const acwrNum =
               typeof acwrInfo?.currentACWR === 'number' && Number.isFinite(acwrInfo.currentACWR)
                 ? acwrInfo.currentACWR
                 : null;
 
-            const hasACWR =
+            // 値があるか（0も表示したいので >=0 判定にする）
+            const hasValue = acwrNum != null;
+
+            // 準備完了（リスク判定に使う）
+            const isReady =
               acwrNum != null &&
               acwrNum > 0 &&
               (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
 
-            const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
+            // ✅ “表示” は hasValue ベースにする（ここが今回の修正の核心）
+            const acwrValue = hasValue ? acwrNum!.toFixed(2) : '-';
 
-            const acwrValue = hasACWR ? acwrNum!.toFixed(2) : '準備中';
+            // ✅ リスクは “準備完了してる時だけ” 出す
+            const riskLevel: RiskLevel = isReady ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
+
+            // ✅ 日付キーも吸収（lastDate / latestDate どっちでも）
+            const lastDate = acwrInfo?.lastDate ?? (acwrInfo as any)?.latestDate ?? null;
 
             const remainingDays =
               daysOfData !== null ? Math.max(MIN_DAYS_FOR_ACWR - daysOfData, 0) : null;
+
+
 
             // ✅ 直近7日 Load は DBの acute_7d を表示（当日含む7日）
             const acute7d =
@@ -340,9 +358,13 @@ export function AthleteList({
                   {shareOn && (
                     <div className="mt-2 text-[11px] sm:text-xs text-gray-600">
                       直近7日Load： <b>{acute7d != null ? Math.round(acute7d) : '-'}</b>
-                      {acwrInfo?.lastDate ? (
-                        <span className="ml-2 text-gray-400">（{formatDate(acwrInfo.lastDate)}時点）</span>
-                      ) : null}
+
+                      {(() => {
+                        const lastDate = acwrInfo?.lastDate ?? (acwrInfo as any)?.latestDate ?? null;
+                        return lastDate ? (
+                          <span className="ml-2 text-gray-400">（{formatDate(lastDate)}時点）</span>
+                        ) : null;
+                      })()}
                     </div>
                   )}
 
@@ -383,7 +405,7 @@ export function AthleteList({
                     <span className="text-[11px] sm:text-xs text-gray-500">ACWR</span>
                     <span
                       className={`text-sm sm:text-base font-semibold ${
-                        hasACWR ? 'text-gray-900' : 'text-gray-400'
+                        isReady ? 'text-gray-900' : 'text-gray-400'
                       }`}
                     >
                       {acwrValue}
