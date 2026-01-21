@@ -209,6 +209,9 @@ const toneStyles: Record<SummaryTone, { box: string; badge: string; dot: string 
 
 type AthleteACWRInfo = {
   currentACWR: number | null;
+  acute7d?: number | null;       // ✅追加
+  chronicLoad?: number | null;   // ✅追加
+  dailyLoad?: number | null;     // ✅追加
   riskLevel?: RiskLevel;
   daysOfData?: number | null;
   lastDate?: string | null;
@@ -666,7 +669,7 @@ useEffect(() => {
         const { data, error } = await supabase
           .from('athlete_acwr_daily')
           // ✅ risk_level は取らない（存在しないなら400になる）
-          .select('user_id,date,acwr,days_of_data')
+          .select('user_id,date,acwr,days_of_data,acute_7d,chronic_load,daily_load')
           .in('user_id', ids)
           .gte('date', fromKey)
           .lte('date', toKey)
@@ -688,19 +691,26 @@ useEffect(() => {
       for (const r of allRows) {
         if (newMap[r.user_id]) continue; // user_idごとに最新1件のみ
   
-        const acwr =
-          typeof r.acwr === 'number' && Number.isFinite(r.acwr) ? r.acwr : null;
-  
-        const days =
-          typeof r.days_of_data === 'number' && Number.isFinite(r.days_of_data)
-            ? r.days_of_data
-            : null;
+        const toNum = (v: any): number | null => {
+          if (v === null || v === undefined) return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+        
+        const acwr = toNum((r as any).acwr);
+        const days = toNum((r as any).days_of_data);
+        const acute7d = toNum((r as any).acute_7d);
+        const chronicLoad = toNum((r as any).chronic_load);
+        const dailyLoad = toNum((r as any).daily_load);
   
         newMap[r.user_id] = {
           currentACWR: acwr,
-          riskLevel: calcRiskLevelFromACWR(acwr) ?? 'unknown', // ✅ unknownに倒す
+          acute7d,
+          chronicLoad,
+          dailyLoad,
           daysOfData: days,
-          lastDate: r.date ?? null, // ✅ AthleteList の参照に合わせる
+          lastDate: r.date ?? null,
+          riskLevel: calcRiskLevelFromACWR(acwr) ?? 'unknown',
         };
       }
   
