@@ -1,42 +1,68 @@
-import React, { useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+// src/components/MultiMetricTimeline.tsx
+import React, { useMemo, useState } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { Activity, Scale, Moon, Heart, Zap } from 'lucide-react';
 import { ACWRData } from '../lib/acwr';
 import { formatDateJST } from '../lib/date';
 
+type WeightRecord = { weight_kg: number; date: string };
+type SleepRecord = { sleep_hours: number; sleep_quality: number; date: string };
+type MotivationRecord = {
+  motivation_level: number;
+  energy_level: number;
+  stress_level: number;
+  date: string;
+};
+
 interface MultiMetricTimelineProps {
-  acwrData: ACWRData[];
-  weightRecords: Array<{ weight_kg: number; date: string }>;
-  sleepRecords: Array<{ sleep_hours: number; sleep_quality: number; date: string }>;
-  motivationRecords: Array<{ motivation_level: number; energy_level: number; stress_level: number; date: string }>;
+  // ✅ どのpropsも「未取得の瞬間」がありえるので optional + null 許容にして落ちないようにする
+  acwrData?: ACWRData[] | null;
+  weightRecords?: WeightRecord[] | null;
+  sleepRecords?: SleepRecord[] | null;
+  motivationRecords?: MotivationRecord[] | null;
 }
 
 export function MultiMetricTimeline({
-  acwrData,
-  weightRecords,
-  sleepRecords,
-  motivationRecords
+  acwrData = [],
+  weightRecords = [],
+  sleepRecords = [],
+  motivationRecords = [],
 }: MultiMetricTimelineProps) {
+  // ✅ 念のため「配列でなければ空配列」に正規化（呼び出し側が undefined/別型でも落ちない）
+  const safeAcwrData = Array.isArray(acwrData) ? acwrData : [];
+  const safeWeightRecords = Array.isArray(weightRecords) ? weightRecords : [];
+  const safeSleepRecords = Array.isArray(sleepRecords) ? sleepRecords : [];
+  const safeMotivationRecords = Array.isArray(motivationRecords) ? motivationRecords : [];
+
   const [visibleMetrics, setVisibleMetrics] = useState({
     acwr: true,
     weight: true,
     sleep: true,
     motivation: true,
-    energy: false
+    energy: false,
   });
 
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
 
   const getDaysAgo = (days: number): string => {
     const now = new Date();
-    
+
     // JST に変換
     const jstTime = now.getTime() + 9 * 60 * 60 * 1000;
     const jst = new Date(jstTime);
-  
+
     // JST 日付で days 日前に調整
     jst.setUTCDate(jst.getUTCDate() - days);
-  
+
     return formatDateJST(jst);
   };
 
@@ -45,48 +71,73 @@ export function MultiMetricTimeline({
     return dateString >= getDaysAgo(days);
   };
 
-  const mergeDataByDate = () => {
+  const chartData = useMemo(() => {
     const dataMap = new Map<string, any>();
 
-    acwrData.filter(d => filterByTimeRange(d.date)).forEach(item => {
-      if (!dataMap.has(item.date)) {
-        dataMap.set(item.date, { date: item.date });
-      }
-      dataMap.get(item.date)!.acwr = item.acwr;
-      dataMap.get(item.date)!.acuteLoad = item.acuteLoad;
-    });
+    safeAcwrData
+      .filter((d: any) => d?.date && filterByTimeRange(d.date))
+      .forEach((item: any) => {
+        if (!dataMap.has(item.date)) dataMap.set(item.date, { date: item.date });
+        dataMap.get(item.date)!.acwr =
+          typeof item.acwr === 'number' && Number.isFinite(item.acwr) ? item.acwr : null;
+        dataMap.get(item.date)!.acuteLoad =
+          typeof item.acuteLoad === 'number' && Number.isFinite(item.acuteLoad) ? item.acuteLoad : null;
+      });
 
-    weightRecords.filter(d => filterByTimeRange(d.date)).forEach(item => {
-      if (!dataMap.has(item.date)) {
-        dataMap.set(item.date, { date: item.date });
-      }
-      dataMap.get(item.date)!.weight = Number(item.weight_kg);
-    });
+    safeWeightRecords
+      .filter((d: any) => d?.date && filterByTimeRange(d.date))
+      .forEach((item: any) => {
+        if (!dataMap.has(item.date)) dataMap.set(item.date, { date: item.date });
+        const w = Number(item.weight_kg);
+        dataMap.get(item.date)!.weight = Number.isFinite(w) ? w : null;
+      });
 
-    sleepRecords.filter(d => filterByTimeRange(d.date)).forEach(item => {
-      if (!dataMap.has(item.date)) {
-        dataMap.set(item.date, { date: item.date });
-      }
-      dataMap.get(item.date)!.sleep = Number(item.sleep_hours);
-      dataMap.get(item.date)!.sleepQuality = item.sleep_quality;
-    });
+    safeSleepRecords
+      .filter((d: any) => d?.date && filterByTimeRange(d.date))
+      .forEach((item: any) => {
+        if (!dataMap.has(item.date)) dataMap.set(item.date, { date: item.date });
+        const sh = Number(item.sleep_hours);
+        dataMap.get(item.date)!.sleep = Number.isFinite(sh) ? sh : null;
 
-    motivationRecords.filter(d => filterByTimeRange(d.date)).forEach(item => {
-      if (!dataMap.has(item.date)) {
-        dataMap.set(item.date, { date: item.date });
-      }
-      dataMap.get(item.date)!.motivation = item.motivation_level;
-      dataMap.get(item.date)!.energy = item.energy_level;
-      dataMap.get(item.date)!.stress = item.stress_level;
-    });
+        const sq = Number(item.sleep_quality);
+        dataMap.get(item.date)!.sleepQuality = Number.isFinite(sq) ? sq : null;
+      });
 
-    return Array.from(dataMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  };
+    safeMotivationRecords
+      .filter((d: any) => d?.date && filterByTimeRange(d.date))
+      .forEach((item: any) => {
+        if (!dataMap.has(item.date)) dataMap.set(item.date, { date: item.date });
 
-  const chartData = mergeDataByDate();
+        const m = Number(item.motivation_level);
+        const e = Number(item.energy_level);
+        const s = Number(item.stress_level);
+
+        dataMap.get(item.date)!.motivation = Number.isFinite(m) ? m : null;
+        dataMap.get(item.date)!.energy = Number.isFinite(e) ? e : null;
+        dataMap.get(item.date)!.stress = Number.isFinite(s) ? s : null;
+      });
+
+    return Array.from(dataMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [safeAcwrData, safeWeightRecords, safeSleepRecords, safeMotivationRecords, timeRange]);
 
   const toggleMetric = (metric: keyof typeof visibleMetrics) => {
-    setVisibleMetrics(prev => ({ ...prev, [metric]: !prev[metric] }));
+    setVisibleMetrics((prev) => ({ ...prev, [metric]: !prev[metric] }));
+  };
+
+  // ✅ "YYYY-MM-DD" を Date() に通すとTZでズレやすいので、基本は文字列から表示する
+  const formatMMDD = (dateStr: string) => {
+    const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const mm = Number(m[2]);
+      const dd = Number(m[3]);
+      if (Number.isFinite(mm) && Number.isFinite(dd)) return `${mm}/${dd}`;
+    }
+    // fallback
+    try {
+      const d = new Date(dateStr);
+      if (!Number.isNaN(d.getTime())) return `${d.getMonth() + 1}/${d.getDate()}`;
+    } catch {}
+    return String(dateStr);
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -94,9 +145,7 @@ export function MultiMetricTimeline({
 
     return (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4">
-        <p className="font-semibold text-gray-900 dark:text-white mb-2">
-          {new Date(label).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
-        </p>
+        <p className="font-semibold text-gray-900 dark:text-white mb-2">{formatMMDD(label)}</p>
         <div className="space-y-1">
           {payload.map((entry: any) => (
             <div key={entry.dataKey} className="flex items-center justify-between space-x-4">
@@ -104,7 +153,9 @@ export function MultiMetricTimeline({
                 {entry.name}:
               </span>
               <span className="font-semibold text-sm" style={{ color: entry.color }}>
-                {entry.value !== undefined ? entry.value.toFixed(1) : '-'}
+                {entry.value !== undefined && entry.value !== null && Number.isFinite(entry.value)
+                  ? Number(entry.value).toFixed(1)
+                  : '-'}
                 {entry.dataKey === 'weight' && 'kg'}
                 {(entry.dataKey === 'sleep' || entry.dataKey === 'sleepHours') && 'h'}
               </span>
@@ -115,16 +166,28 @@ export function MultiMetricTimeline({
     );
   };
 
+  // ---- 集計（0 を落とさない）----
+  const acwrVals = chartData
+    .map((d) => d.acwr)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v)) as number[];
+  const avgACWR = acwrVals.length > 0 ? (acwrVals.reduce((s, v) => s + v, 0) / acwrVals.length).toFixed(2) : '-';
+
+  const sleepVals = chartData
+    .map((d) => d.sleep)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v)) as number[];
+  const avgSleep = sleepVals.length > 0 ? (sleepVals.reduce((s, v) => s + v, 0) / sleepVals.length).toFixed(1) : '-';
+
+  const motVals = chartData
+    .map((d) => d.motivation)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v)) as number[];
+  const avgMot = motVals.length > 0 ? (motVals.reduce((s, v) => s + v, 0) / motVals.length).toFixed(1) : '-';
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 space-y-4 sm:space-y-0">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-            統合タイムライン
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            すべての指標を時系列で表示
-          </p>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">統合タイムライン</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">すべての指標を時系列で表示</p>
         </div>
 
         <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
@@ -234,78 +297,32 @@ export function MultiMetricTimeline({
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
             <XAxis
               dataKey="date"
-              tickFormatter={(date) => {
-                const d = new Date(date);
-                return `${d.getMonth() + 1}/${d.getDate()}`;
-              }}
+              tickFormatter={(date) => formatMMDD(date)}
               stroke="#9CA3AF"
               style={{ fontSize: '12px' }}
             />
             <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
             <Tooltip content={<CustomTooltip />} />
-            <Legend
-              wrapperStyle={{ fontSize: '12px' }}
-              iconType="line"
-            />
+            <Legend wrapperStyle={{ fontSize: '12px' }} iconType="line" />
 
             {visibleMetrics.acwr && (
-              <Line
-                type="monotone"
-                dataKey="acwr"
-                name="ACWR"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="acwr" name="ACWR" stroke="#3B82F6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             )}
 
             {visibleMetrics.weight && (
-              <Line
-                type="monotone"
-                dataKey="weight"
-                name="体重 (kg)"
-                stroke="#10B981"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="weight" name="体重 (kg)" stroke="#10B981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             )}
 
             {visibleMetrics.sleep && (
-              <Line
-                type="monotone"
-                dataKey="sleep"
-                name="睡眠 (h)"
-                stroke="#8B5CF6"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="sleep" name="睡眠 (h)" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             )}
 
             {visibleMetrics.motivation && (
-              <Line
-                type="monotone"
-                dataKey="motivation"
-                name="意欲"
-                stroke="#EC4899"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="motivation" name="意欲" stroke="#EC4899" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             )}
 
             {visibleMetrics.energy && (
-              <Line
-                type="monotone"
-                dataKey="energy"
-                name="活力"
-                stroke="#F59E0B"
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="energy" name="活力" stroke="#F59E0B" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
             )}
           </LineChart>
         </ResponsiveContainer>
@@ -320,33 +337,23 @@ export function MultiMetricTimeline({
 
         <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
           <p className="text-xs text-green-700 dark:text-green-400 mb-1">平均ACWR</p>
-          <p className="text-2xl font-bold text-green-900 dark:text-green-300">
-            {chartData.filter(d => d.acwr).length > 0
-              ? (chartData.reduce((sum, d) => sum + (d.acwr || 0), 0) / chartData.filter(d => d.acwr).length).toFixed(2)
-              : '-'}
-          </p>
+          <p className="text-2xl font-bold text-green-900 dark:text-green-300">{avgACWR}</p>
         </div>
 
         <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
           <p className="text-xs text-purple-700 dark:text-purple-400 mb-1">平均睡眠</p>
-          <p className="text-2xl font-bold text-purple-900 dark:text-purple-300">
-            {chartData.filter(d => d.sleep).length > 0
-              ? (chartData.reduce((sum, d) => sum + (d.sleep || 0), 0) / chartData.filter(d => d.sleep).length).toFixed(1)
-              : '-'}
-          </p>
+          <p className="text-2xl font-bold text-purple-900 dark:text-blue-300">{avgSleep}</p>
           <p className="text-xs text-purple-600 dark:text-purple-400">時間</p>
         </div>
 
         <div className="bg-pink-50 dark:bg-pink-900/20 rounded-lg p-3">
           <p className="text-xs text-pink-700 dark:text-pink-400 mb-1">平均意欲</p>
-          <p className="text-2xl font-bold text-pink-900 dark:text-pink-300">
-            {chartData.filter(d => d.motivation).length > 0
-              ? (chartData.reduce((sum, d) => sum + (d.motivation || 0), 0) / chartData.filter(d => d.motivation).length).toFixed(1)
-              : '-'}
-          </p>
+          <p className="text-2xl font-bold text-pink-900 dark:text-pink-300">{avgMot}</p>
           <p className="text-xs text-pink-600 dark:text-pink-400">/10</p>
         </div>
       </div>
     </div>
   );
 }
+
+export default MultiMetricTimeline;
