@@ -91,36 +91,29 @@ export function useTrainingData(userId: string) {
     [userId]
   );
 
-  const fetchAll = useCallback(async () => {
+// ✅ force 引数を追加
+const fetchAll = useCallback(
+  async (force = false) => {
     if (!userId) return;
 
     const fetchKey = `user:${userId}`;
     if (inFlightRef.current) return;
-    if (lastFetchKeyRef.current === fetchKey && trainingRecords.length > 0) return;
+
+    // ✅ force=true のときはスキップしない
+    if (!force && lastFetchKeyRef.current === fetchKey && trainingRecords.length > 0) return;
 
     inFlightRef.current = true;
     lastFetchKeyRef.current = fetchKey;
 
     if (DEBUG_FETCH) {
-      console.log("[useTrainingData] fetchAll", { userId, at: new Date().toISOString() });
+      console.log("[useTrainingData] fetchAll", { userId, at: new Date().toISOString(), force });
     }
 
     setLoading(true);
     try {
       const [trainingRes, weightRes, acwrRes] = await Promise.all([
-        supabase
-          .from("training_records")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: true }),
-
-        supabase
-          .from("weight_records")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: true }),
-
-        // ✅ DBの正: athlete_acwr_daily（0埋め日次が入っている想定）
+        supabase.from("training_records").select("*").eq("user_id", userId).order("date", { ascending: true }),
+        supabase.from("weight_records").select("*").eq("user_id", userId).order("date", { ascending: true }),
         supabase
           .from("athlete_acwr_daily")
           .select("user_id,date,daily_load,acute_7d,chronic_28d,chronic_load,acwr,days_of_data,updated_at")
@@ -135,6 +128,15 @@ export function useTrainingData(userId: string) {
       setTrainingRecords((trainingRes.data || []) as TrainingRecord[]);
       setWeightRecords((weightRes.data || []) as WeightRecord[]);
       setAcwrDaily((acwrRes.data || []) as ACWRDailyRow[]);
+
+      if (DEBUG_FETCH) {
+        console.log("[useTrainingData] fetched counts", {
+          training: trainingRes.data?.length ?? 0,
+          weight: weightRes.data?.length ?? 0,
+          acwrDaily: acwrRes.data?.length ?? 0,
+          acwrSample: (acwrRes.data ?? []).slice(-3),
+        });
+      }
     } catch (error) {
       console.error("[useTrainingData] Error fetching data:", error);
       setTrainingRecords([]);
@@ -145,7 +147,9 @@ export function useTrainingData(userId: string) {
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, [userId, DEBUG_FETCH, trainingRecords.length]);
+  },
+  [userId, DEBUG_FETCH, trainingRecords.length]
+);
 
   useEffect(() => {
     if (!userId) return;
@@ -223,7 +227,7 @@ export function useTrainingData(userId: string) {
       });
 
       // ✅ ACWRはDBの refresh 関数で更新される想定。必要ならここで fetchAll() して追従。
-      // await fetchAll();
+      await fetchAll(true);
 
       return data as TrainingRecord;
     },
@@ -267,7 +271,7 @@ export function useTrainingData(userId: string) {
         overwrite: true,
       });
 
-      // await fetchAll();
+      await fetchAll(true);
 
       return data as TrainingRecord;
     },
@@ -286,21 +290,39 @@ export function useTrainingData(userId: string) {
 
       setTrainingRecords((prev) => removeLocalTrainingRecord(prev, recordId));
 
-      // await fetchAll();
+      await fetchAll(true);
     },
     [userId]
   );
 
-  return {
-    records: trainingRecords,
-    weightRecords,
-    acwrDaily, // ✅ これが正
-    loading,
+  const acwrData = (acwrDaily ?? [])
+  .map((r: any) => {
+    const acwrNum = Number(r?.acwr);
+    const acuteNum = Number(r?.acute_7d);
+    const chronicNum = Number(r?.chronic_28d);
 
-    fetchAll,
-    checkExistingRecord,
-    addTrainingRecord,
-    updateTrainingRecord,
-    deleteTrainingRecord,
-  };
+    return {
+      date: String(r?.date ?? ""),
+      acwr: Number.isFinite(acwrNum) ? acwrNum : null,
+      acuteLoad: Number.isFinite(acuteNum) ? acuteNum : null,
+      chronicLoad: Number.isFinite(chronicNum) ? chronicNum : null,
+      riskLevel: "unknown", // ← もし数値から判定する関数があるならここで計算
+    };
+  })
+  .filter((x) => !!x.date)
+  .sort(sortByDateAsc);
+
+  return {
+  records: trainingRecords,
+  weightRecords,
+  acwrDaily,
+  acwrData,   // ✅ 追加
+  loading,
+
+  fetchAll,
+  checkExistingRecord,
+  addTrainingRecord,
+  updateTrainingRecord,
+  deleteTrainingRecord,
+};
 }

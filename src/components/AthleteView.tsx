@@ -450,7 +450,7 @@ export function AthleteView({
     addTrainingRecord,
     updateTrainingRecord,
     deleteTrainingRecord,
-    acwrData,
+    acwrData = [],
   } = useTrainingData(user.id);
 
   // =========================
@@ -1307,7 +1307,7 @@ const phaseHints = useMemo(() => {
         </div>
 
             <ConsolidatedOverviewDashboard
-              acwrData={acwrData}
+              acwrData={acwrData ??[]}
               weightRecords={weightRecords}
               sleepRecords={normalizedSleepRecords}
               motivationRecords={motivationRecords}
@@ -1366,7 +1366,7 @@ const phaseHints = useMemo(() => {
 
             <div className="mt-6">
               <MultiMetricTimeline
-                acwrData={acwrData}
+                acwrData={acwrData?? []}
                 weightRecords={weightRecords}
                 sleepRecords={timelineSleepRecords}
                 motivationRecords={motivationRecords}
