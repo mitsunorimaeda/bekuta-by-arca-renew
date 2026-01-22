@@ -19,6 +19,12 @@ export function ConditioningSummaryCard({
   energyLevel,
   stressLevel
 }: ConditioningSummaryCardProps) {
+
+  const fmt2 = (v: any) => {
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '--';
+  };
+
   const getOverallCondition = () => {
     let score = 0;
     let factors = 0;
@@ -140,7 +146,9 @@ export function ConditioningSummaryCard({
               <Activity className="w-4 h-4 text-gray-500 dark:text-gray-400 mr-2" />
               <span className="text-xs text-gray-600 dark:text-gray-400">ACWR</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{latestACWR.acwr}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {fmt2(latestACWR.acwr)}
+            </p>
           </div>
         )}
 
