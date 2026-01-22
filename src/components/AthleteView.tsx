@@ -466,6 +466,8 @@ export function AthleteView({
     const n = v != null ? Number(v) : NaN;
     return Number.isFinite(n) ? n : null;
   }, [latestACWR?.acwr]);
+
+  const currentACWR = latestACWRValue; // 今はこれでOK（=最新のACWR）
  
 
 
@@ -623,13 +625,10 @@ export function AthleteView({
   const todayWeight = useMemo(() => weightRecords.find((r) => r.date === today), [weightRecords, today]);
 
 
-  // =========================
-  // ✅ Phase/Risk/Sleep を統一ロジックで生成（今日の一言 + 各ヒント）
-  // =========================
 // =========================
 // ✅ Phase/Risk/Sleep を統一ロジックで生成（今日の一言 + 各ヒント）
 // =========================
-const phaseHints = useMemo(() => {
+  const phaseHints = useMemo(() => {
   const assist = buildDailyAssistTexts({
     phase: todayPhase,
     poorSleep: poorSleepFlag, // isPoor含むオブジェクト丸ごと
@@ -1307,6 +1306,7 @@ const phaseHints = useMemo(() => {
         </div>
 
             <ConsolidatedOverviewDashboard
+              currentACWR={currentACWR}
               acwrData={acwrData ??[]}
               weightRecords={weightRecords}
               sleepRecords={normalizedSleepRecords}
