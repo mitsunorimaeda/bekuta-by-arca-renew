@@ -1,328 +1,312 @@
 // src/hooks/useTrainingData.ts
-import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase, TrainingRecord, WeightRecord } from "../lib/supabase";
-import { logEvent } from "../lib/logEvent";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabase";
 
-type TrainingUpsertPayload = {
-  rpe: number;
-  duration_min: number;
-  date: string; // "YYYY-MM-DD" or ISO string
-  arrow_score: number;
-  signal_score: number;
-};
-
-type ACWRDailyRow = {
+type TrainingRecordRow = {
+  id: string;
   user_id: string;
   date: string; // YYYY-MM-DD
-  daily_load: number | string | null;
-  acute_7d: number | string | null;
-  chronic_28d: number | string | null;
-  chronic_load: number | string | null;
-  acwr: number | string | null;
-  days_of_data: number | null;
-  updated_at?: string | null;
+  rpe: number | null;
+  duration_min: number | null;
+  arrow_score?: number | null;
+  signal_score?: number | null;
+  created_at?: string | null;
 };
 
-/**
- * DBの training_records.date の型に合わせる
- * - 'date'        : "YYYY-MM-DD"
- * - 'timestamptz' : ISO
- */
-const DATE_MODE: "date" | "timestamptz" = "date";
+export type ACWRPoint = {
+  date: string;
+  acwr: number | null;
+  acuteLoad: number | null;
+  chronicLoad: number | null;
+  dailyLoad: number | null;
+  daysOfData: number | null;
+  riskLevel: "high" | "caution" | "good" | "low" | "unknown";
+};
 
-function toYMD(input: string) {
-  if (!input) return null;
-  const m = String(input).match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : null;
-}
+const toNum = (v: any) => {
+  const n = v == null ? NaN : Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
-function jstDayRangeISO(ymd: string) {
-  const startJST = new Date(`${ymd}T00:00:00+09:00`);
-  const endJST = new Date(`${ymd}T23:59:59.999+09:00`);
-  return {
-    startISO: startJST.toISOString(),
-    endISO: endJST.toISOString(),
+const calcRiskLevel = (acwr: number | null): ACWRPoint["riskLevel"] => {
+  if (acwr == null) return "unknown";
+  // 例：一般的な目安（必要ならあなたの基準に合わせて調整）
+  if (acwr >= 1.5) return "high";
+  if (acwr >= 1.3) return "caution";
+  if (acwr >= 0.8) return "good";
+  return "low";
+};
+
+// ✅ フォールバック用：training_records から簡易ACWRを作る
+// dailyLoad = rpe * duration_min（= sRPE）
+// acuteLoad = 直近7日合計
+// chronicLoad = 過去28日合計 / 4（= 週平均）
+// acwr = acute / chronic
+function buildAcwrFromTrainingRecords(records: TrainingRecordRow[]): ACWRPoint[] {
+  // 日付昇順
+  const sorted = [...records].sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
+
+  const loadsByDate = new Map<string, number>();
+  for (const r of sorted) {
+    const rpe = toNum(r.rpe) ?? 0;
+    const dur = toNum(r.duration_min) ?? 0;
+    const load = rpe * dur;
+    loadsByDate.set(r.date, load);
+  }
+
+  const dates = sorted.map((r) => r.date);
+
+  const parse = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, (m || 1) - 1, d || 1).getTime();
   };
-}
 
-function toDbDateValue(input: string): string {
-  const ymd = toYMD(input);
-  if (!ymd) throw new Error("Invalid date");
-  if (DATE_MODE === "date") return ymd;
-  return jstDayRangeISO(ymd).startISO;
-}
+  const points: ACWRPoint[] = [];
 
-function sortByDateAsc(a: any, b: any) {
-  const ad = String(a?.date ?? "");
-  const bd = String(b?.date ?? "");
-  return ad.localeCompare(bd);
-}
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    const t = parse(date);
 
-function upsertLocalTrainingRecord(prev: TrainingRecord[], row: TrainingRecord) {
-  const next = [...(prev || [])];
-  const idx = next.findIndex((r) => r.id === row.id);
-  if (idx >= 0) next[idx] = row;
-  else next.push(row);
-  next.sort(sortByDateAsc);
-  return next;
-}
+    // 直近7日（当日含む）
+    let acute = 0;
+    let acuteDays = 0;
 
-function removeLocalTrainingRecord(prev: TrainingRecord[], recordId: string) {
-  const next = (prev || []).filter((r) => r.id !== recordId);
-  next.sort(sortByDateAsc);
-  return next;
+    // 過去28日（当日含む）
+    let chronicSum = 0;
+    let chronicDays = 0;
+
+    for (let j = 0; j <= i; j++) {
+      const d = dates[j];
+      const dt = parse(d);
+      const diffDays = Math.floor((t - dt) / (1000 * 60 * 60 * 24));
+
+      const load = loadsByDate.get(d) ?? 0;
+
+      if (diffDays >= 0 && diffDays < 7) {
+        acute += load;
+        acuteDays++;
+      }
+      if (diffDays >= 0 && diffDays < 28) {
+        chronicSum += load;
+        chronicDays++;
+      }
+    }
+
+    // chronic は「28日合計 / 4」で週平均に
+    const chronic = chronicSum / 4;
+
+    const acwr =
+      chronic > 0 ? acute / chronic : null;
+
+    points.push({
+      date,
+      dailyLoad: loadsByDate.get(date) ?? 0,
+      acuteLoad: acute,
+      chronicLoad: chronic > 0 ? chronic : null,
+      acwr,
+      daysOfData: chronicDays,
+      riskLevel: calcRiskLevel(acwr),
+    });
+  }
+
+  return points;
 }
 
 export function useTrainingData(userId: string) {
-  const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
-  const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([]);
-  const [acwrDaily, setAcwrDaily] = useState<ACWRDailyRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<TrainingRecordRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [acwrData, setAcwrData] = useState<ACWRPoint[]>([]);
 
-  const DEBUG_FETCH = import.meta.env.DEV;
-
-  const inFlightRef = useRef(false);
-  const lastFetchKeyRef = useRef<string | null>(null);
-
-  const safeLogEvent = useCallback(
-    async (eventType: string, payload: Record<string, any>) => {
-      await logEvent({ userId, eventType, payload });
-    },
-    [userId]
-  );
-
-// ✅ force 引数を追加
-const fetchAll = useCallback(
-  async (force = false) => {
+  // ✅ training_records 取得
+  const fetchTrainingRecords = useCallback(async () => {
     if (!userId) return;
 
-    const fetchKey = `user:${userId}`;
-    if (inFlightRef.current) return;
+    const { data, error } = await supabase
+      .from("training_records")
+      .select("id,user_id,date,rpe,duration_min,arrow_score,signal_score,created_at")
+      .eq("user_id", userId)
+      .order("date", { ascending: true });
 
-    // ✅ force=true のときはスキップしない
-    if (!force && lastFetchKeyRef.current === fetchKey && trainingRecords.length > 0) return;
+    if (error) throw error;
 
-    inFlightRef.current = true;
-    lastFetchKeyRef.current = fetchKey;
+    setRecords((data ?? []) as TrainingRecordRow[]);
+    return (data ?? []) as TrainingRecordRow[];
+  }, [userId]);
 
-    if (DEBUG_FETCH) {
-      console.log("[useTrainingData] fetchAll", { userId, at: new Date().toISOString(), force });
+  // ✅ athlete_acwr_daily 取得（athlete側もここをメインにする）
+  const fetchAcwrDaily = useCallback(async () => {
+    if (!userId) return [] as ACWRPoint[];
+
+    // 直近120日くらい（必要なら調整）
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 120);
+
+    const toISO = (d: Date) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const dateFrom = toISO(from);
+    const dateTo = toISO(to);
+
+    const { data, error, status } = await supabase
+      .from("athlete_acwr_daily")
+      .select("user_id,date,acwr,days_of_data,acute_7d,chronic_load,daily_load")
+      .eq("user_id", userId)
+      .gte("date", dateFrom)
+      .lte("date", dateTo)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.warn("[useTrainingData] athlete_acwr_daily failed", { status, error });
+      return [];
     }
 
-    setLoading(true);
-    try {
-      const [trainingRes, weightRes, acwrRes] = await Promise.all([
-        supabase.from("training_records").select("*").eq("user_id", userId).order("date", { ascending: true }),
-        supabase.from("weight_records").select("*").eq("user_id", userId).order("date", { ascending: true }),
-        supabase
-          .from("athlete_acwr_daily")
-          .select("user_id,date,daily_load,acute_7d,chronic_28d,chronic_load,acwr,days_of_data,updated_at")
-          .eq("user_id", userId)
-          .order("date", { ascending: true }),
-      ]);
+    const rows = (data ?? []) as any[];
 
-      if (trainingRes.error) throw trainingRes.error;
-      if (weightRes.error) throw weightRes.error;
-      if (acwrRes.error) throw acwrRes.error;
+    const mapped: ACWRPoint[] = rows.map((r) => {
+      const acwr = toNum(r.acwr);
+      return {
+        date: String(r.date),
+        acwr,
+        daysOfData: toNum(r.days_of_data),
+        acuteLoad: toNum(r.acute_7d),
+        chronicLoad: toNum(r.chronic_load),
+        dailyLoad: toNum(r.daily_load),
+        riskLevel: calcRiskLevel(acwr),
+      };
+    });
 
-      setTrainingRecords((trainingRes.data || []) as TrainingRecord[]);
-      setWeightRecords((weightRes.data || []) as WeightRecord[]);
-      setAcwrDaily((acwrRes.data || []) as ACWRDailyRow[]);
+    return mapped;
+  }, [userId]);
 
-      if (DEBUG_FETCH) {
-        console.log("[useTrainingData] fetched counts", {
-          training: trainingRes.data?.length ?? 0,
-          weight: weightRes.data?.length ?? 0,
-          acwrDaily: acwrRes.data?.length ?? 0,
-          acwrSample: (acwrRes.data ?? []).slice(-3),
-        });
-      }
-    } catch (error) {
-      console.error("[useTrainingData] Error fetching data:", error);
-      setTrainingRecords([]);
-      setWeightRecords([]);
-      setAcwrDaily([]);
-      lastFetchKeyRef.current = null;
-    } finally {
-      inFlightRef.current = false;
-      setLoading(false);
-    }
-  },
-  [userId, DEBUG_FETCH, trainingRecords.length]
-);
-
+  // ✅ 初期ロード：ACWRは daily を優先、取れなければ training_records から生成
   useEffect(() => {
-    if (!userId) return;
-    fetchAll();
-  }, [userId, fetchAll]);
+    let cancelled = false;
 
-  const checkExistingRecord = useCallback(
-    async (date: string): Promise<TrainingRecord | null> => {
-      const ymd = toYMD(date);
-      if (!ymd) return null;
+    (async () => {
+      if (!userId) return;
+      setLoading(true);
 
-      if (DATE_MODE === "date") {
-        const { data, error } = await supabase
-          .from("training_records")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("date", ymd)
-          .maybeSingle();
+      try {
+        const training = await fetchTrainingRecords();
 
-        if (error) throw error;
-        return data as TrainingRecord | null;
+        // ① まず daily を読む
+        const daily = await fetchAcwrDaily();
+
+        if (cancelled) return;
+
+        if (daily.length > 0) {
+          setAcwrData(daily);
+        } else {
+          // ② daily が空ならフォールバック計算
+          const fallback = buildAcwrFromTrainingRecords(training ?? []);
+          setAcwrData(fallback);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("[useTrainingData] load error", e);
+        setRecords([]);
+        setAcwrData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    })();
 
-      const { startISO, endISO } = jstDayRangeISO(ymd);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, fetchTrainingRecords, fetchAcwrDaily]);
 
+  // =========================
+  // ✅ CRUD
+  // =========================
+  const checkExistingRecord = useCallback(
+    async (date: string) => {
       const { data, error } = await supabase
         .from("training_records")
-        .select("*")
+        .select("id,user_id,date,rpe,duration_min,arrow_score,signal_score,created_at")
         .eq("user_id", userId)
-        .gte("date", startISO)
-        .lte("date", endISO)
-        .order("date", { ascending: false })
-        .limit(1)
+        .eq("date", date)
         .maybeSingle();
 
       if (error) throw error;
-      return data as TrainingRecord | null;
+      return (data as TrainingRecordRow) ?? null;
     },
     [userId]
   );
 
   const addTrainingRecord = useCallback(
-    async (recordData: TrainingUpsertPayload) => {
-      const ymd = toYMD(recordData.date);
-      if (!ymd) throw new Error("Invalid date");
-
-      const dbDate = toDbDateValue(recordData.date);
-
-      const { data, error } = await supabase
-        .from("training_records")
-        .insert([
-          {
-            user_id: userId,
-            date: dbDate,
-            rpe: recordData.rpe,
-            duration_min: recordData.duration_min,
-            arrow_score: recordData.arrow_score,
-            signal_score: recordData.signal_score,
-          },
-        ])
-        .select()
-        .single();
+    async (payload: Omit<TrainingRecordRow, "id" | "user_id"> & { rpe: number; duration_min: number; date: string }) => {
+      const { error } = await supabase.from("training_records").insert({
+        user_id: userId,
+        date: payload.date,
+        rpe: payload.rpe,
+        duration_min: payload.duration_min,
+        arrow_score: (payload as any).arrow_score ?? null,
+        signal_score: (payload as any).signal_score ?? null,
+      });
 
       if (error) throw error;
 
-      setTrainingRecords((prev) => upsertLocalTrainingRecord(prev, data as TrainingRecord));
-
-      await safeLogEvent("training_completed", {
-        date: ymd,
-        rpe: recordData.rpe,
-        duration_min: recordData.duration_min,
-        arrow_score: recordData.arrow_score,
-        signal_score: recordData.signal_score,
-        overwrite: false,
-      });
-
-      // ✅ ACWRはDBの refresh 関数で更新される想定。必要ならここで fetchAll() して追従。
-      await fetchAll(true);
-
-      return data as TrainingRecord;
+      // 再ロード（ACWRも再計算/再取得）
+      const training = await fetchTrainingRecords();
+      const daily = await fetchAcwrDaily();
+      setAcwrData(daily.length > 0 ? daily : buildAcwrFromTrainingRecords(training ?? []));
     },
-    [userId, safeLogEvent]
+    [userId, fetchTrainingRecords, fetchAcwrDaily]
   );
 
   const updateTrainingRecord = useCallback(
-    async (
-      recordId: string,
-      recordData: Partial<Omit<TrainingUpsertPayload, "date">> & { date?: string }
-    ) => {
-      const ymd = recordData.date ? toYMD(recordData.date) : null;
-      const dbDate = recordData.date ? toDbDateValue(recordData.date) : null;
-
-      const updatePayload: Record<string, any> = {
-        ...(recordData.rpe !== undefined ? { rpe: recordData.rpe } : {}),
-        ...(recordData.duration_min !== undefined ? { duration_min: recordData.duration_min } : {}),
-        ...(recordData.arrow_score !== undefined ? { arrow_score: recordData.arrow_score } : {}),
-        ...(recordData.signal_score !== undefined ? { signal_score: recordData.signal_score } : {}),
-        ...(dbDate ? { date: dbDate } : {}),
-      };
-
-      const { data, error } = await supabase
-        .from("training_records")
-        .update(updatePayload)
-        .eq("id", recordId)
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setTrainingRecords((prev) => upsertLocalTrainingRecord(prev, data as TrainingRecord));
-
-      await safeLogEvent("training_completed", {
-        date: ymd ?? undefined,
-        rpe: recordData.rpe ?? (data as any)?.rpe,
-        duration_min: recordData.duration_min ?? (data as any)?.duration_min,
-        arrow_score: recordData.arrow_score ?? (data as any)?.arrow_score,
-        signal_score: recordData.signal_score ?? (data as any)?.signal_score,
-        overwrite: true,
-      });
-
-      await fetchAll(true);
-
-      return data as TrainingRecord;
-    },
-    [userId, safeLogEvent]
-  );
-
-  const deleteTrainingRecord = useCallback(
-    async (recordId: string) => {
+    async (id: string, payload: Partial<TrainingRecordRow>) => {
       const { error } = await supabase
         .from("training_records")
-        .delete()
-        .eq("id", recordId)
+        .update({
+          rpe: payload.rpe ?? undefined,
+          duration_min: payload.duration_min ?? undefined,
+          date: payload.date ?? undefined,
+          arrow_score: (payload as any).arrow_score ?? undefined,
+          signal_score: (payload as any).signal_score ?? undefined,
+        })
+        .eq("id", id)
         .eq("user_id", userId);
 
       if (error) throw error;
 
-      setTrainingRecords((prev) => removeLocalTrainingRecord(prev, recordId));
-
-      await fetchAll(true);
+      const training = await fetchTrainingRecords();
+      const daily = await fetchAcwrDaily();
+      setAcwrData(daily.length > 0 ? daily : buildAcwrFromTrainingRecords(training ?? []));
     },
-    [userId]
+    [userId, fetchTrainingRecords, fetchAcwrDaily]
   );
 
-  const acwrData = (acwrDaily ?? [])
-  .map((r: any) => {
-    const acwrNum = Number(r?.acwr);
-    const acuteNum = Number(r?.acute_7d);
-    const chronicNum = Number(r?.chronic_28d);
+  const deleteTrainingRecord = useCallback(
+    async (id: string) => {
+      const { error } = await supabase
+        .from("training_records")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId);
 
-    return {
-      date: String(r?.date ?? ""),
-      acwr: Number.isFinite(acwrNum) ? acwrNum : null,
-      acuteLoad: Number.isFinite(acuteNum) ? acuteNum : null,
-      chronicLoad: Number.isFinite(chronicNum) ? chronicNum : null,
-      riskLevel: "unknown", // ← もし数値から判定する関数があるならここで計算
-    };
-  })
-  .filter((x) => !!x.date)
-  .sort(sortByDateAsc);
+      if (error) throw error;
+
+      const training = await fetchTrainingRecords();
+      const daily = await fetchAcwrDaily();
+      setAcwrData(daily.length > 0 ? daily : buildAcwrFromTrainingRecords(training ?? []));
+    },
+    [userId, fetchTrainingRecords, fetchAcwrDaily]
+  );
 
   return {
-  records: trainingRecords,
-  weightRecords,
-  acwrDaily,
-  acwrData,   // ✅ 追加
-  loading,
-
-  fetchAll,
-  checkExistingRecord,
-  addTrainingRecord,
-  updateTrainingRecord,
-  deleteTrainingRecord,
-};
+    records,
+    loading,
+    acwrData,
+    checkExistingRecord,
+    addTrainingRecord,
+    updateTrainingRecord,
+    deleteTrainingRecord,
+  };
 }
