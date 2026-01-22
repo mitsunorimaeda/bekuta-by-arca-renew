@@ -4,6 +4,7 @@ import { X, Activity, Scale, BarChart2 } from 'lucide-react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
+import { useWeightData } from '../hooks/useWeightData';
 import {
   ResponsiveContainer,
   Line,
@@ -92,10 +93,65 @@ function toNum(v: any): number | null {
 }
 
 export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: AthleteDetailModalProps) {
-  const { records, weightRecords, acwrDaily, loading } = useTrainingData(athlete.id);
+  const td = useTrainingData(athlete.id);
+  const wd = useWeightData(athlete.id);
+
+  // ✅ undefined でも落ちないように正規化
+  const records = Array.isArray(td?.records) ? td.records : [];
+  const weightRecords = Array.isArray(wd?.records) ? wd.records : [];
+  const loading = !!td?.loading||!!wd?.loading;
+
+  const acwrDaily = useMemo(() => {
+    // records から日次 load（rpe×duration）を作る
+    const loadByDay: Record<string, number> = {};
+    for (const r of records as any[]) {
+      const ymd = toYMD(r?.date);
+      if (!ymd) continue;
+  
+      const rpe = toNum(r?.rpe ?? r?.session_rpe) ?? 0;
+      const dur = toNum(r?.duration_min ?? r?.duration_minutes ?? r?.duration) ?? 0;
+  
+      const load = rpe * dur;
+      loadByDay[ymd] = (loadByDay[ymd] ?? 0) + load;
+    }
+  
+    // JSTの今日を基準に直近28日（0埋め）を生成
+    const base = new Date(); // ローカルでもOK（ymd化でJSTに寄せる）
+    const ymdOf = (dt: Date) =>
+      dt.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }); // YYYY-MM-DD
+  
+    const dates: string[] = [];
+    const loads: number[] = [];
+  
+    for (let i = 27; i >= 0; i--) {
+      const dt = new Date(base);
+      dt.setDate(dt.getDate() - i);
+      const ymd = ymdOf(dt);
+      dates.push(ymd);
+      loads.push(loadByDay[ymd] ?? 0);
+    }
+  
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  
+    // acute=直近7日合計、chronic=直近28日合計÷4 → ACWR=acute/chronic
+    return dates.map((date, i) => {
+      const acute7 = sum(loads.slice(Math.max(0, i - 6), i + 1));
+      const chronic28 = sum(loads.slice(Math.max(0, i - 27), i + 1));
+      const chronicAvg = chronic28 / 4;
+  
+      const acwr = chronicAvg > 0 && acute7 > 0 ? acute7 / chronicAvg : null;
+  
+      return {
+        date,
+        daily_load: loads[i],
+        acwr,
+      };
+    });
+  }, [records]);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   // ===== DBのACWR（最新 / 前回） =====
+  
   const latestRow = acwrDaily.length > 0 ? acwrDaily[acwrDaily.length - 1] : null;
   const prevRow = acwrDaily.length >= 2 ? acwrDaily[acwrDaily.length - 2] : null;
 
