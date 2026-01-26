@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Sword, Activity, Youtube, CheckCircle2, AlertCircle, 
-  Trophy, ChevronLeft, Star, Zap, Play, Info
+  Trophy, ChevronLeft, Star, Zap, Play, Info, Lock, ChevronRight,
+  Stethoscope, Flame
 } from 'lucide-react';
 
 interface RehabQuestViewProps {
@@ -12,21 +13,33 @@ interface RehabQuestViewProps {
 
 export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewProps) {
   const [quest, setQuest] = useState<any>(null);
+  const [injury, setInjury] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [latestLog, setLatestLog] = useState<any>(null);
   const [rewardMsg, setRewardMsg] = useState<{show: boolean, text: string}>({show: false, text: ''});
+  const [selectedNrs, setSelectedNrs] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchQuestData();
+    fetchData();
   }, [userId]);
 
-  const fetchQuestData = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
 
-      // 1. アクティブな処方を取得
+      // 1. アクティブな怪我情報を取得
+      const { data: injuryData } = await supabase
+        .schema('rehab')
+        .from('injuries')
+        .select('*')
+        .eq('athlete_user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
+      setInjury(injuryData);
+
+      // 2. アクティブな処方を取得
       const { data: prescription } = await supabase
         .schema('rehab')
         .from('prescriptions')
@@ -36,11 +49,8 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         .maybeSingle();
 
       if (prescription) {
-        // 現在のフェーズのアイテムのみ抽出
-        const todayItems = prescription.items.filter((i: any) => i.phase === prescription.current_phase);
-        setQuest({ ...prescription, items: todayItems });
-
-        // 今日のログ（実施状況）を取得
+        setQuest(prescription);
+        // 今日のログを取得
         const { data: log } = await supabase
           .schema('rehab')
           .from('prescription_daily_logs')
@@ -49,6 +59,7 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
           .eq('log_date', today)
           .maybeSingle();
         setLatestLog(log);
+        if (log) setSelectedNrs(log.pain_level);
       }
     } catch (e) {
       console.error(e);
@@ -57,12 +68,18 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     }
   };
 
-  // 修行（メニュー）のトグル処理
-  const toggleExercise = async (itemId: string) => {
+  // ★ 3段階トグルロジック
+  const cycleExerciseStatus = async (itemId: string) => {
     if (!quest) return;
     const today = new Date().toISOString().split('T')[0];
     const currentResults = latestLog?.item_results || {};
-    const nextStatus = currentResults[itemId] === 'done' ? 'none' : 'done';
+    const status = currentResults[itemId] || 'none';
+
+    let nextStatus: 'none' | 'done' | 'pain';
+    if (status === 'none') nextStatus = 'done';
+    else if (status === 'done') nextStatus = 'pain';
+    else nextStatus = 'none';
+
     const newResults = { ...currentResults, [itemId]: nextStatus };
 
     try {
@@ -71,45 +88,46 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         athlete_user_id: userId,
         log_date: today,
         item_results: newResults,
-        completed_items: Object.keys(newResults).filter(k => newResults[k] === 'done'),
-        pain_level: latestLog?.pain_level || 0
+        completed_items: Object.keys(newResults).filter(k => newResults[k] !== 'none'),
+        pain_level: selectedNrs || 0
       }, { onConflict: 'prescription_id, log_date' });
       
       setLatestLog((prev: any) => ({ ...prev, item_results: newResults }));
     } catch (e: any) {
-      alert(e.message);
+      console.error(e.message);
     }
   };
 
-  // NRS回答と報酬獲得処理
-  const submitDailyReport = async (nrs: number) => {
-    if (!quest) return;
+  // ★ 修行完了（NRS保存 & 報酬）
+  const finalizeRehab = async () => {
+    if (!quest || selectedNrs === null) {
+      alert("今日の痛みレベルを選択してください");
+      return;
+    }
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      // 1. NRSをログに保存
       await supabase.schema('rehab').from('prescription_daily_logs').upsert({
         prescription_id: quest.id,
         athlete_user_id: userId,
         log_date: today,
-        pain_level: nrs,
+        pain_level: selectedNrs,
         item_results: latestLog?.item_results || {}
       }, { onConflict: 'prescription_id, log_date' });
 
-      // 2. 報酬処理 (RPC呼び出し)
       const { data: result } = await supabase.rpc('reward_rehab_action', {
         p_user_id: userId,
         p_action_type: 'nrs_log'
       });
 
-      // 3. 演出表示
       setRewardMsg({ 
         show: true, 
-        text: result?.badge_unlocked ? "バッジ獲得！ ＋10pt" : "報告完了！ ＋10pt" 
+        text: result?.badge_unlocked ? "修行完了！バッジ獲得！ ＋10pt" : "修行完了！ ＋10pt" 
       });
-      setTimeout(() => setRewardMsg({show: false, text: ''}), 3000);
-      
-      fetchQuestData();
+      setTimeout(() => {
+        setRewardMsg({show: false, text: ''});
+        onBackHome();
+      }, 2500);
     } catch (e: any) {
       alert(e.message);
     }
@@ -121,87 +139,57 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
-  if (loading) return <div className="p-10 text-center text-indigo-400 font-black animate-pulse">LOADING QUEST...</div>;
+  if (loading) return <div className="p-10 text-center text-indigo-400 font-black animate-pulse">修行の準備中...</div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-      {/* ナビゲーション */}
-      <button onClick={onBackHome} className="flex items-center text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors">
-        <ChevronLeft size={16} className="mr-1" /> Back to Home
-      </button>
-
-      {/* 報酬獲得ポップアップ */}
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+      
+      {/* 報酬演出 */}
       {rewardMsg.show && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white px-6 py-3 rounded-full font-black shadow-2xl animate-bounce border-2 border-white">
-          ✨ {rewardMsg.text}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+          <div className="bg-indigo-600 p-8 rounded-[3rem] text-center shadow-2xl border-4 border-indigo-400 animate-bounce">
+            <Trophy size={64} className="mx-auto text-yellow-400 mb-4" />
+            <h2 className="text-2xl font-black text-white">{rewardMsg.text}</h2>
+          </div>
         </div>
       )}
 
-      {/* ステータスヘッダー */}
-      <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2rem] p-6 text-white shadow-xl relative overflow-hidden">
-        <Zap className="absolute -right-4 -bottom-4 w-32 h-32 text-white/10 rotate-12" />
-        <div className="relative z-10">
-          <div className="flex justify-between items-start mb-2">
-            <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Active Recovery</span>
-            <Trophy size={20} className="text-yellow-300" />
+      <button onClick={onBackHome} className="flex items-center text-slate-500 text-xs font-black uppercase tracking-widest hover:text-indigo-400 transition-colors">
+        <ChevronLeft size={16} className="mr-1" /> ホームに戻る
+      </button>
+
+      {/* 1. 怪我診断情報セクション */}
+      <section className="bg-slate-800/50 rounded-[2rem] p-6 border border-slate-700">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-red-500/20 rounded-xl text-red-500"><Stethoscope size={20}/></div>
+          <h3 className="font-black text-sm uppercase tracking-tighter text-slate-300">Current Medical Status</h3>
+        </div>
+        <div className="space-y-2">
+          <div className="text-xl font-black text-white">{injury?.diagnosis || '診断名未設定'}</div>
+          <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <span>受傷日: {injury?.injury_date}</span>
+            <span className="text-indigo-400">● 治療継続中</span>
           </div>
-          <h2 className="text-3xl font-black italic tracking-tighter uppercase mb-1">Phase {quest?.current_phase || 1}</h2>
-          <p className="text-white/70 text-xs font-bold">{quest?.title || '修行メニューが未設定です'}</p>
         </div>
-      </div>
+      </section>
 
-      {/* 修行リスト */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-          <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-            <Sword size={14} /> Today's Missions
-          </h3>
-          <span className="text-[10px] font-bold text-slate-500">{quest?.items.length || 0} ITEMS</span>
+      {/* 2. フェーズ・ロードマップ演出 */}
+      <section className="px-2">
+        <div className="flex items-center gap-2 mb-4 text-xs font-black text-slate-500 uppercase tracking-widest">
+          <Zap size={14} className="text-yellow-500" /> Rehab Roadmap
         </div>
-
-        <div className="space-y-3">
-          {quest?.items.map((item: any) => {
-            const isDone = latestLog?.item_results?.[item.id] === 'done';
-            const ytId = item.video_url ? getYoutubeId(item.video_url) : null;
+        <div className="flex justify-between items-center gap-1">
+          {[1, 2, 3, 4, 5].map((p) => {
+            const isCurrent = quest?.current_phase === p;
+            const isCleared = quest?.current_phase > p;
+            const isLocked = quest?.current_phase < p;
 
             return (
-              <div key={item.id} className={`group transition-all duration-300 rounded-[1.5rem] border ${isDone ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700'} shadow-sm`}>
-                <div className="p-5">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1" onClick={() => toggleExercise(item.id)}>
-                      <div className="flex items-center gap-2 mb-1">
-                        {isDone ? <CheckCircle2 className="text-indigo-400" size={18} /> : <div className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 dark:border-slate-600" />}
-                        <h4 className={`font-black text-sm transition-colors ${isDone ? 'text-indigo-300 line-through opacity-60' : 'text-slate-800 dark:text-white'}`}>
-                          {item.name}
-                        </h4>
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter pl-6">
-                        {item.quantity} {item.sets && `× ${item.sets} Sets`} / +{item.xp || 10} XP
-                      </p>
-                    </div>
-                    
-                    {ytId && (
-                      <button 
-                        onClick={() => setActiveVideo(activeVideo === item.id ? null : item.id)}
-                        className={`p-2 rounded-xl transition-all ${activeVideo === item.id ? 'bg-red-500 text-white' : 'bg-red-50 dark:bg-red-900/20 text-red-500'}`}
-                      >
-                        <Play size={16} fill={activeVideo === item.id ? 'white' : 'none'} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* YouTube Embed */}
-                  {activeVideo === item.id && ytId && (
-                    <div className="mt-4 animate-in zoom-in-95 duration-300">
-                      <div className="aspect-video rounded-xl overflow-hidden bg-black border border-slate-700">
-                        <iframe 
-                          width="100%" height="100%" 
-                          src={`https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1`} 
-                          frameBorder="0" allowFullScreen
-                        />
-                      </div>
-                    </div>
-                  )}
+              <div key={p} className="flex-1 flex flex-col items-center gap-2">
+                <div className={`w-full h-1.5 rounded-full ${isCleared ? 'bg-indigo-500' : isCurrent ? 'bg-indigo-500 animate-pulse' : 'bg-slate-700'}`} />
+                <div className={`relative p-3 rounded-2xl flex items-center justify-center transition-all ${isCurrent ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 scale-110' : isCleared ? 'bg-indigo-900/40 text-indigo-400' : 'bg-slate-800 text-slate-600'}`}>
+                  {isLocked ? <Lock size={14} /> : <span className="text-xs font-black italic">P{p}</span>}
+                  {isCurrent && <Star size={10} className="absolute -top-1 -right-1 text-yellow-400 fill-yellow-400" />}
                 </div>
               </div>
             );
@@ -209,37 +197,119 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         </div>
       </section>
 
-      {/* 本日の体調報告セクション */}
-      <section className="bg-slate-800 dark:bg-slate-900 rounded-[2rem] p-8 border-2 border-dashed border-indigo-500/30 text-center">
+      {/* 3. 修行リスト */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+            <Sword size={14} className="text-indigo-500" /> Today's Missions
+          </h3>
+        </div>
+
+        <div className="space-y-3">
+          {quest?.items?.filter((i:any) => i.phase === quest.current_phase).map((item: any) => {
+            const status = latestLog?.item_results?.[item.id] || 'none';
+            const ytId = item.video_url ? getYoutubeId(item.video_url) : null;
+
+            return (
+              <div key={item.id} className={`group rounded-[1.8rem] border-2 transition-all duration-300 ${
+                status === 'done' ? 'bg-green-500/10 border-green-500/50' : 
+                status === 'pain' ? 'bg-orange-500/10 border-orange-500/50' : 
+                'bg-slate-800 border-slate-700'
+              }`}>
+                <div className="p-5 flex items-center gap-4">
+                  <button 
+                    onClick={() => cycleExerciseStatus(item.id)}
+                    className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-90 ${
+                      status === 'done' ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 
+                      status === 'pain' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 
+                      'bg-slate-700 text-slate-500 hover:bg-slate-600'
+                    }`}
+                  >
+                    {status === 'done' && <CheckCircle2 size={24} />}
+                    {status === 'pain' && <AlertCircle size={24} />}
+                    {status === 'none' && <Sword size={24} />}
+                    <span className="text-[8px] font-black uppercase mt-1">
+                      {status === 'done' ? 'CLEAR' : status === 'pain' ? 'PAIN' : 'GO'}
+                    </span>
+                  </button>
+
+                  <div className="flex-1" onClick={() => cycleExerciseStatus(item.id)}>
+                    <h4 className={`font-black text-base ${status !== 'none' ? 'text-white' : 'text-slate-300'}`}>{item.name}</h4>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                      {item.quantity} {item.sets && `× ${item.sets} Sets`} / <span className="text-indigo-400">+{item.xp || 10} XP</span>
+                    </p>
+                  </div>
+
+                  {ytId && (
+                    <button 
+                      onClick={() => setActiveVideo(activeVideo === item.id ? null : item.id)}
+                      className={`p-3 rounded-2xl transition-all ${activeVideo === item.id ? 'bg-red-500 text-white' : 'bg-slate-700 text-red-500'}`}
+                    >
+                      <Play size={18} fill={activeVideo === item.id ? 'white' : 'none'} />
+                    </button>
+                  )}
+                </div>
+
+                {activeVideo === item.id && ytId && (
+                  <div className="px-5 pb-5 animate-in zoom-in-95 duration-300">
+                    <div className="aspect-video rounded-2xl overflow-hidden bg-black border border-slate-700">
+                      <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1`} frameBorder="0" allowFullScreen />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 4. 本日の体調報告 & 修行完了 */}
+      <section className="bg-gradient-to-b from-slate-800 to-slate-900 rounded-[2.5rem] p-8 border-2 border-indigo-500/30 text-center">
         <div className="bg-indigo-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
           <Activity className="text-indigo-400" size={32} />
         </div>
-        <h3 className="text-lg font-black text-white mb-1 uppercase tracking-tight">Condition Report</h3>
-        <p className="text-slate-400 text-xs font-bold mb-6">修行後の痛みを報告して 10pt 獲得しよう</p>
+        <h3 className="text-lg font-black text-white mb-1 uppercase">Physical Report</h3>
+        <p className="text-slate-400 text-xs font-bold mb-8">修行を終えて、現在の痛みを選択してください</p>
         
-        <div className="grid grid-cols-6 gap-2 max-w-xs mx-auto mb-6">
-          {[0, 2, 4, 6, 8, 10].map(val => (
+        {/* 0-10 フルタップ */}
+        <div className="grid grid-cols-6 gap-2 mb-10">
+          {[...Array(11).keys()].map(val => (
             <button 
               key={val}
-              onClick={() => submitDailyReport(val)}
-              className={`h-10 rounded-xl font-black text-xs transition-all active:scale-90 ${latestLog?.pain_level === val ? 'bg-indigo-600 text-white ring-2 ring-white/20' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+              onClick={() => setSelectedNrs(val)}
+              className={`h-12 rounded-xl font-black text-sm transition-all active:scale-90 ${selectedNrs === val ? 'bg-indigo-600 text-white ring-4 ring-indigo-500/20 scale-110 z-10' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
             >
               {val}
             </button>
           ))}
+          <div className="flex items-center justify-center text-[10px] font-black text-slate-600 uppercase">NRS</div>
         </div>
         
-        <div className="flex items-center justify-center gap-2 text-[9px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-          <Info size={12} /> 0: Good / 10: Heavy Pain
-        </div>
+        <button 
+          onClick={finalizeRehab}
+          disabled={selectedNrs === null}
+          className={`w-full py-5 rounded-[1.5rem] font-black text-sm shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${
+            selectedNrs !== null 
+            ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-indigo-500/40' 
+            : 'bg-slate-700 text-slate-500 grayscale opacity-50'
+          }`}
+        >
+          <Flame size={20} />
+          今日の修行を完了して報告する
+        </button>
       </section>
 
-      {/* 豆知識カード */}
-      <div className="bg-indigo-900/10 border border-indigo-500/20 rounded-2xl p-4 flex gap-4">
-        <Star className="text-indigo-400 flex-shrink-0" size={20} />
-        <p className="text-xs text-indigo-300/80 font-bold leading-relaxed italic">
-          「焦らず、一歩ずつ進むことが最強への近道だ。痛みがある時は無理せずトレーナーに相談しよう。」
-        </p>
+      {/* 応援メッセージ */}
+      <div className="bg-indigo-900/10 border border-indigo-500/20 rounded-3xl p-6 flex gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+          <Info size={24} />
+        </div>
+        <div>
+          <h5 className="text-indigo-400 text-[10px] font-black uppercase mb-1">Advice from Master</h5>
+          <p className="text-xs text-indigo-200/80 font-bold leading-relaxed italic">
+            「痛みは身体からのメッセージだ。オレンジのボタンが増えた時は、迷わずトレーナーに相談するんだぞ。完治まであと一息だ！」
+          </p>
+        </div>
       </div>
     </div>
   );
