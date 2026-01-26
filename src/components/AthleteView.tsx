@@ -55,10 +55,8 @@ import { SentryErrorButton } from "./SentryErrorButton";
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
 
-
-
-
-
+// ★ 追加（リハビリ用ビュー）
+import RehabQuestView from './RehabQuestView';
 
 import {
   Activity,
@@ -81,15 +79,13 @@ import {
   Building2,
   Droplets,
   Flame,
+  Sword, // ★ 追加
+  ChevronRight // ★ 追加
 } from 'lucide-react';
 
 import { useDarkMode } from '../hooks/useDarkMode';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
-
-
-
-
 
 const AthleteNutritionDashboardView = lazy(() =>
   import("./views/AthleteNutritionDashboardView").then((m) => ({
@@ -108,8 +104,6 @@ const AthletePerformanceView = lazy(() =>
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type DailyEnergySnapshotRow = Database['public']['Tables']['daily_energy_snapshots']['Row'];
-
-
 
 type AthleteViewProps = {
   user: UserProfile;
@@ -179,10 +173,6 @@ export function AthleteView({
     });
   }, [user.id, user.name, (user as any)?.email, user.role, user.gender, (user as any)?.team_id]);
 
-  
-
-  
-
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     if (renderLoggedRef.current) return;
@@ -191,12 +181,23 @@ export function AthleteView({
     renderLoggedRef.current = true;
   }, []);
 
-  
-
-
   const today = useMemo(() => getTodayJSTString(), []);
 
-
+  // ★ 追加：リハビリステータスチェック
+  const [isRehabilitating, setIsRehabilitating] = useState(false);
+  useEffect(() => {
+    async function checkInjury() {
+      const { data } = await supabase
+        .schema('rehab')
+        .from('injuries')
+        .select('id')
+        .eq('athlete_user_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      setIsRehabilitating(!!data);
+    }
+    checkInjury();
+  }, [user.id]);
 
   const [todayPhase, setTodayPhase] = useState<TeamPhaseRow | null>(null);
   const [nextPhases, setNextPhases] = useState<TeamPhaseRow[]>([]);
@@ -332,7 +333,8 @@ export function AthleteView({
     | 'cycle'
     | 'gamification'
     | 'settings'
-    | 'messages';
+    | 'messages'
+    | 'rehab'; // ★ 追加
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('unified');
   const canUseFTT = !!(user as any).ftt_enabled;
@@ -384,9 +386,10 @@ export function AthleteView({
     (tab: ActiveTab) => {
       if (tab === 'ftt' && !canUseFTT) return;
       if (tab === 'nutrition' && !canUseNutrition) return;
+      if (tab === 'rehab' && !isRehabilitating) return; // ★ ガード追加
       setActiveTab(tab);
     },
-    [canUseFTT, canUseNutrition]
+    [canUseFTT, canUseNutrition, isRehabilitating]
   );
   
   useEffect(() => {
@@ -404,6 +407,13 @@ export function AthleteView({
       setActiveTab('unified');
     }
   }, [canUseNutrition, activeTab])
+
+  // ★ リハビリガード：activeな怪我がないのにリハビタブにいたら戻す
+  useEffect(() => {
+    if (!isRehabilitating && activeTab === 'rehab') {
+      setActiveTab('unified');
+    }
+  }, [isRehabilitating, activeTab]);
 
 
   const [celebrationData, setCelebrationData] = useState<{
@@ -468,7 +478,7 @@ export function AthleteView({
   }, [latestACWR?.acwr]);
 
   const currentACWR = latestACWRValue; // 今はこれでOK（=最新のACWR）
- 
+  
 
 
 
@@ -819,7 +829,7 @@ export function AthleteView({
 
   const recordDate = today; // ✅ subtitle用（recordDate未定義エラー回避）
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
- 
+  
 
   // 📷 ファイル選択用（撮影 / ライブラリ）
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
@@ -932,6 +942,8 @@ export function AthleteView({
               ? '栄養：AI下書き→あなたが確定'
               : activeTab === 'gamification'
               ? 'ストリーク、バッジ、目標を管理'
+              : activeTab === 'rehab' // ★ 追加
+              ? '修行（リハビリ）クエスト' // ★ 追加
               : '設定とお知らせ'}
           </p>
         </div>
@@ -962,6 +974,24 @@ export function AthleteView({
                 <LayoutDashboard className="w-4 h-4" />
                 <span className="text-sm font-medium">ホーム</span>
               </button>
+
+              {/* ★ 追加：修行（リハビリ） */}
+              {isRehabilitating && (
+                <button type="button"
+                  onClick={() => {
+                    setActiveTab('rehab');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                    activeTab === 'rehab'
+                      ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-bold italic'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Sword className="w-4 h-4 text-indigo-500" />
+                  <span className="text-sm font-medium">修行（リハビリ）</span>
+                </button>
+              )}
 
               {/* 体重管理 */}
               <button type="button"
@@ -1199,6 +1229,27 @@ export function AthleteView({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
         {activeTab === 'unified' ? (
           <>
+      {/* ★ 追加：リハビリ開放カード（怪我人のみ最上部） */}
+      {isRehabilitating && (
+        <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <button 
+            onClick={() => setActiveTab('rehab')}
+            className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200 dark:shadow-none flex items-center justify-between group active:scale-[0.98] transition-all"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm group-hover:rotate-12 transition-transform">
+                <Sword size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-lg font-black italic tracking-tight uppercase">Special Quest Unlocked</h3>
+                <p className="text-xs text-white/80 font-bold">復帰への修行（リハビリ）を開始しよう</p>
+              </div>
+            </div>
+            <ChevronRight size={24} className="opacity-50 group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      )}
+
       {/* ✅ チームフェーズ（薄め版：今日だけ表示） */}
       <div className="mb-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5 transition-colors">
@@ -1389,6 +1440,12 @@ export function AthleteView({
           </>
 
   
+        ) : activeTab === "rehab" ? (
+          /* ★ 追加：リハビリ用ビュー */
+          <Suspense fallback={<div className="flex items-center justify-center h-64 animate-pulse text-indigo-500 font-black">修行の準備中...</div>}>
+             <RehabQuestView userId={user.id} onBackHome={() => setActiveTab('unified')} />
+          </Suspense>
+
         ) : activeTab === "nutrition" ? (
           canUseNutrition ? (
             <Suspense
