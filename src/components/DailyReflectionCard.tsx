@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle, Plus, Trash2 } from 'lucide-react';
+import { Toast } from './Toast';
+
 
 type ActionItem = {
   text: string;
@@ -136,6 +138,12 @@ export function DailyReflectionCard({ userId }: DailyReflectionCardProps) {
 
   const [savingTodo, setSavingTodo] = useState(false);
   const [savingReflection, setSavingReflection] = useState(false);
+
+  const [toastId, setToastId] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
+  const [toastMsg, setToastMsg] = useState('');
+  
+
 
   // ✅ 初期ロード：今日・昨日だけ
   useEffect(() => {
@@ -343,72 +351,76 @@ export function DailyReflectionCard({ userId }: DailyReflectionCardProps) {
     setCauseTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
-  // 今日の振り返り保存（明日の行動目標＝複数化して保存）
   const saveTodayReflection = async () => {
     if (!userId) return;
-
+  
     setSavingReflection(true);
     try {
       const cleanedActions = tomorrowActions
         .map((a) => ({ ...a, text: (a.text ?? '').trim() }))
         .filter((a) => a.text.length > 0);
-
-      const payload = {
-        user_id: userId,
-        reflection_date: today,
-        did: did.trim(),
-        didnt: didnt.trim(),
-        cause_tags: causeTags,
-        free_note: freeNote.trim(),
-        next_action_items: cleanedActions,
-        next_action: cleanedActions[0]?.text ?? null,
-        metadata: { source: 'daily_reflection_card' },
-        updated_at: new Date().toISOString(),
-      };
-
-      if (todayRow?.id) {
-        const { error } = await supabase.from('reflections').update(payload).eq('id', todayRow.id);
-        if (error) throw error;
-
-        setTodayRow((prev) => (prev ? ({ ...prev, ...payload } as any) : prev));
-        setWeekRows((prev) =>
-          prev.map((r) => (r.id === todayRow.id ? ({ ...r, ...payload } as any) : r))
-        );
-      } else {
-        const { data, error } = await supabase
-          .from('reflections')
-          .insert(payload)
-          .select('*')
-          .single();
-
-        if (error) throw error;
-
-        setTodayRow(data as any);
-
-        if (today >= selectedWeekStart && today <= selectedWeekEnd) {
-          setWeekRows((prev) => {
-            const minimal: any = {
-              id: data.id,
-              user_id: data.user_id,
-              reflection_date: data.reflection_date,
-              did: data.did,
-              didnt: data.didnt,
-              cause_tags: data.cause_tags ?? payload.cause_tags,
-              next_action_items: data.next_action_items ?? payload.next_action_items,
-            };
-            const filtered = prev.filter((r) => r.id !== minimal.id);
-            return [...filtered, minimal].sort((a, b) =>
-              a.reflection_date.localeCompare(b.reflection_date)
-            );
-          });
-        }
+  
+      const isFirstSaveToday = !todayRow?.id; // 画面上の判定（insert想定）
+  
+      const { data: reflectionId, error: rpcError } = await supabase.rpc('upsert_reflection', {
+        p_reflection_date: today,
+        p_did: did.trim() || null,
+        p_didnt: didnt.trim() || null,
+        p_cause_tags: causeTags ?? [],
+        p_next_action: cleanedActions[0]?.text ?? null,
+        p_free_note: freeNote.trim() || null,
+        p_metadata: { source: 'daily_reflection_card' },
+        p_next_action_items: cleanedActions, // ✅ 追加
+        p_award: true,
+        p_award_points: 5,
+      });
+  
+      if (rpcError) throw rpcError;
+  
+      // 最新行を取り直してstate反映（確実）
+      const { data: row, error: fetchError } = await supabase
+        .from('reflections')
+        .select('*')
+        .eq('id', reflectionId)
+        .single();
+  
+      if (fetchError) throw fetchError;
+  
+      setTodayRow(row as any);
+  
+      // 週表示更新（対象週なら更新 or 追加）
+      if (today >= selectedWeekStart && today <= selectedWeekEnd) {
+        setWeekRows((prev) => {
+          const minimal: any = {
+            id: row.id,
+            user_id: row.user_id,
+            reflection_date: row.reflection_date,
+            did: row.did,
+            didnt: row.didnt,
+            cause_tags: row.cause_tags ?? [],
+            next_action_items: row.next_action_items ?? [],
+          };
+          const filtered = prev.filter((r) => r.id !== minimal.id);
+          return [...filtered, minimal].sort((a, b) =>
+            a.reflection_date.localeCompare(b.reflection_date)
+          );
+        });
       }
+  
+      // ✅ Toast
+      setToastType('success');
+      setToastMsg(isFirstSaveToday ? '保存できました！ +5pt' : '保存できました！');
+      setToastId(String(Date.now()));
     } catch (e) {
       console.error('Failed to save reflection:', e);
+      setToastType('error');
+      setToastMsg('保存に失敗しました');
+      setToastId(String(Date.now()));
     } finally {
       setSavingReflection(false);
     }
   };
+  
 
   if (loading) {
     return (
@@ -722,6 +734,16 @@ export function DailyReflectionCard({ userId }: DailyReflectionCardProps) {
           {savingReflection ? '保存中…' : '今日の振り返りを保存'}
         </button>
       </div>
+      {toastId && (
+        <div className="fixed top-4 right-4 z-[200]">
+          <Toast
+            id={toastId}
+            message={toastMsg}
+            type={toastType}
+            onClose={() => setToastId(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
