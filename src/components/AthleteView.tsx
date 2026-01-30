@@ -1428,31 +1428,33 @@ export function AthleteView({
           </div>
         </div>
 
-        {showUnifiedHeavy ? (
-          <ConsolidatedOverviewDashboard
-            currentACWR={currentACWR}
-            acwrData={acwrData ?? []}
-            weightRecords={weightRecords}
-            sleepRecords={normalizedSleepRecords}
-            motivationRecords={motivationRecords}
-            trainingRecords={records}
-            menstrualCycles={menstrualCycles}
-            userGender={normalizedGenderFull}
-            onOpenDetailView={(section) => {
-              if (section === 'training') setActiveTab('overview');
-              else if (section === 'weight') setActiveTab('weight');
-              else if (section === 'conditioning') setActiveTab('conditioning');
-              else if (section === 'cycle') {
-                if (normalizedGenderBinary === 'female') setActiveTab('cycle');
-              }
-            }}
-            onQuickAdd={() => setShowUnifiedCheckIn(true)}
-          />
-        ) : (
-          <div className="mt-4">
-            <SkeletonBlock heightClass="h-48" />
-          </div>
-        )}
+
+        <div className="mt-4 min-h-[340px]">
+          {showUnifiedHeavy ? (
+            <ConsolidatedOverviewDashboard
+              currentACWR={currentACWR}
+              acwrData={acwrData ?? []}
+              weightRecords={weightRecords}
+              sleepRecords={normalizedSleepRecords}
+              motivationRecords={motivationRecords}
+              trainingRecords={records}
+              menstrualCycles={menstrualCycles}
+              userGender={normalizedGenderFull}
+              onOpenDetailView={(section) => {
+                if (section === 'training') setActiveTab('overview');
+                else if (section === 'weight') setActiveTab('weight');
+                else if (section === 'conditioning') setActiveTab('conditioning');
+                else if (section === 'cycle') {
+                  if (normalizedGenderBinary === 'female') setActiveTab('cycle');
+                }
+              }}
+              onQuickAdd={() => setShowUnifiedCheckIn(true)}
+            />
+          ) : (
+            <SkeletonBlock heightClass="h-[340px]" />
+          )}
+        </div>
+
 
 
 
@@ -1477,9 +1479,14 @@ export function AthleteView({
             </div>
           )}
 
-            <div className="mt-6">
-              {showUnifiedHeavy ? <DailyReflectionCard userId={user.id} /> : <SkeletonBlock heightClass="h-40" />}
-            </div>
+          <div className="mt-6 min-h-[260px]">
+            {showUnifiedHeavy ? (
+              <DailyReflectionCard userId={user.id} />
+            ) : (
+              <SkeletonBlock heightClass="h-[260px]" />
+            )}
+          </div>
+
 
 
             {/* ✅ Sentry 動作確認（DEVのみ：確認が終わったら消す） */}
@@ -1495,20 +1502,21 @@ export function AthleteView({
             </div>
 
             <div className="mt-6">
-            {showUnifiedHeavy ? (
-              <Suspense fallback={<SkeletonBlock heightClass="h-56" />}>
-                <MultiMetricTimelineLazy
-                  acwrData={acwrData ?? []}
-                  weightRecords={weightRecords}
-                  sleepRecords={timelineSleepRecords}
-                  motivationRecords={motivationRecords}
-                />
-              </Suspense>
-            ) : (
-              <div className="mt-6">
-                <SkeletonBlock heightClass="h-56" />
-              </div>
-            )}
+            <div className="mt-6 min-h-[320px]">
+              {showUnifiedHeavy ? (
+                <Suspense fallback={<SkeletonBlock heightClass="h-[320px]" />}>
+                  <MultiMetricTimelineLazy
+                    acwrData={acwrData ?? []}
+                    weightRecords={weightRecords}
+                    sleepRecords={timelineSleepRecords}
+                    motivationRecords={motivationRecords}
+                  />
+                </Suspense>
+              ) : (
+                <SkeletonBlock heightClass="h-[320px]" />
+              )}
+            </div>
+
 
             </div>
 
