@@ -1018,7 +1018,7 @@ export function AthleteView({
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {user.name}さん ·{' '}
             {activeTab === 'unified'
-              ? 'すべての記録を一目で確認'
+              ? 'ホーム：総合ダッシュボード'
               : activeTab === 'overview'
               ? '今日の練習データを記録'
               : activeTab === 'weight'
@@ -1032,11 +1032,13 @@ export function AthleteView({
               : activeTab === 'cycle'
               ? '月経周期とコンディションを記録'
                : activeTab === 'nutrition'
-              ? '栄養：AI下書き→あなたが確定'
+              ? '栄養：食事内容を記録_AI分析'
               : activeTab === 'gamification'
               ? 'ストリーク、バッジ、目標を管理'
               : activeTab === 'rehab' // ★ 追加
-              ? '修行（リハビリ）クエスト' // ★ 追加
+              ? 'リハビリ' // ★ 追加
+              : activeTab === 'ftt' // ★ 追加
+              ? '神経疲労チェック' // ★ 追加
               : '設定とお知らせ'}
           </p>
         </div>
@@ -1156,9 +1158,10 @@ export function AthleteView({
               {canUseFTT && (
                 <button type="button"
                   onClick={() => {
-                    setActiveTab('ftt');
+                    safeSetActiveTab('ftt');
                     setMenuOpen(false);
                   }}
+                  
                   className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                     activeTab === 'ftt'
                       ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
