@@ -3,15 +3,10 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, laz
 import { getTodayJSTString } from '../lib/date';
 import type { Database } from '../lib/database.types';
 import { TrainingForm } from './TrainingForm';
-import { ACWRChart } from './ACWRChart';
-import { TrainingRecordsList } from './TrainingRecordsList';
 import { AlertSummary } from './AlertSummary';
 import { supabase } from '../lib/supabase';
 import { WeightForm } from './WeightForm';
-import { WeightChart } from './WeightChart';
-import { WeightRecordsList } from './WeightRecordsList';
-import { WeightACWRChart } from './WeightACWRChart';
-import { InsightCard } from './InsightCard';
+
 import { BMIDisplay } from './BMIDisplay';
 import { ProfileEditForm } from './ProfileEditForm';
 import { TutorialController } from './TutorialController';
@@ -24,12 +19,10 @@ import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import { SleepForm } from './SleepForm';
 import { MotivationForm } from './MotivationForm';
-import { SleepChart } from './SleepChart';
-import { MotivationChart } from './MotivationChart';
+
 import { ConditioningSummaryCard } from './ConditioningSummaryCard';
 import { UnifiedDailyCheckIn } from './UnifiedDailyCheckIn';
 import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
-import { MultiMetricTimeline } from './MultiMetricTimeline';
 import { FloatingActionButton } from './FloatingActionButton';
 import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusButton';
@@ -38,8 +31,6 @@ import { DerivedStatsBar } from './DerivedStatsBar';
 import { getRiskLabel, getRiskColor } from '../lib/acwr';
 import { useLastRecords } from '../hooks/useLastRecords';
 import { useInbodyData } from '../hooks/useInbodyData';
-import { InBodyLatestCard } from './InBodyLatestCard';
-import { InBodyCharts } from './InBodyCharts';
 import { getTodayEnergySummary } from '../lib/getTodayEnergySummary';
 import { useTodayNutritionTotals } from '../hooks/useTodayNutritionTotals';
 import NutritionOverview from "./NutritionOverview";
@@ -55,8 +46,6 @@ import { SentryErrorButton } from "./SentryErrorButton";
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
 
-// ★ 追加（リハビリ用ビュー）
-import RehabQuestView from './RehabQuestView';
 
 import {
   Activity,
@@ -101,6 +90,47 @@ const MessagingPanel = lazy(() => import('./MessagingPanel').then((m) => ({ defa
 const AthletePerformanceView = lazy(() =>
   import("./views/AthletePerformanceView").then((m) => ({ default: m.default }))
 );
+// =========================
+// ✅ 추가：Lazy-load（タブ系・チャート系）
+// =========================
+
+// ✅ Rehab（いまは直importになっていたので、初回バンドルから外す）
+const RehabQuestViewLazy = lazy(() => import('./RehabQuestView'));
+
+// ✅ Charts (recharts系は重くなりがちなので基本lazy)
+const ACWRChartLazy = lazy(() => import('./ACWRChart').then((m) => ({ default: m.ACWRChart })));
+const WeightChartLazy = lazy(() => import('./WeightChart').then((m) => ({ default: m.WeightChart })));
+const WeightACWRChartLazy = lazy(() => import('./WeightACWRChart').then((m) => ({ default: m.WeightACWRChart })));
+const SleepChartLazy = lazy(() => import('./SleepChart').then((m) => ({ default: m.SleepChart })));
+const MotivationChartLazy = lazy(() => import('./MotivationChart').then((m) => ({ default: m.MotivationChart })));
+
+// ✅ Lists
+const TrainingRecordsListLazy = lazy(() => import('./TrainingRecordsList').then((m) => ({ default: m.TrainingRecordsList })));
+const WeightRecordsListLazy = lazy(() => import('./WeightRecordsList').then((m) => ({ default: m.WeightRecordsList })));
+
+// ✅ InBody（チャート含みがち）
+const InBodyLatestCardLazy = lazy(() => import('./InBodyLatestCard').then((m) => ({ default: m.InBodyLatestCard })));
+const InBodyChartsLazy = lazy(() => import('./InBodyCharts').then((m) => ({ default: m.InBodyCharts })));
+
+// ✅ Unifiedの重いタイムライン（初回を軽くするため）
+const MultiMetricTimelineLazy = lazy(() => import('./MultiMetricTimeline').then((m) => ({ default: m.MultiMetricTimeline })));
+const InsightCardLazy = lazy(() => import('./InsightCard').then((m) => ({ default: m.InsightCard })));
+
+
+// ✅ 共通フォールバック（高さ確保してCLSも抑える）
+const TabFallback = ({ label = '読み込み中...', heightClass = 'h-64' }: { label?: string; heightClass?: string }) => (
+  <div className={`flex items-center justify-center ${heightClass}`}>
+    <div className="flex items-center gap-3 text-gray-500 dark:text-gray-300">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      <span className="text-sm">{label}</span>
+    </div>
+  </div>
+);
+
+const SkeletonBlock = ({ heightClass = 'h-40' }: { heightClass?: string }) => (
+  <div className={`w-full ${heightClass} bg-gray-100 dark:bg-gray-700/40 rounded-xl animate-pulse`} />
+);
+
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type DailyEnergySnapshotRow = Database['public']['Tables']['daily_energy_snapshots']['Row'];
@@ -337,6 +367,48 @@ export function AthleteView({
     | 'rehab'; // ★ 追加
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('unified');
+
+    // =========================
+  // ✅ unified の重いセクションを “アイドル後” に表示（LCP改善）
+  // =========================
+  const [showUnifiedHeavy, setShowUnifiedHeavy] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'unified') return;
+    if (showUnifiedHeavy) return;
+
+    const conn = (navigator as any).connection;
+    const saveData = !!conn?.saveData;
+    const effectiveType = conn?.effectiveType as string | undefined;
+    const isSlow =
+      effectiveType === 'slow-2g' || effectiveType === '2g' || effectiveType === '3g';
+
+    // 低速/節約モードは無理に重いのを先に出さない（ユーザー体験優先）
+    const delayMs = saveData || isSlow ? 2200 : 1200;
+
+    let cancelled = false;
+
+    const reveal = () => {
+      if (!cancelled) setShowUnifiedHeavy(true);
+    };
+
+    if ('requestIdleCallback' in window) {
+      const id = (window as any).requestIdleCallback(reveal, { timeout: delayMs });
+      return () => {
+        cancelled = true;
+        (window as any).cancelIdleCallback?.(id);
+      };
+    }
+
+    const t = setTimeout(reveal, delayMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [activeTab, showUnifiedHeavy]);
+
+
+
   const canUseFTT = !!(user as any).ftt_enabled;
   const canUseNutrition = !!(user as any).nutrition_enabled;
 
@@ -1356,25 +1428,31 @@ export function AthleteView({
           </div>
         </div>
 
-            <ConsolidatedOverviewDashboard
-              currentACWR={currentACWR}
-              acwrData={acwrData ??[]}
-              weightRecords={weightRecords}
-              sleepRecords={normalizedSleepRecords}
-              motivationRecords={motivationRecords}
-              trainingRecords={records}
-              menstrualCycles={menstrualCycles}
-              userGender={normalizedGenderFull}
-              onOpenDetailView={(section) => {
-                if (section === 'training') setActiveTab('overview');
-                else if (section === 'weight') setActiveTab('weight');
-                else if (section === 'conditioning') setActiveTab('conditioning');
-                else if (section === 'cycle') {
-                  if (normalizedGenderBinary === 'female') setActiveTab('cycle');
-                }
-              }}
-              onQuickAdd={() => setShowUnifiedCheckIn(true)}
-            />
+        {showUnifiedHeavy ? (
+          <ConsolidatedOverviewDashboard
+            currentACWR={currentACWR}
+            acwrData={acwrData ?? []}
+            weightRecords={weightRecords}
+            sleepRecords={normalizedSleepRecords}
+            motivationRecords={motivationRecords}
+            trainingRecords={records}
+            menstrualCycles={menstrualCycles}
+            userGender={normalizedGenderFull}
+            onOpenDetailView={(section) => {
+              if (section === 'training') setActiveTab('overview');
+              else if (section === 'weight') setActiveTab('weight');
+              else if (section === 'conditioning') setActiveTab('conditioning');
+              else if (section === 'cycle') {
+                if (normalizedGenderBinary === 'female') setActiveTab('cycle');
+              }
+            }}
+            onQuickAdd={() => setShowUnifiedCheckIn(true)}
+          />
+        ) : (
+          <div className="mt-4">
+            <SkeletonBlock heightClass="h-48" />
+          </div>
+        )}
 
 
 
@@ -1400,8 +1478,9 @@ export function AthleteView({
           )}
 
             <div className="mt-6">
-              <DailyReflectionCard userId={user.id} />
+              {showUnifiedHeavy ? <DailyReflectionCard userId={user.id} /> : <SkeletonBlock heightClass="h-40" />}
             </div>
+
 
             {/* ✅ Sentry 動作確認（DEVのみ：確認が終わったら消す） */}
             {import.meta.env.DEV && (
@@ -1416,12 +1495,21 @@ export function AthleteView({
             </div>
 
             <div className="mt-6">
-              <MultiMetricTimeline
-                acwrData={acwrData?? []}
-                weightRecords={weightRecords}
-                sleepRecords={timelineSleepRecords}
-                motivationRecords={motivationRecords}
-              />
+            {showUnifiedHeavy ? (
+              <Suspense fallback={<SkeletonBlock heightClass="h-56" />}>
+                <MultiMetricTimelineLazy
+                  acwrData={acwrData ?? []}
+                  weightRecords={weightRecords}
+                  sleepRecords={timelineSleepRecords}
+                  motivationRecords={motivationRecords}
+                />
+              </Suspense>
+            ) : (
+              <div className="mt-6">
+                <SkeletonBlock heightClass="h-56" />
+              </div>
+            )}
+
             </div>
 
             {highPriorityAlerts.length > 0 && (
@@ -1443,7 +1531,7 @@ export function AthleteView({
         ) : activeTab === "rehab" ? (
           /* ★ 追加：リハビリ用ビュー */
           <Suspense fallback={<div className="flex items-center justify-center h-64 animate-pulse text-indigo-500 font-black">修行の準備中...</div>}>
-             <RehabQuestView userId={user.id} onBackHome={() => setActiveTab('unified')} />
+            <RehabQuestViewLazy userId={user.id} onBackHome={() => setActiveTab('unified')} />
           </Suspense>
 
         ) : activeTab === "nutrition" ? (
@@ -1595,7 +1683,10 @@ export function AthleteView({
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                     </div>
                   ) : (
-                    <ACWRChart data={acwrData} daysWithData={daysWithData} isDarkMode={isDarkMode} />
+                    <Suspense fallback={<TabFallback label="グラフ読み込み中..." heightClass="h-64 sm:h-96" />}>
+                      <ACWRChartLazy data={acwrData} daysWithData={daysWithData} isDarkMode={isDarkMode} />
+                    </Suspense>
+
                   )}
                 </div>
               </div>
@@ -1603,7 +1694,8 @@ export function AthleteView({
 
             {/* Training Records Section */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 mt-6 transition-colors">
-              <TrainingRecordsList
+            <Suspense fallback={<TabFallback label="履歴読み込み中..." heightClass="h-40" />}>
+              <TrainingRecordsListLazy
                 records={records}
                 onUpdate={handleTrainingUpdateForList}
                 onDelete={deleteTrainingRecord}
@@ -1614,6 +1706,8 @@ export function AthleteView({
                 showLimited={true}
                 limitCount={10}
               />
+            </Suspense>
+
             </div>
           </>
         ) : activeTab === 'weight' ? (
@@ -1686,8 +1780,14 @@ export function AthleteView({
                 </div>
               ) : latestInbody ? (
                 <div className="space-y-6">
-                  <InBodyLatestCard latest={latestInbody} loading={inbodyLoading} error={inbodyError} />
-                  <InBodyCharts records={inbodyRecords} gender={normalizedGenderBinary} />
+                  <Suspense fallback={<SkeletonBlock heightClass="h-28" />}>
+                    <InBodyLatestCardLazy latest={latestInbody} loading={inbodyLoading} error={inbodyError} />
+                  </Suspense>
+
+                  <Suspense fallback={<SkeletonBlock heightClass="h-72" />}>
+                    <InBodyChartsLazy records={inbodyRecords} gender={normalizedGenderBinary} />
+                  </Suspense>
+
                 </div>
               ) : (
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center">
@@ -1733,12 +1833,22 @@ export function AthleteView({
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                   </div>
                 ) : (
-                  <WeightChart data={weightRecords} />
+                  <Suspense fallback={<TabFallback label="グラフ読み込み中..." heightClass="h-64 sm:h-80" />}>
+                    <WeightChartLazy data={weightRecords} />
+                  </Suspense>
                 )}
               </div>
 
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-                <WeightRecordsList records={weightRecords} onUpdate={updateWeightRecord} onDelete={deleteWeightRecord} loading={weightLoading} />
+              <Suspense fallback={<TabFallback label="履歴読み込み中..." heightClass="h-40" />}>
+                <WeightRecordsListLazy
+                  records={weightRecords}
+                  onUpdate={updateWeightRecord}
+                  onDelete={deleteWeightRecord}
+                  loading={weightLoading}
+                />
+              </Suspense>
+
               </div>
             </div>
           </div>
@@ -1752,12 +1862,16 @@ export function AthleteView({
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                 </div>
               ) : (
-                <WeightACWRChart acwrData={acwrData} weightData={weightRecords} />
+                <Suspense fallback={<TabFallback label="分析グラフ読み込み中..." heightClass="h-96" />}>
+                  <WeightACWRChartLazy acwrData={acwrData} weightData={weightRecords} />
+                </Suspense>                
               )}
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
-              <InsightCard acwrData={acwrData} weightData={weightRecords} />
+            <Suspense fallback={<SkeletonBlock heightClass="h-40" />}>
+              <InsightCardLazy acwrData={acwrData} weightData={weightRecords} />
+            </Suspense>
             </div>
           </div>
        ) : activeTab === 'performance' ? (
@@ -1813,7 +1927,10 @@ export function AthleteView({
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                   </div>
                 ) : (
-                  <SleepChart data={sleepRecords} />
+                  <Suspense fallback={<TabFallback label="睡眠グラフ読み込み中..." heightClass="h-96" />}>
+                    <SleepChartLazy data={sleepRecords} />
+                  </Suspense>
+
                 )}
               </div>
 
@@ -1855,7 +1972,10 @@ export function AthleteView({
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                   </div>
                 ) : (
-                  <MotivationChart data={motivationRecords} />
+                  <Suspense fallback={<TabFallback label="モチベーション推移読み込み中..." heightClass="h-96" />}>
+                    <MotivationChartLazy data={motivationRecords} />
+                  </Suspense>
+
                 )}
               </div>
 
