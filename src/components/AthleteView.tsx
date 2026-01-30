@@ -22,9 +22,7 @@ import { MotivationForm } from './MotivationForm';
 
 import { ConditioningSummaryCard } from './ConditioningSummaryCard';
 import { UnifiedDailyCheckIn } from './UnifiedDailyCheckIn';
-import { ConsolidatedOverviewDashboard } from './ConsolidatedOverviewDashboard';
 import { FloatingActionButton } from './FloatingActionButton';
-import { DailyReflectionCard } from './DailyReflectionCard';
 import { ShareStatusButton } from './ShareStatusButton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
@@ -93,6 +91,14 @@ const AthletePerformanceView = lazy(() =>
 // =========================
 // ✅ 추가：Lazy-load（タブ系・チャート系）
 // =========================
+const ConsolidatedOverviewDashboardLazy = lazy(() =>
+  import("./ConsolidatedOverviewDashboard").then((m) => ({ default: m.ConsolidatedOverviewDashboard }))
+);
+
+
+const DailyReflectionCardLazy = lazy(() =>
+  import("./DailyReflectionCard").then((m) => ({ default: m.DailyReflectionCard }))
+);
 
 // ✅ Rehab（いまは直importになっていたので、初回バンドルから外す）
 const RehabQuestViewLazy = lazy(() => import('./RehabQuestView'));
@@ -1429,38 +1435,35 @@ export function AthleteView({
         </div>
 
 
-        <div className="mt-4 min-h-[340px]">
-          {showUnifiedHeavy ? (
-            <ConsolidatedOverviewDashboard
-              currentACWR={currentACWR}
-              acwrData={acwrData ?? []}
-              weightRecords={weightRecords}
-              sleepRecords={normalizedSleepRecords}
-              motivationRecords={motivationRecords}
-              trainingRecords={records}
-              menstrualCycles={menstrualCycles}
-              userGender={normalizedGenderFull}
-              onOpenDetailView={(section) => {
-                if (section === 'training') setActiveTab('overview');
-                else if (section === 'weight') setActiveTab('weight');
-                else if (section === 'conditioning') setActiveTab('conditioning');
-                else if (section === 'cycle') {
-                  if (normalizedGenderBinary === 'female') setActiveTab('cycle');
-                }
-              }}
-              onQuickAdd={() => setShowUnifiedCheckIn(true)}
-            />
-          ) : (
-            <SkeletonBlock heightClass="h-[340px]" />
-          )}
-        </div>
+        <Suspense fallback={<div className="min-h-[340px] rounded-xl bg-white dark:bg-gray-800 animate-pulse" />}>
+          <ConsolidatedOverviewDashboardLazy
+            currentACWR={currentACWR}
+            acwrData={acwrData ?? []}
+            weightRecords={weightRecords}
+            sleepRecords={normalizedSleepRecords}
+            motivationRecords={motivationRecords}
+            trainingRecords={records}
+            menstrualCycles={menstrualCycles}
+            userGender={normalizedGenderFull}
+            onOpenDetailView={(section) => {
+              if (section === 'training') setActiveTab('overview');
+              else if (section === 'weight') setActiveTab('weight');
+              else if (section === 'conditioning') setActiveTab('conditioning');
+              else if (section === 'cycle') {
+                if (normalizedGenderBinary === 'female') setActiveTab('cycle');
+              }
+            }}
+            onQuickAdd={() => setShowUnifiedCheckIn(true)}
+          />
+        </Suspense>
+
 
 
 
 
           {/* ✅ 栄養：nutrition_enabled=true の人だけ表示 */}
           {canUseNutrition && (
-            <div className="mt-6">
+            <div className="mt-6 min-h-[220px]">
               <button
                 type="button"
                 onClick={() => setActiveTab("nutrition")}
@@ -1468,20 +1471,27 @@ export function AthleteView({
                 aria-label="栄養の詳細へ"
               >
                 <div className="rounded-xl hover:opacity-95 active:opacity-90 transition">
-                <NutritionOverview
-                  totals={nutritionTotalsToday}
-                  targets={targets}
-                  loading={nutritionLoading}
-                  subtitle={`${recordDate} · ${phaseHints.nutrition}`}
-                />
+                  {nutritionLoading ? (
+                    <SkeletonBlock heightClass="h-[220px]" />
+                  ) : (
+                    <NutritionOverview
+                      totals={nutritionTotalsToday}
+                      targets={targets}
+                      loading={nutritionLoading}
+                      subtitle={`${recordDate} · ${phaseHints.nutrition}`}
+                    />
+                  )}
                 </div>
               </button>
             </div>
           )}
 
+
           <div className="mt-6 min-h-[260px]">
             {showUnifiedHeavy ? (
-              <DailyReflectionCard userId={user.id} />
+              <Suspense fallback={<div className="min-h-[160px] rounded-xl bg-white dark:bg-gray-800 animate-pulse" />}>
+              <DailyReflectionCardLazy userId={user.id} />
+            </Suspense>
             ) : (
               <SkeletonBlock heightClass="h-[260px]" />
             )}
