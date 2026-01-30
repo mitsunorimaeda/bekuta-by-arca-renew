@@ -162,6 +162,8 @@ type AthleteViewProps = {
   onUserUpdated?: () => Promise<void> | void;
 };
 
+
+
 // =========================
 // ✅ Team Season Phase（今日＋3週間）
 // =========================
@@ -244,10 +246,14 @@ export function AthleteView({
     checkInjury();
   }, [user.id]);
 
+  
   const [todayPhase, setTodayPhase] = useState<TeamPhaseRow | null>(null);
   const [nextPhases, setNextPhases] = useState<TeamPhaseRow[]>([]);
   const [phaseLoading, setPhaseLoading] = useState(false);
   const [phaseError, setPhaseError] = useState<string | null>(null);
+  const isPhaseEmpty =
+  !phaseLoading && !phaseError && !todayPhase;
+
 
   const addDaysToDateString = (dateStr: string, addDays: number) => {
     // dateStr: 'YYYY-MM-DD'（JST）を想定
@@ -1337,9 +1343,15 @@ export function AthleteView({
         </div>
       )}
 
-      {/* ✅ チームフェーズ（薄め版：今日だけ表示） */}
+    {/* ✅ チームフェーズ（薄め版：今日だけ表示） */}
       <div className="mb-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5 transition-colors">
+        <div
+          className={[
+            "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 transition-colors",
+            // ✅ 未設定時はコンパクトに
+            !phaseLoading && !phaseError && !todayPhase ? "p-3 sm:p-4" : "p-4 sm:p-5",
+          ].join(" ")}
+        >
           {/* Header */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1361,7 +1373,6 @@ export function AthleteView({
           </div>
 
           {/* Body */}
-          <div className="mt-3 min-h-[120px]">
           {phaseLoading ? (
             <div className="mt-3">
               <div className="h-7 w-28 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
@@ -1406,44 +1417,49 @@ export function AthleteView({
               <p className="mt-3 text-sm text-gray-700 dark:text-gray-200 line-clamp-2">
                 {phaseHints.base}
               </p>
-            </>
-          ) : (
-            <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-              フェーズが未設定です（コーチが設定すると表示されます）
-            </div>
-          )}
-          </div>
- 
 
-            {/* Next（“薄い横チップ”だけ：タグ/メモは出さない） */}
-            {!phaseLoading && !phaseError && Array.isArray(nextPhases) && nextPhases.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">今後</p>
-                  <p className="text-[11px] text-gray-400 dark:text-gray-500">横スクロール</p>
-                </div>
+              {/* Next（“薄い横チップ”だけ：タグ/メモは出さない） */}
+              {Array.isArray(nextPhases) && nextPhases.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">今後</p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500">横スクロール</p>
+                  </div>
 
-                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                  {nextPhases.slice(0, 8).map((p, idx) => (
-                    <div
-                      key={`${p.start_date}-${p.end_date}-${idx}`}
-                      className="min-w-[140px] rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                          {phaseLabel(p.phase_type)}
-                        </div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                          {toShortRange(p.start_date, p.end_date)}
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    {nextPhases.slice(0, 8).map((p, idx) => (
+                      <div
+                        key={`${p.start_date}-${p.end_date}-${idx}`}
+                        className="min-w-[140px] rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                            {phaseLabel(p.phase_type)}
+                          </div>
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            {toShortRange(p.start_date, p.end_date)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </>
+          ) : (
+            // ✅ 未設定時は “高さ半分” のコンパクト表示
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                フェーズ未設定
+              </p>
+              <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 whitespace-nowrap">
+                設定待ち
+              </span>
+            </div>
+          )}
         </div>
+      </div>
+
     
 
 
