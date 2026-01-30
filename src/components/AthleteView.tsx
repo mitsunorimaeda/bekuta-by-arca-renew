@@ -137,6 +137,15 @@ const SkeletonBlock = ({ heightClass = 'h-40' }: { heightClass?: string }) => (
   <div className={`w-full ${heightClass} bg-gray-100 dark:bg-gray-700/40 rounded-xl animate-pulse`} />
 );
 
+// ✅ CLS/LCP対策：高さ固定のセクション枠（中身は後から）
+const SectionSkeleton = ({ minH = 220 }: { minH?: number }) => (
+  <div
+    className="w-full rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
+    style={{ minHeight: minH }}
+  />
+);
+
+
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type DailyEnergySnapshotRow = Database['public']['Tables']['daily_energy_snapshots']['Row'];
@@ -1352,6 +1361,7 @@ export function AthleteView({
           </div>
 
           {/* Body */}
+          <div className="mt-3 min-h-[120px]">
           {phaseLoading ? (
             <div className="mt-3">
               <div className="h-7 w-28 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
@@ -1402,6 +1412,7 @@ export function AthleteView({
               フェーズが未設定です（コーチが設定すると表示されます）
             </div>
           )}
+          </div>
  
 
             {/* Next（“薄い横チップ”だけ：タグ/メモは出さない） */}
@@ -1433,10 +1444,11 @@ export function AthleteView({
             )}
           </div>
         </div>
+    
 
 
-        <Suspense fallback={<div className="min-h-[340px] rounded-xl bg-white dark:bg-gray-800 animate-pulse" />}>
-          <ConsolidatedOverviewDashboardLazy
+        <Suspense fallback={<SectionSkeleton minH={340} />}>
+        <ConsolidatedOverviewDashboardLazy
             currentACWR={currentACWR}
             acwrData={acwrData ?? []}
             weightRecords={weightRecords}
@@ -1514,8 +1526,8 @@ export function AthleteView({
             <div className="mt-6">
             <div className="mt-6 min-h-[320px]">
               {showUnifiedHeavy ? (
-                <Suspense fallback={<SkeletonBlock heightClass="h-[320px]" />}>
-                  <MultiMetricTimelineLazy
+                <Suspense fallback={<SectionSkeleton minH={320} />}>
+                <MultiMetricTimelineLazy
                     acwrData={acwrData ?? []}
                     weightRecords={weightRecords}
                     sleepRecords={timelineSleepRecords}
