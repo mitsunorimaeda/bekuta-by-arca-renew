@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  Sword, Activity, Youtube, CheckCircle2, AlertCircle, 
-  Trophy, ChevronLeft, Star, Zap, Play, Info, Lock, ChevronRight,
-  Stethoscope, Flame, Eye, X
+  Sword, Activity, CheckCircle2, AlertCircle, 
+  Trophy, ChevronLeft, Star, Zap, Play, Info, Lock, 
+  Stethoscope, Flame, Eye 
 } from 'lucide-react';
+
+// バッジコントローラー
+import { BadgeModalController } from './BadgeModalController';
 
 interface RehabQuestViewProps {
   userId: string;
@@ -30,6 +33,8 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
 
   // YouTubeプレーヤー制御用
   const playerRef = useRef<any>(null);
+  const trackingIntervalRef = useRef<any>(null);
+  const milestonesReachedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     fetchData();
@@ -46,14 +51,45 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     }
   };
 
-  const handleVideoComplete = (itemId: string) => {
-    // 現在のフェーズ以外を閲覧中は自動クリアさせない
-    if (!quest || viewingPhase !== quest.current_phase) return;
+  // 視聴進捗を記録する関数（DBへの保存が必要な場合はここに追記）
+  const logVideoProgress = (itemId: string, percentage: number) => {
+    console.log(`[Video Tracking] Item: ${itemId}, Progress: ${percentage}%`);
     
-    // ステータスを 'done' に強制セット
-    updateExerciseStatus(itemId, 'done');
-    alert("動画の視聴を完了しました！クエストクリア✅");
-    setActiveVideo(null);
+    // ★将来的にDBに「動画を見た」記録を残す場合はここでAPIを叩く
+    // 例: supabase.rpc('log_video_view', { item_id: itemId, progress: percentage });
+  };
+
+  // 定期的に再生位置をチェックする関数
+  const startTracking = (player: any, itemId: string) => {
+    stopTracking(); // 既存のタイマーがあればクリア
+    milestonesReachedRef.current.clear(); // マイルストーンリセット
+
+    trackingIntervalRef.current = setInterval(() => {
+      if (!player || typeof player.getCurrentTime !== 'function') return;
+
+      const currentTime = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      if (duration > 0) {
+        const percent = (currentTime / duration) * 100;
+        const milestones = [25, 50, 75, 100];
+
+        milestones.forEach(m => {
+          // すでに記録済みでなければ、かつ閾値を超えていれば記録
+          if (!milestonesReachedRef.current.has(m) && percent >= m) {
+            milestonesReachedRef.current.add(m);
+            logVideoProgress(itemId, m);
+          }
+        });
+      }
+    }, 1000); // 1秒ごとにチェック
+  };
+
+  const stopTracking = () => {
+    if (trackingIntervalRef.current) {
+      clearInterval(trackingIntervalRef.current);
+      trackingIntervalRef.current = null;
+    }
   };
 
   useEffect(() => {
@@ -62,19 +98,36 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       const ytid = getYoutubeId(item?.video_url || '');
       
       if (ytid) {
-        if (playerRef.current) playerRef.current.destroy();
+        // 既存プレーヤーの破棄
+        if (playerRef.current) {
+          playerRef.current.destroy();
+        }
+
+        // 新規プレーヤー作成
         playerRef.current = new window.YT.Player(`yt-player-${activeVideo}`, {
           videoId: ytid,
           playerVars: { rel: 0, modestbranding: 1, playsinline: 1, autoplay: 1 },
           events: {
             'onStateChange': (e: any) => {
-              if (e.data === 0) handleVideoComplete(activeVideo);
+              // 1 = 再生中, 2 = 一時停止, 0 = 終了
+              if (e.data === 1) {
+                startTracking(e.target, activeVideo);
+              } else {
+                stopTracking();
+              }
             }
           }
         });
       }
     }
-    return () => { if (playerRef.current) playerRef.current.destroy(); };
+
+    // クリーンアップ（動画切り替え時やコンポーネントアンマウント時）
+    return () => {
+      stopTracking();
+      if (playerRef.current && typeof playerRef.current.destroy === 'function') {
+        playerRef.current.destroy();
+      }
+    };
   }, [activeVideo]);
 
   // --- データ取得 ---
@@ -101,7 +154,7 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // --- ステータス更新ロジック分離 ---
+  // --- ステータス更新 ---
   const updateExerciseStatus = async (itemId: string, nextStatus: 'none' | 'done' | 'pain') => {
     const today = new Date().toISOString().split('T')[0];
     const currentResults = latestLog?.item_results || {};
@@ -141,6 +194,7 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     }
     try {
       const today = new Date().toISOString().split('T')[0];
+      
       await supabase.schema('rehab').from('prescription_daily_logs').upsert({
         prescription_id: quest.id,
         athlete_user_id: userId,
@@ -156,12 +210,14 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
 
       setRewardMsg({ 
         show: true, 
-        text: result?.badge_unlocked ? "リハビリ完了！バッジ獲得！ ＋10pt" : "リハビリ報告完了！ ＋10pt" 
+        text: "リハビリ報告完了！" 
       });
+
       setTimeout(() => {
         setRewardMsg({show: false, text: ''});
         onBackHome();
       }, 2500);
+
     } catch (e: any) { alert(e.message); }
   };
 
@@ -178,6 +234,8 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 text-slate-900 dark:text-white">
       
+      <BadgeModalController userId={userId} />
+
       {rewardMsg.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md">
           <div className="bg-blue-600 p-8 rounded-[3rem] text-center shadow-2xl border-4 border-blue-400 animate-bounce mx-4">
@@ -256,6 +314,7 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
                   'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 shadow-sm'
                 } ${!isCurrentViewActive && 'opacity-70'}`}>
                   <div className="p-5 flex items-center gap-4">
+                    {/* 左側のステータスボタン */}
                     <button 
                       onClick={() => cycleExerciseStatus(item.id)}
                       disabled={!isCurrentViewActive}
@@ -277,7 +336,7 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
                     <div className="flex-1" onClick={() => cycleExerciseStatus(item.id)}>
                       <h4 className={`font-black text-base ${status !== 'none' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{item.name}</h4>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {item.quantity} {item.sets && `× ${item.sets} Sets`} / <span className="text-blue-600 dark:text-blue-400">+{item.xp || 10} XP</span>
+                        {item.quantity} {item.sets && `× ${item.sets} Sets`}
                       </p>
                     </div>
 
@@ -291,17 +350,11 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
                     )}
                   </div>
 
+                  {/* 動画プレーヤーエリア */}
                   {activeVideo === item.id && ytId && (
                     <div className="px-5 pb-5 animate-in zoom-in-95 duration-300">
                       <div className="aspect-video rounded-[1.5rem] overflow-hidden bg-black border-2 border-white dark:border-slate-700 shadow-2xl relative">
                         <div id={`yt-player-${item.id}`} className="w-full h-full"></div>
-                        {isCurrentViewActive && (
-                          <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-                            <span className="text-[8px] font-black text-white bg-blue-600/80 px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">
-                              最後まで視聴でクリア
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
