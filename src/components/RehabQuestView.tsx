@@ -23,7 +23,11 @@ declare global {
 
 export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewProps) {
   const [quest, setQuest] = useState<any>(null);
-  const [injury, setInjury] = useState<any>(null);
+  
+  // ★ 変更: 単体ではなくリストも管理する
+  const [injuryList, setInjuryList] = useState<any[]>([]);
+  const [injury, setInjury] = useState<any>(null); // 現在表示中の怪我
+  
   const [loading, setLoading] = useState(true);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [latestLog, setLatestLog] = useState<any>(null);
@@ -128,24 +132,26 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
 
-      // ★ 修正 1: Injuriesテーブルの取得条件を conditioning も含むように変更
-      const { data: injuryData } = await supabase
+      // ★ 修正: リストとして取得し、maybeSingleを使わない
+      const { data: injuryDataList } = await supabase
         .schema('rehab')
         .from('injuries')
         .select('*')
         .eq('athlete_user_id', userId)
-        .in('status', ['active', 'conditioning']) // ここを変更
-        .maybeSingle();
+        .in('status', ['active', 'conditioning'])
+        .order('created_at', { ascending: false }); // 新しい順
       
-      setInjury(injuryData);
+      if (injuryDataList && injuryDataList.length > 0) {
+        setInjuryList(injuryDataList);
+        setInjury(injuryDataList[0]); // デフォルトで最新のものを表示
+      }
 
-      // ★ 修正 2: Prescriptionsテーブルも念のため conditioning を許可
       const { data: prescription } = await supabase
         .schema('rehab')
         .from('prescriptions')
         .select(`*, items:prescription_items(*)`)
         .eq('athlete_user_id', userId)
-        .in('status', ['active', 'conditioning']) // ここを変更
+        .in('status', ['active', 'conditioning'])
         .maybeSingle();
 
       if (prescription) {
@@ -164,7 +170,6 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // --- ステータス更新 ---
   const updateExerciseStatus = async (itemId: string, nextStatus: 'none' | 'done' | 'pain') => {
     const today = new Date().toISOString().split('T')[0];
     const currentResults = latestLog?.item_results || {};
@@ -258,6 +263,26 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       <button onClick={onBackHome} className="flex items-center text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest hover:text-blue-600 transition-colors">
         <ChevronLeft size={16} className="mr-1" /> ホームへ戻る
       </button>
+
+      {/* ★ 追加：怪我が複数ある場合の切り替えタブ */}
+      {injuryList.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+          {injuryList.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setInjury(item)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border transition-all whitespace-nowrap ${
+                injury?.id === item.id
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${item.status === 'conditioning' ? 'bg-orange-400' : 'bg-red-500'}`} />
+              {item.diagnosis}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 1. 怪我診断情報 */}
       <section className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 shadow-sm border border-slate-100 dark:border-slate-700">
