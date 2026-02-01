@@ -239,7 +239,7 @@ export function AthleteView({
         .from('injuries')
         .select('id')
         .eq('athlete_user_id', user.id)
-        .eq('status', 'active')
+        .in('status', ['active','conditioning']) // 'active' または 'conditioning'
         .maybeSingle();
       setIsRehabilitating(!!data);
     }
@@ -1338,7 +1338,7 @@ export function AthleteView({
               </div>
               <div className="text-left">
                 <h3 className="text-lg font-black italic tracking-tight uppercase">Special Quest Unlocked</h3>
-                <p className="text-xs text-white/80 font-bold">復帰への修行（リハビリ）を開始しよう</p>
+                <p className="text-xs text-white/80 font-bold">復帰へ向けてエクササイズしよう</p>
               </div>
             </div>
             <ChevronRight size={24} className="opacity-50 group-hover:translate-x-1 transition-transform" />
