@@ -230,7 +230,8 @@ export function AthleteView({
 
   const today = useMemo(() => getTodayJSTString(), []);
 
-  // ★ 追加：リハビリステータスチェック
+  // ★ 修正：リハビリステータスチェック
+  // 複数あっても正しく判定できるように .maybeSingle() を廃止し、配列の長さで判定する
   const [isRehabilitating, setIsRehabilitating] = useState(false);
   useEffect(() => {
     async function checkInjury() {
@@ -239,9 +240,11 @@ export function AthleteView({
         .from('injuries')
         .select('id')
         .eq('athlete_user_id', user.id)
-        .in('status', ['active','conditioning']) // 'active' または 'conditioning'
-        .maybeSingle();
-      setIsRehabilitating(!!data);
+        .in('status', ['active', 'conditioning'])
+        .limit(1); // ★ 修正: 1件だけ取得（配列が返る）
+
+      // データが存在し、かつ配列の中身が1つ以上あれば true
+      setIsRehabilitating(!!(data && data.length > 0));
     }
     checkInjury();
   }, [user.id]);
