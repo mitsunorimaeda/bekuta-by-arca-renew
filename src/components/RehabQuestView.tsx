@@ -51,18 +51,15 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     }
   };
 
-  // 視聴進捗を記録する関数（DBへの保存が必要な場合はここに追記）
+  // 視聴進捗を記録する関数
   const logVideoProgress = (itemId: string, percentage: number) => {
     console.log(`[Video Tracking] Item: ${itemId}, Progress: ${percentage}%`);
-    
-    // ★将来的にDBに「動画を見た」記録を残す場合はここでAPIを叩く
-    // 例: supabase.rpc('log_video_view', { item_id: itemId, progress: percentage });
   };
 
   // 定期的に再生位置をチェックする関数
   const startTracking = (player: any, itemId: string) => {
-    stopTracking(); // 既存のタイマーがあればクリア
-    milestonesReachedRef.current.clear(); // マイルストーンリセット
+    stopTracking(); 
+    milestonesReachedRef.current.clear(); 
 
     trackingIntervalRef.current = setInterval(() => {
       if (!player || typeof player.getCurrentTime !== 'function') return;
@@ -75,14 +72,13 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         const milestones = [25, 50, 75, 100];
 
         milestones.forEach(m => {
-          // すでに記録済みでなければ、かつ閾値を超えていれば記録
           if (!milestonesReachedRef.current.has(m) && percent >= m) {
             milestonesReachedRef.current.add(m);
             logVideoProgress(itemId, m);
           }
         });
       }
-    }, 1000); // 1秒ごとにチェック
+    }, 1000); 
   };
 
   const stopTracking = () => {
@@ -98,18 +94,15 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       const ytid = getYoutubeId(item?.video_url || '');
       
       if (ytid) {
-        // 既存プレーヤーの破棄
         if (playerRef.current) {
           playerRef.current.destroy();
         }
 
-        // 新規プレーヤー作成
         playerRef.current = new window.YT.Player(`yt-player-${activeVideo}`, {
           videoId: ytid,
           playerVars: { rel: 0, modestbranding: 1, playsinline: 1, autoplay: 1 },
           events: {
             'onStateChange': (e: any) => {
-              // 1 = 再生中, 2 = 一時停止, 0 = 終了
               if (e.data === 1) {
                 startTracking(e.target, activeVideo);
               } else {
@@ -121,7 +114,6 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       }
     }
 
-    // クリーンアップ（動画切り替え時やコンポーネントアンマウント時）
     return () => {
       stopTracking();
       if (playerRef.current && typeof playerRef.current.destroy === 'function') {
@@ -136,18 +128,36 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
 
+      // ★ 修正 1: Injuriesテーブルの取得条件を conditioning も含むように変更
       const { data: injuryData } = await supabase
-        .schema('rehab').from('injuries').select('*').eq('athlete_user_id', userId).eq('status', 'active').maybeSingle();
+        .schema('rehab')
+        .from('injuries')
+        .select('*')
+        .eq('athlete_user_id', userId)
+        .in('status', ['active', 'conditioning']) // ここを変更
+        .maybeSingle();
+      
       setInjury(injuryData);
 
+      // ★ 修正 2: Prescriptionsテーブルも念のため conditioning を許可
       const { data: prescription } = await supabase
-        .schema('rehab').from('prescriptions').select(`*, items:prescription_items(*)`).eq('athlete_user_id', userId).eq('status', 'active').maybeSingle();
+        .schema('rehab')
+        .from('prescriptions')
+        .select(`*, items:prescription_items(*)`)
+        .eq('athlete_user_id', userId)
+        .in('status', ['active', 'conditioning']) // ここを変更
+        .maybeSingle();
 
       if (prescription) {
         setQuest(prescription);
         setViewingPhase(prescription.current_phase);
         const { data: log } = await supabase
-          .schema('rehab').from('prescription_daily_logs').select('*').eq('prescription_id', prescription.id).eq('log_date', today).maybeSingle();
+          .schema('rehab')
+          .from('prescription_daily_logs')
+          .select('*')
+          .eq('prescription_id', prescription.id)
+          .eq('log_date', today)
+          .maybeSingle();
         setLatestLog(log);
         if (log) setSelectedNrs(log.pain_level);
       }
@@ -259,7 +269,9 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
           <div className="text-xl font-black">{injury?.diagnosis || '診断名未設定'}</div>
           <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             <span>受傷日: {injury?.injury_date}</span>
-            <span className="text-blue-600 font-black">● 治療継続中</span>
+            <span className={`font-black ${injury?.status === 'conditioning' ? 'text-orange-500' : 'text-blue-600'}`}>
+              {injury?.status === 'conditioning' ? '● コンディショニング' : '● 治療継続中'}
+            </span>
           </div>
         </div>
       </section>
