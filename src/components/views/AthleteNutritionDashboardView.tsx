@@ -26,6 +26,7 @@ type Props = {
 
   // （任意）保存後に親側で再fetchしたい時に渡す
   onRefreshNutrition?: () => void;
+  onChangeDate?: (date: string) => void; // ✅追加（未使用）
 };
 
 export default function AthleteNutritionDashboardView({
@@ -84,11 +85,11 @@ export default function AthleteNutritionDashboardView({
             <div className="flex items-center gap-2">
               <Flame className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">
-                栄養（詳細）
+                栄養ダッシュボード
               </h2>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              AIは下書き。最後に決めるのはあなた。
+              今日の栄養摂取状況を確認しましょう。
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
               {user?.name ?? "ユーザー"}さん · {date}

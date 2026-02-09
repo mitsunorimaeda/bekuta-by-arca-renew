@@ -160,7 +160,7 @@ export function BulkUserInvitation({
   };
 
   // ===========================
-  //  一括処理本体
+  //  一括処理本体（チーム検索強化版）
   // ===========================
   const processBulkInvites = async (
     rows: CsvUserRow[]
@@ -217,13 +217,28 @@ export function BulkUserInvitation({
           continue;
         }
 
-        // === ② チーム名チェック ===
+        // === ② チーム名チェック（Props検索 + DB直接検索） ===
         let teamId: string | undefined;
 
         if (row.teamName) {
-          const team = teams.find(
+          // 1. まず props の teams から検索（キャッシュ利用）
+          let team = teams.find(
             (t) => t.name === row.teamName && t.organization_id === org.id
           );
+
+          // 2. なければ DB から検索（Propsが不完全な場合の保険）
+          if (!team) {
+            const { data: dbTeam, error: teamErr } = await supabase
+              .from('teams')
+              .select('*')
+              .eq('organization_id', org.id)
+              .eq('name', row.teamName)
+              .maybeSingle();
+
+            if (!teamErr && dbTeam) {
+              team = dbTeam as Team;
+            }
+          }
 
           if (!team) {
             results.push({
@@ -281,13 +296,17 @@ export function BulkUserInvitation({
         }
 
         const passwordSetupLink = result.passwordSetupLink;
+        
+        // パスワード設定リンクが無い場合のハンドリング
         if (!passwordSetupLink) {
-          results.push({
-            ...row,
-            status: 'error',
-            message: 'Edge Function からパスワード設定リンクが返されませんでした',
-          });
-          continue;
+           // 既にユーザーが存在する場合などはリンクが返ってこないケースがあるためエラーとして処理
+           results.push({
+             ...row,
+             status: 'error',
+             message: 'ユーザー作成は成功しましたが、パスワード設定リンクが取得できませんでした（既に登録済みの可能性があります）',
+             user_id: result.user?.user_id,
+           });
+           continue;
         }
 
         // === ④ send-email (テンプレート版) 呼び出し ===
@@ -356,8 +375,8 @@ export function BulkUserInvitation({
         });
       }
 
-      // サーバーに優しいように少しウェイト
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // サーバー負荷軽減のため少し待機（2秒→0.5秒に短縮）
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     return results;

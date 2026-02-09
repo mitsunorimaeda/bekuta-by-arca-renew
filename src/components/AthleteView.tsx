@@ -230,6 +230,15 @@ export function AthleteView({
 
   const today = useMemo(() => getTodayJSTString(), []);
 
+  // ✅ 栄養：選択中の日付（デフォルトは今日）
+  const [nutritionDate, setNutritionDate] = useState<string>(today);
+
+  // ✅ 日付が変わった（0時跨ぎ等）とき、未選択なら追従したい場合
+  useEffect(() => {
+    setNutritionDate((prev) => (prev ? prev : today));
+  }, [today]);
+
+
   // ★ 修正：リハビリステータスチェック
   // 複数あっても正しく判定できるように .maybeSingle() を廃止し、配列の長さで判定する
   const [isRehabilitating, setIsRehabilitating] = useState(false);
@@ -663,7 +672,7 @@ export function AthleteView({
     loading: nutritionLoading,
     error: nutritionError,
     refetch: refetchNutritionToday,
-  } = useTodayNutritionTotals(user.id, today);
+  } = useTodayNutritionTotals(user.id, nutritionDate);
 
   // ✅ ここに追加（この場所！）
   const normalizedNutritionTotalsToday = useMemo(() => {
@@ -1181,6 +1190,7 @@ export function AthleteView({
               {canUseNutrition && (
                 <button type="button"
                   onClick={() => {
+                    setNutritionDate(today); // 今日の日付にリセット
                     safeSetActiveTab('nutrition');
                     setMenuOpen(false);
                   }}
@@ -1597,7 +1607,7 @@ export function AthleteView({
             >
               <AthleteNutritionDashboardView
                 user={user}
-                date={today}
+                date={nutritionDate}
                 nutritionLogs={nutritionLogsToday}
                 nutritionTotals={normalizedNutritionTotalsToday}
                 nutritionLoading={nutritionLoading}
@@ -1607,6 +1617,7 @@ export function AthleteView({
                 trainingRecords={records ?? []}
                 latestWeightKg={latestWeight ?? null}
                 onRefreshNutrition={refetchNutritionToday}
+                onChangeDate={(d) => setNutritionDate(d)}
               />
             </Suspense>
           ) : null

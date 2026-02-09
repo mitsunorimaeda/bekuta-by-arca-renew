@@ -20,6 +20,7 @@ type DailySummaryRequest = {
 
 type NutritionRequest =
   | { type: "analyze_meal"; imageBase64: string; context?: string }
+  | { type: "analyze_label"; imagesBase64: string[]; context?: string } // ✅ 追加
   | {
       type: "generate_plan";
       profile: {
@@ -171,6 +172,79 @@ function normalizeAnalyzeMealResult(raw: any) {
     menu_items,
     comment,
   };
+}
+
+/**
+ * ✅ analyze_label の出力を正規化（P/F/C + 任意でラベルkcal）
+ *  - ラベルは「推定NG」前提：読めないなら null を許容
+ */
+function normalizeAnalyzeLabelResult(raw: any) {
+  const p = toNum(raw?.p ?? raw?.protein ?? raw?.protein_g, null);
+  const f = toNum(raw?.f ?? raw?.fat ?? raw?.fat_g, null);
+  const c = toNum(raw?.c ?? raw?.carbs ?? raw?.carbs_g, null);
+  const labelKcal = toNum(raw?.label_kcal ?? raw?.calories ?? raw?.kcal, null);
+
+  const servingLabel =
+    (isNonEmptyString(raw?.serving_label) && raw.serving_label) ||
+    (isNonEmptyString(raw?.serving) && raw.serving) ||
+    "";
+
+  const nameCandidatesRaw = Array.isArray(raw?.name_candidates)
+    ? raw.name_candidates
+    : Array.isArray(raw?.names)
+      ? raw.names
+      : [];
+
+  const name_candidates = nameCandidatesRaw
+    .filter((x: any) => isNonEmptyString(x))
+    .slice(0, 3)
+    .map((s: string) => truncateByChars(s, 40));
+
+  const rawOcrText =
+    (isNonEmptyString(raw?.raw_ocr_text) && raw.raw_ocr_text) ||
+    (isNonEmptyString(raw?.ocr_text) && raw.ocr_text) ||
+    "";
+
+  // confidence：数値が揃ってるほど上げる（雑でOK）
+  const hasPFC = p !== null && f !== null && c !== null && (p > 0 || f > 0 || c > 0);
+  const confidenceSource =
+    (isNonEmptyString(raw?.confidence) && raw.confidence) ||
+    (hasPFC ? "high" : "low");
+
+  const conf = ["high", "med", "low"].includes(confidenceSource) ? confidenceSource : "med";
+
+  // nutrition_logs の型が numeric(6,1) 前提なので 0.1刻みに寄せる
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+
+  return {
+    p: p === null ? null : clamp(round1(p), 0, 300),
+    f: f === null ? null : clamp(round1(f), 0, 300),
+    c: c === null ? null : clamp(round1(c), 0, 800),
+
+    label_kcal: labelKcal === null ? null : clamp(Math.round(labelKcal), 0, 5000),
+
+    serving_label: truncateByChars(servingLabel, 24),
+    name_candidates,
+    confidence: conf as "high" | "med" | "low",
+    raw_ocr_text: truncateByChars(rawOcrText, 1200),
+  };
+}
+
+function looksBadAnalyzeLabel(result: {
+  p: number | null;
+  f: number | null;
+  c: number | null;
+  name_candidates: string[];
+}) {
+  const pBad = result.p === null || result.p === 0;
+  const fBad = result.f === null || result.f === 0;
+  const cBad = result.c === null || result.c === 0;
+
+  const hasName = (result.name_candidates ?? []).some((s) => (s ?? "").trim().length >= 2);
+
+  // PFCが全部ゼロ/空っぽ かつ 名前も取れてない → ダメ
+  if (pBad && fBad && cBad && !hasName) return true;
+  return false;
 }
 
 /**
@@ -563,8 +637,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
             status: second2.status,
             detail: second2.detail,
           });
-          // liteの結果は返せるので、502で落とさず lite結果を返すか選べるが
-          // 今回は “解析失敗扱いを減らす” より “品質担保” を優先するためエラー返す
+          // 今回は “品質担保” を優先するためエラー返す
           return json({ error: `Gemini error ${second2.status}`, detail: second2.detail }, 502);
         }
 
@@ -596,6 +669,241 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       }
 
       // liteで十分
+      return json({
+        ok: true,
+        result: result1,
+        meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_ok" },
+      });
+    }
+
+    // ======= analyze_label ✅追加 =======
+    if (body.type === "analyze_label") {
+      const imgs = Array.isArray(body.imagesBase64) ? body.imagesBase64 : [];
+      if (imgs.length < 1) return json({ error: "imagesBase64 is required" }, 400);
+
+      // 画像枚数上限（事故防止）
+      const imagesBase64 = imgs.slice(0, 3).filter((s) => typeof s === "string" && s.length > 50);
+      if (imagesBase64.length < 1) return json({ error: "imagesBase64 is empty" }, 400);
+
+      const prompt = `
+あなたは食品ラベル読取AI。画像に写る「栄養成分表示」からP/F/C（g）と任意でラベル記載kcalを抽出する。
+雑談・感想は禁止。必ずJSONのみ。前置き/説明/コードブロック禁止。
+重要：推定は禁止。読めない値は null にする。
+
+必須で返す（null可）:
+{
+  "p": number|null,
+  "f": number|null,
+  "c": number|null,
+  "label_kcal": number|null,
+  "serving_label": string,
+  "name_candidates": [string,string,string],
+  "confidence": "high"|"med"|"low",
+  "raw_ocr_text": string
+}
+
+ルール:
+- 単位は g / kcal を前提。gの小数はあり得る
+- 「炭水化物」は糖質/食物繊維と分かれていても合算して c にする（判断できなければ炭水化物の値を優先）
+- 「1食分あたり」「1包装あたり」「1個あたり」「100gあたり」などの基準は serving_label に短く入れる（例:"1個あたり","1袋あたり","100gあたり"）
+- 複数枚ある場合は情報を統合して最も妥当な1つにまとめる
+- raw_ocr_text には読み取った主要テキストを短くまとめて入れる（長文禁止）
+- 自信が低い場合は confidence を下げる
+`.trim();
+
+      const parts: any[] = [];
+      for (const b64 of imagesBase64) {
+        parts.push({ inlineData: { mimeType: "image/jpeg", data: b64 } });
+      }
+      parts.push({
+        text:
+          prompt +
+          (body.context && body.context.trim()
+            ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+            : ""),
+      });
+
+      // ① lite
+      const first = await callGemini({
+        apiKey: GEMINI_API_KEY,
+        model: GEMINI_MODEL_LITE,
+        parts,
+        temperature: 0.1,
+        maxOutputTokens: 520,
+      });
+
+      if (!first.ok) {
+        console.error("[nutrition-gemini] analyze_label lite error", {
+          status: first.status,
+          detail: first.detail,
+        });
+        return json({ error: `Gemini error ${first.status}`, detail: first.detail }, 502);
+      }
+
+      let parsed: any = null;
+      try {
+        parsed = safeParseJsonFromText(first.text);
+      } catch (e) {
+        console.error("[nutrition-gemini] analyze_label JSON parse failed (lite) -> retry flash", {
+          model: GEMINI_MODEL_LITE,
+          textPreview: String(first.text).slice(0, 700),
+          err: String((e as Error)?.message ?? e),
+        });
+
+        const retryPrompt = `
+あなたは「JSON生成器」。必ず有効なJSONのみを返す。前置き/説明/謝罪は禁止。
+推定は禁止。読めない値は null。
+次のスキーマ厳守:
+{
+  "p": number|null,
+  "f": number|null,
+  "c": number|null,
+  "label_kcal": number|null,
+  "serving_label": string,
+  "name_candidates": [string,string,string],
+  "confidence": "high"|"med"|"low",
+  "raw_ocr_text": string
+}
+`.trim();
+
+        const retryParts: any[] = [];
+        for (const b64 of imagesBase64) {
+          retryParts.push({ inlineData: { mimeType: "image/jpeg", data: b64 } });
+        }
+        retryParts.push({
+          text:
+            retryPrompt +
+            (body.context && body.context.trim()
+              ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+              : ""),
+        });
+
+        const second = await callGemini({
+          apiKey: GEMINI_API_KEY,
+          model: GEMINI_MODEL_FLASH,
+          parts: retryParts,
+          temperature: 0.1,
+          maxOutputTokens: 600,
+          strictJson: true,
+        });
+
+        if (!second.ok) {
+          console.error("[nutrition-gemini] analyze_label flash retry error", {
+            status: second.status,
+            detail: second.detail,
+          });
+          return json({ error: `Gemini error ${second.status}`, detail: second.detail }, 502);
+        }
+
+        try {
+          parsed = safeParseJsonFromText(second.text);
+        } catch (e2) {
+          console.error("[nutrition-gemini] analyze_label JSON parse failed (flash)", {
+            model: GEMINI_MODEL_FLASH,
+            textPreview: String(second.text).slice(0, 900),
+            err: String((e2 as Error)?.message ?? e2),
+          });
+          return json(
+            {
+              error: "Failed to parse Gemini JSON",
+              detail: String((e2 as Error)?.message ?? e2),
+              textPreview: String(second.text).slice(0, 900),
+            },
+            422
+          );
+        }
+
+        const result2 = normalizeAnalyzeLabelResult(parsed);
+        return json({
+          ok: true,
+          result: result2,
+          meta: { used_model: GEMINI_MODEL_FLASH, reason: "retry_after_parse_fail" },
+        });
+      }
+
+      const result1 = normalizeAnalyzeLabelResult(parsed);
+
+      // ② 形式はOKだが中身が薄い → flash再トライ
+      if (looksBadAnalyzeLabel(result1)) {
+        console.warn("[nutrition-gemini] analyze_label lite result looks bad -> retry flash", {
+          litePreview: result1,
+          textPreview: String(first.text).slice(0, 700),
+        });
+
+        const retryPrompt2 = `
+あなたは食品ラベル読取AI。画像の栄養成分表示からP/F/C(g)とkcalを抽出する。
+必ずJSONのみ。推定は禁止。読めない値は null。
+スキーマ:
+{
+  "p": number|null,
+  "f": number|null,
+  "c": number|null,
+  "label_kcal": number|null,
+  "serving_label": string,
+  "name_candidates": [string,string,string],
+  "confidence": "high"|"med"|"low",
+  "raw_ocr_text": string
+}
+`.trim();
+
+        const retryParts2: any[] = [];
+        for (const b64 of imagesBase64) {
+          retryParts2.push({ inlineData: { mimeType: "image/jpeg", data: b64 } });
+        }
+        retryParts2.push({
+          text:
+            retryPrompt2 +
+            (body.context && body.context.trim()
+              ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
+              : ""),
+        });
+
+        const second2 = await callGemini({
+          apiKey: GEMINI_API_KEY,
+          model: GEMINI_MODEL_FLASH,
+          parts: retryParts2,
+          temperature: 0.1,
+          maxOutputTokens: 600,
+          strictJson: true,
+        });
+
+        if (!second2.ok) {
+          console.error("[nutrition-gemini] analyze_label flash retry error (bad quality)", {
+            status: second2.status,
+            detail: second2.detail,
+          });
+          // UX優先：liteを返して前に進める（確認画面で手修正できる）
+          return json({
+            ok: true,
+            result: result1,
+            meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_bad_but_returned" },
+          });
+        }
+
+        let parsed2: any = null;
+        try {
+          parsed2 = safeParseJsonFromText(second2.text);
+        } catch (e2) {
+          console.error("[nutrition-gemini] analyze_label JSON parse failed (flash retry bad quality)", {
+            model: GEMINI_MODEL_FLASH,
+            textPreview: String(second2.text).slice(0, 900),
+            err: String((e2 as Error)?.message ?? e2),
+          });
+          return json({
+            ok: true,
+            result: result1,
+            meta: { used_model: GEMINI_MODEL_LITE, reason: "flash_parse_failed_return_lite" },
+          });
+        }
+
+        const result2 = normalizeAnalyzeLabelResult(parsed2);
+        return json({
+          ok: true,
+          result: result2,
+          meta: { used_model: GEMINI_MODEL_FLASH, reason: "retry_after_bad_quality" },
+        });
+      }
+
       return json({
         ok: true,
         result: result1,

@@ -1,14 +1,15 @@
 // src/components/NutritionCard.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Flame, Camera, Loader2, CheckCircle2, Lightbulb } from "lucide-react";
+import { Flame, Camera, Loader2, CheckCircle2, Lightbulb, Tag } from "lucide-react";
 import { buildDailyTargets, calcGaps } from "../lib/nutritionCalc";
 import { supabase } from "../lib/supabase";
 import NutritionEditModal, { type NutritionLog } from "./NutritionEditModal";
-import NutritionOverview from "./NutritionOverview";
 import NutritionSummaryPanel from "./NutritionSummaryPanel";
 
 type MealType = "朝食" | "昼食" | "夕食" | "補食";
 type MacroTotals = { cal: number; p: number; f: number; c: number };
+
+type DailyRow = { date: string; cal: number; p: number; f: number; c: number };
 
 type Props = {
   user: any;
@@ -20,11 +21,14 @@ type Props = {
   badgeText?: string;
 
   nutritionLogs?: NutritionLog[];
-  nutritionTotals?: MacroTotals; // 親が返してくる合計（あってもOK / なくてもOK）
+  nutritionTotals?: MacroTotals;
   nutritionLoading?: boolean;
   nutritionError?: string | null;
 
   onSaved?: (updated?: NutritionLog | null) => void;
+
+  // ✅ 日別履歴のクリックで親に日付変更を依頼できる（親が持ってない場合は未指定でOK）
+  onSelectDate?: (date: string) => void;
 };
 
 function toNum(v: any, fallback = 0) {
@@ -34,6 +38,22 @@ function toNum(v: any, fallback = 0) {
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
+
+// ✅ kcal統一（PFC=4-9-4）
+function kcalFromPFC(p: number, f: number, c: number) {
+  const P = toNum(p, 0);
+  const F = toNum(f, 0);
+  const C = toNum(c, 0);
+  return Math.round(P * 4 + F * 9 + C * 4);
+}
+function kcalFromLog(l: any) {
+  const p = toNum(l?.p, 0);
+  const f = toNum(l?.f, 0);
+  const c = toNum(l?.c, 0);
+  const hasMacro = p > 0 || f > 0 || c > 0;
+  return hasMacro ? kcalFromPFC(p, f, c) : Math.round(toNum(l?.total_calories, 0));
+}
+
 function formatMealLabel(mealType: string, mealSlot: any) {
   if (mealType === "補食") return `補食${Number(mealSlot ?? 1)}`;
   return mealType;
@@ -84,13 +104,24 @@ function toTokyoDateString(anyDate: any) {
   return `${parts[0]}-${String(parts[1]).padStart(2, "0")}-${String(parts[2]).padStart(2, "0")}`;
 }
 
+function addDays(yyyyMMdd: string, delta: number) {
+  const [y, m, d] = yyyyMMdd.split("-").map((x) => Number(x));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 /**
  * nutrition-gemini の返却を厳格にパース（必須キーが揃わない場合は throw）
+ * ✅ caloriesは参考値として残し、保存/表示はPFC由来kcalに統一
  */
 function parseGeminiResultStrict(json: any) {
   const r = json?.result ?? json?.data ?? json ?? {};
 
-  const calories = r?.calories ?? r?.total_calories ?? r?.kcal;
+  const calories = r?.calories ?? r?.total_calories ?? r?.kcal; // AIのkcal（参考）
   const protein = r?.protein ?? r?.p;
   const fat = r?.fat ?? r?.f;
   const carbs = r?.carbs ?? r?.c;
@@ -101,17 +132,15 @@ function parseGeminiResultStrict(json: any) {
   const cN = Number(carbs);
 
   const ok =
-    Number.isFinite(calsN) &&
-    calsN >= 0 &&
-    Number.isFinite(pN) &&
-    pN >= 0 &&
-    Number.isFinite(fN) &&
-    fN >= 0 &&
-    Number.isFinite(cN) &&
-    cN >= 0;
+    Number.isFinite(pN) && pN >= 0 &&
+    Number.isFinite(fN) && fN >= 0 &&
+    Number.isFinite(cN) && cN >= 0;
 
   if (!ok) {
-    const msg = r?.error ?? r?.message ?? "Gemini返却に必須値（calories/protein/fat/carbs）が見つかりません";
+    const msg =
+      r?.error ??
+      r?.message ??
+      "Gemini返却に必須値（protein/fat/carbs）が見つかりません";
     const detail = JSON.stringify({ calories, protein, fat, carbs, keys: Object.keys(r ?? {}) }, null, 2);
     throw new Error(`${msg}\n${detail}`);
   }
@@ -119,11 +148,18 @@ function parseGeminiResultStrict(json: any) {
   const menuItems = r?.menu_items ?? r?.menuItems ?? [];
   const comment = r?.comment ?? r?.advice_markdown ?? r?.advice ?? null;
 
+  const p = toNum(pN, 0);
+  const f = toNum(fN, 0);
+  const c = toNum(cN, 0);
+
   return {
-    total_calories: Math.round(calsN),
-    p: toNum(pN, 0),
-    f: toNum(fN, 0),
-    c: toNum(cN, 0),
+    // ✅ kcalはPFCから統一（ここが本丸）
+    total_calories: kcalFromPFC(p, f, c),
+    p,
+    f,
+    c,
+
+    ai_calories: Number.isFinite(calsN) ? Math.round(calsN) : null, // 参考値として残す
     menu_items: Array.isArray(menuItems) ? menuItems : [],
     advice_markdown: comment != null ? String(comment) : null,
     raw: json,
@@ -154,7 +190,7 @@ type DeficitRow = {
   unit: string;
   now: number;
   goal: number;
-  remain: number; // goal - now
+  remain: number;
 };
 
 function buildDeficits(totals: MacroTotals, targets: any | null): DeficitRow[] | null {
@@ -203,7 +239,6 @@ function buildDeficits(totals: MacroTotals, targets: any | null): DeficitRow[] |
   return rows;
 }
 
-/** “次の一手”は断言しない。候補を3つだけ出す（ローカルルール） */
 function buildQuickSuggestions(deficits: DeficitRow[] | null) {
   if (!deficits) return [];
 
@@ -309,7 +344,7 @@ export function NutritionCard({
   date,
   trainingRecords,
 
-  badgeText = "栄養(β)",
+  badgeText = "栄養管理",
 
   nutritionLogs = [],
   nutritionTotals = { cal: 0, p: 0, f: 0, c: 0 },
@@ -317,8 +352,10 @@ export function NutritionCard({
   nutritionError = null,
 
   onSaved,
+  onSelectDate,
 }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const labelFileRef = useRef<HTMLInputElement | null>(null);
 
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
@@ -332,36 +369,51 @@ export function NutritionCard({
 
   // ✅ 表示を即更新するためのローカル状態（propsと同期）
   const [localLogs, setLocalLogs] = useState<NutritionLog[]>(Array.isArray(nutritionLogs) ? nutritionLogs : []);
-
   useEffect(() => {
     setLocalLogs(Array.isArray(nutritionLogs) ? nutritionLogs : []);
   }, [nutritionLogs]);
 
-  // ✅ 合計は「localLogsから常に再集計」＝編集/削除でズレない
+  // ✅ 合計は「localLogsから常に再集計」＆ kcalはPFC由来で統一
   const displayTotals: MacroTotals = useMemo(() => {
     const sum = (Array.isArray(localLogs) ? localLogs : []).reduce(
       (acc, l: any) => {
-        acc.cal += toNum(l?.total_calories, 0);
-        acc.p += toNum(l?.p, 0);
-        acc.f += toNum(l?.f, 0);
-        acc.c += toNum(l?.c, 0);
+        const p = toNum(l?.p, 0);
+        const f = toNum(l?.f, 0);
+        const c = toNum(l?.c, 0);
+        acc.p += p;
+        acc.f += f;
+        acc.c += c;
+
+        // ✅ kcalはPFC優先（マクロが無いログだけ total_calories を使う）
+        acc.cal += kcalFromLog(l);
+
         return acc;
       },
       { cal: 0, p: 0, f: 0, c: 0 }
     );
 
-    // 初回ロード中に localLogs が空でも、親が totals を持ってる場合はそれを優先表示して“0チラつき”を回避
+    // 初回ロード中の“0チラつき”回避：props totals を使う（ただしcalはPFCで統一したい）
     const canUsePropsTotals =
       nutritionLoading && (!Array.isArray(localLogs) || localLogs.length === 0) && nutritionTotals;
 
-    return canUsePropsTotals
-      ? {
-          cal: toNum((nutritionTotals as any).cal, 0),
-          p: toNum((nutritionTotals as any).p, 0),
-          f: toNum((nutritionTotals as any).f, 0),
-          c: toNum((nutritionTotals as any).c, 0),
-        }
-      : sum;
+    if (canUsePropsTotals) {
+      const p = toNum((nutritionTotals as any).p, 0);
+      const f = toNum((nutritionTotals as any).f, 0);
+      const c = toNum((nutritionTotals as any).c, 0);
+      const cal = (p > 0 || f > 0 || c > 0)
+        ? kcalFromPFC(p, f, c)
+        : toNum((nutritionTotals as any).cal, 0);
+
+      return { cal, p, f, c };
+    }
+
+    // 小数を整える
+    return {
+      cal: Math.round(sum.cal),
+      p: Math.round(sum.p * 10) / 10,
+      f: Math.round(sum.f * 10) / 10,
+      c: Math.round(sum.c * 10) / 10,
+    };
   }, [localLogs, nutritionLoading, nutritionTotals]);
 
   // ✅ 編集モーダル
@@ -401,11 +453,7 @@ export function NutritionCard({
     );
 
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
-      return {
-        weightKg: null as number | null,
-        targets: null as any,
-        refs: null as any,
-      };
+      return { weightKg: null as number | null, targets: null as any, refs: null as any };
     }
 
     const res = buildDailyTargets({
@@ -457,21 +505,99 @@ export function NutritionCard({
     });
   }, [displayTotals, targets]);
 
-  const handleSelectPhoto = async (file: File | null) => {
-    if (!file) return;
+  // ✅ 日別履歴（直近14日）
+  const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
+  const [dailyLoading, setDailyLoading] = useState(false);
 
-    const safeSlot = normalizeMealSlot(mealType, mealSlot);
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+
+    const fetchDaily = async () => {
+      setDailyLoading(true);
+      try {
+        const end = recordDate;
+        const start = addDays(recordDate, -13);
+
+        // ① nutrition_daily_reports があるならそれを優先
+        const q1 = await supabase
+          .from("nutrition_daily_reports")
+          .select("report_date,total_calories,p,f,c")
+          .eq("user_id", userId)
+          .gte("report_date", start)
+          .lte("report_date", end)
+          .order("report_date", { ascending: false });
+
+        // テーブル無い/権限無い等は fallback
+        if (!q1.error && Array.isArray(q1.data)) {
+          const rows: DailyRow[] = q1.data.map((r: any) => {
+            const p = toNum(r?.p, 0);
+            const f = toNum(r?.f, 0);
+            const c = toNum(r?.c, 0);
+            const cal = (p > 0 || f > 0 || c > 0) ? kcalFromPFC(p, f, c) : Math.round(toNum(r?.total_calories, 0));
+            return { date: String(r.report_date), cal, p, f, c };
+          });
+          setDailyRows(rows);
+          return;
+        }
+
+        // ② fallback：nutrition_logs を集計
+        const q2 = await supabase
+          .from("nutrition_logs")
+          .select("record_date,p,f,c,total_calories")
+          .eq("user_id", userId)
+          .gte("record_date", start)
+          .lte("record_date", end);
+
+        if (q2.error) throw q2.error;
+
+        const map = new Map<string, DailyRow>();
+        for (const r of q2.data ?? []) {
+          const d = String((r as any).record_date);
+          const p = toNum((r as any).p, 0);
+          const f = toNum((r as any).f, 0);
+          const c = toNum((r as any).c, 0);
+          const cal = (p > 0 || f > 0 || c > 0) ? kcalFromPFC(p, f, c) : Math.round(toNum((r as any).total_calories, 0));
+          const prev = map.get(d) ?? { date: d, cal: 0, p: 0, f: 0, c: 0 };
+          prev.p += p; prev.f += f; prev.c += c; prev.cal += cal;
+          map.set(d, prev);
+        }
+        const rows = Array.from(map.values())
+          .sort((a, b) => (a.date < b.date ? 1 : -1))
+          .map((x) => ({
+            ...x,
+            cal: Math.round(x.cal),
+            p: Math.round(x.p * 10) / 10,
+            f: Math.round(x.f * 10) / 10,
+            c: Math.round(x.c * 10) / 10,
+          }));
+        setDailyRows(rows);
+      } catch (e) {
+        console.warn("[NutritionCard] daily history fetch failed:", e);
+        setDailyRows([]);
+      } finally {
+        setDailyLoading(false);
+      }
+    };
+
+    fetchDaily();
+  }, [user?.id, recordDate]);
+
+  // ✅ 共通：重複チェック
+  function assertNotDuplicate(type: MealType, slot: number) {
+    const safeSlot = normalizeMealSlot(type, slot);
     const exists = (Array.isArray(localLogs) ? localLogs : []).some(
       (l: any) =>
         String(l?.record_date) === String(recordDate) &&
-        l?.meal_type === mealType &&
+        l?.meal_type === type &&
         Number(l?.meal_slot) === Number(safeSlot)
     );
-    if (exists) {
-      setUploadErr(duplicateMealMessage(mealType, safeSlot));
-      if (fileRef.current) fileRef.current.value = "";
-      return;
-    }
+    if (exists) throw new Error(duplicateMealMessage(type, safeSlot));
+    return safeSlot;
+  }
+
+  const handleSelectPhoto = async (file: File | null) => {
+    if (!file) return;
 
     setUploading(true);
     setUploadErr(null);
@@ -482,6 +608,8 @@ export function NutritionCard({
     try {
       const userId = user?.id;
       if (!userId) throw new Error("user.id が取れません");
+
+      const safeSlot = assertNotDuplicate(mealType, mealSlot);
 
       // 1) Storage upload
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
@@ -506,7 +634,7 @@ export function NutritionCard({
           meal_slot: safeSlot,
           image_path: path,
           image_url: imageUrl,
-          image_meta: { original_name: file.name, size: file.size, type: file.type },
+          image_meta: { original_name: file.name, size: file.size, type: file.type, source: "meal_photo" },
           analysis_status: "pending",
           analysis_error: null,
         })
@@ -517,7 +645,6 @@ export function NutritionCard({
         if (isDuplicateMealError(insErr)) throw new Error(duplicateMealMessage(mealType, safeSlot));
         throw insErr;
       }
-
       insertedId = inserted?.id ?? null;
 
       // 3) analyze
@@ -533,7 +660,7 @@ export function NutritionCard({
       const parsed = parseGeminiResultStrict(geminiJson);
       const meta = geminiJson?.meta ?? null;
 
-      // 4) UPDATE success
+      // 4) UPDATE success（✅ kcal=PFCで統一）
       const { data: updated, error: updErr } = await supabase
         .from("nutrition_logs")
         .update({
@@ -547,7 +674,7 @@ export function NutritionCard({
           analysis_status: "success",
           analysis_error: null,
 
-          analysis_meta: meta ?? {},
+          analysis_meta: { ...(meta ?? {}), ai_calories: parsed.ai_calories ?? null },
           analysis_model: meta?.used_model ?? null,
           analysis_reason: meta?.reason ?? null,
         })
@@ -557,7 +684,6 @@ export function NutritionCard({
 
       if (updErr) throw updErr;
 
-      // 5) UI即更新（合計は useMemo で再計算される）
       setLocalLogs((prev) =>
         [...(Array.isArray(prev) ? prev : []), updated].sort((a: any, b: any) => {
           const at = new Date(a?.created_at ?? 0).getTime();
@@ -587,6 +713,121 @@ export function NutritionCard({
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  /**
+   * ✅ バックアップ：ラベルOCR（複数写真）
+   * - Edge Function に type:"analyze_label" で投げる
+   * - 関数未実装なら、エラーメッセージで誘導
+   */
+  const handleSelectLabelPhotos = async (files: FileList | null) => {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
+
+    setUploading(true);
+    setUploadErr(null);
+    setSuccessMsg(null);
+
+    let insertedId: string | null = null;
+
+    try {
+      const userId = user?.id;
+      if (!userId) throw new Error("user.id が取れません");
+
+      const safeSlot = assertNotDuplicate(mealType, mealSlot);
+
+      // base64（最大3枚）
+      const imagesBase64 = await Promise.all(list.slice(0, 3).map(fileToBase64));
+
+      const context = `meal_type=${mealType}${mealType === "補食" ? ` slot=${safeSlot}` : ""}`;
+
+      // ① ラベル解析（関数側が analyze_label を実装している前提）
+      const geminiJson = await callNutritionGeminiViaInvoke({
+        type: "analyze_label",
+        imagesBase64,
+        context,
+      });
+
+      // ② 解析結果を meal として扱う（PFC必須想定）
+      const parsed = parseGeminiResultStrict(geminiJson);
+      const meta = geminiJson?.meta ?? null;
+
+      // ③ nutrition_logs へ保存（画像は任意なので null でOK）
+      const { data: inserted, error: insErr } = await supabase
+        .from("nutrition_logs")
+        .insert({
+          user_id: userId,
+          record_date: recordDate,
+          meal_type: mealType,
+          meal_slot: safeSlot,
+
+          total_calories: parsed.total_calories,
+          p: parsed.p,
+          f: parsed.f,
+          c: parsed.c,
+          menu_items: parsed.menu_items,
+          advice_markdown: parsed.advice_markdown,
+
+          image_path: null,
+          image_url: null,
+          image_meta: { source: "label_ocr", label_images: list.slice(0, 3).map((f) => ({ name: f.name, size: f.size, type: f.type })) },
+
+          analysis_status: "success",
+          analysis_error: null,
+
+          analysis_meta: { ...(meta ?? {}), ai_calories: parsed.ai_calories ?? null },
+          analysis_model: meta?.used_model ?? null,
+          analysis_reason: meta?.reason ?? null,
+        })
+        .select("*")
+        .single();
+
+      if (insErr) {
+        if (isDuplicateMealError(insErr)) throw new Error(duplicateMealMessage(mealType, safeSlot));
+        throw insErr;
+      }
+
+      insertedId = inserted?.id ?? null;
+
+      setLocalLogs((prev) =>
+        [...(Array.isArray(prev) ? prev : []), inserted].sort((a: any, b: any) => {
+          const at = new Date(a?.created_at ?? 0).getTime();
+          const bt = new Date(b?.created_at ?? 0).getTime();
+          return at - bt;
+        })
+      );
+
+      setSuccessMsg("ラベルから記録完了");
+      if (typeof onSaved === "function") onSaved(inserted as NutritionLog);
+    } catch (e: any) {
+      console.error("[NutritionCard] label analyze error:", e);
+      const msg = String(e?.message ?? e);
+
+      // 関数未実装のときに分かりやすく
+      if (msg.includes("Unknown type") || msg.includes("analyze_label")) {
+        setUploadErr(
+          "ラベル解析（analyze_label）が未実装です。\n" +
+          "nutrition-gemini に type:'analyze_label' を追加実装したら動きます。"
+        );
+      } else {
+        setUploadErr(msg);
+      }
+
+      // pending を作ってないので基本不要だが、将来変更に備えて残す
+      if (insertedId != null) {
+        try {
+          await supabase
+            .from("nutrition_logs")
+            .update({ analysis_status: "failed", analysis_error: msg.slice(0, 2000) })
+            .eq("id", insertedId);
+        } catch (markErr) {
+          console.error("[NutritionCard] failed status update error:", markErr);
+        }
+      }
+    } finally {
+      setUploading(false);
+      if (labelFileRef.current) labelFileRef.current.value = "";
     }
   };
 
@@ -658,6 +899,18 @@ export function NutritionCard({
             写真
           </button>
 
+          {/* ✅ ラベル（バックアップ） */}
+          <button
+            type="button"
+            onClick={() => labelFileRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-60"
+            title="栄養成分表示（ラベル）を撮影して解析"
+          >
+            <Tag className="w-4 h-4" />
+            ラベル
+          </button>
+
           <input
             ref={fileRef}
             type="file"
@@ -665,7 +918,55 @@ export function NutritionCard({
             className="absolute -left-[9999px] top-0 w-px h-px opacity-0"
             onChange={(e) => handleSelectPhoto(e.target.files?.[0] ?? null)}
           />
+
+          <input
+            ref={labelFileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="absolute -left-[9999px] top-0 w-px h-px opacity-0"
+            onChange={(e) => handleSelectLabelPhotos(e.target.files)}
+          />
         </div>
+      </div>
+
+      {/* ✅ 日別履歴（直近） */}
+      <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/20 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">履歴（直近14日）</p>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            {onSelectDate ? "タップで日付切替" : "（日付切替は親側で対応）"}
+          </span>
+        </div>
+
+        {dailyLoading ? (
+          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">読み込み中...</div>
+        ) : dailyRows.length === 0 ? (
+          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">履歴がありません</div>
+        ) : (
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {dailyRows.slice(0, 8).map((d) => (
+              <button
+                key={d.date}
+                type="button"
+                onClick={() => onSelectDate?.(d.date)}
+                disabled={!onSelectDate}
+                className={[
+                  "rounded-lg border px-3 py-2 text-left transition-colors",
+                  "hover:bg-white dark:hover:bg-gray-800",
+                  d.date === recordDate ? "border-emerald-500" : "border-gray-200 dark:border-gray-700",
+                  !onSelectDate ? "opacity-70 cursor-default" : "",
+                ].join(" ")}
+              >
+                <div className="text-xs text-gray-500 dark:text-gray-400">{d.date}</div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">{d.cal} kcal</div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                  P{d.p} F{d.f} C{d.c}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* success */}
@@ -706,7 +1007,6 @@ export function NutritionCard({
           <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">集計中…</div>
         ) : (
           <div className="mt-3 space-y-3">
-            {/* 不足ランキング */}
             <div>
               <p className="text-xs font-medium text-slate-700 dark:text-slate-200">不足（優先度）</p>
               {shortageRanking && shortageRanking.length > 0 ? (
@@ -734,7 +1034,6 @@ export function NutritionCard({
               )}
             </div>
 
-            {/* 次の一手 */}
             <div>
               <p className="text-xs font-medium text-slate-700 dark:text-slate-200">次の一手（候補）</p>
               <ul className="mt-1 list-disc pl-5 space-y-1 text-sm text-slate-800 dark:text-slate-100">
@@ -747,7 +1046,7 @@ export function NutritionCard({
         )}
       </div>
 
-      {/* Summary Panel（既存コンポーネント） */}
+      {/* Summary Panel */}
       <div className="mt-4">
         <NutritionSummaryPanel
           dateLabel={recordDate}
@@ -777,10 +1076,11 @@ export function NutritionCard({
               const menuItems = normalizeMenuItems(log?.menu_items);
               const menuText = menuItems.map((x: any) => formatMenuItem(x)).filter(Boolean).join(" / ");
 
+              const kcal = kcalFromLog(log); // ✅ 表示もPFC統一
+
               return (
                 <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                   <div className="flex items-start justify-between gap-3">
-                    {/* 左：サムネ + テキスト */}
                     <div className="flex items-start gap-3 min-w-0">
                       {log.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -799,7 +1099,7 @@ export function NutritionCard({
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
                           {formatMealLabel(log.meal_type, log.meal_slot)}
                           <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                            {toNum(log.total_calories, 0)} kcal
+                            {kcal} kcal
                           </span>
                           {log.analysis_status && (
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -813,14 +1113,12 @@ export function NutritionCard({
                           {log.is_edited ? "（編集済）" : ""}
                         </p>
 
-                        {/* ✅ 推定メニュー（ここが今回の修正点） */}
                         {menuText && (
                           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 break-words">
                             推定メニュー: {menuText}
                           </p>
                         )}
 
-                        {/* ✅ AIアドバイス（必要なら表示） */}
                         {log.advice_markdown && (
                           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
                             {String(log.advice_markdown)}
@@ -835,7 +1133,6 @@ export function NutritionCard({
                       </div>
                     </div>
 
-                    {/* 右：詳細ボタン */}
                     <button
                       type="button"
                       className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -864,6 +1161,7 @@ export function NutritionCard({
             setSelectedLog(null);
           }}
           onSaved={(updated) => {
+            // ✅ 編集後もkcalはPFC統一で表示される（合計も再計算される）
             setLocalLogs((prev) => (Array.isArray(prev) ? prev.map((x: any) => (x.id === updated.id ? updated : x)) : []));
             setEditOpen(false);
             setSelectedLog(null);
@@ -877,9 +1175,6 @@ export function NutritionCard({
           }}
         />
       )}
-
-      {/* 既存コンポーネント（使ってるなら残す：未使用なら消してOK） */}
-      {/* <NutritionOverview /> */}
     </div>
   );
 }
