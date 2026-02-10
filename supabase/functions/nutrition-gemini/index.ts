@@ -20,7 +20,7 @@ type DailySummaryRequest = {
 
 type NutritionRequest =
   | { type: "analyze_meal"; imageBase64: string; context?: string }
-  | { type: "analyze_label"; imagesBase64: string[]; context?: string } // ✅ 追加
+  | { type: "analyze_label"; imagesBase64: string[]; context?: string }
   | {
       type: "generate_plan";
       profile: {
@@ -66,9 +66,6 @@ function safeDateYYYYMMDD(s: string) {
 
 /**
  * Geminiが返した text からJSONだけ抜き出してparse（混在・前置き対策）
- * - ```json ...``` を除去
- * - 先頭〜末尾の最初の { ... } を抽出
- * - それでもダメなら、{} の候補を複数探索して最初にparseできたものを採用
  */
 function safeParseJsonFromText(text: string) {
   const cleaned = String(text ?? "")
@@ -95,7 +92,7 @@ function safeParseJsonFromText(text: string) {
     }
   }
 
-  // ③ さらにしぶとく：複数候補を走査（壊れた前置き/後置き/2個目が正解など）
+  // ③ 複数候補を走査
   const candidates: string[] = [];
   const idxs: number[] = [];
   for (let i = 0; i < cleaned.length; i++) {
@@ -105,7 +102,6 @@ function safeParseJsonFromText(text: string) {
     for (let e = cleaned.length - 1; e > s; e--) {
       if (cleaned[e] === "}") {
         const cand = cleaned.slice(s, e + 1);
-        // 過度に短いものは除外
         if (cand.length > 20) candidates.push(cand);
         break;
       }
@@ -123,7 +119,7 @@ function safeParseJsonFromText(text: string) {
 }
 
 /**
- * candidates.parts から text を全部連結（parts[0]だけだと取りこぼしがあるため）
+ * candidates.parts から text を全部連結
  */
 function extractGeminiText(raw: any): string {
   const parts = raw?.candidates?.[0]?.content?.parts;
@@ -141,7 +137,7 @@ function extractGeminiText(raw: any): string {
 }
 
 /**
- * analyze_meal の出力を「必ず同じ形」に正規化
+ * analyze_meal の出力を正規化
  */
 function normalizeAnalyzeMealResult(raw: any) {
   const calories = toNum(raw?.calories, null);
@@ -161,7 +157,6 @@ function normalizeAnalyzeMealResult(raw: any) {
     (isNonEmptyString(raw?.advice_markdown) && raw.advice_markdown) ||
     (isNonEmptyString(raw?.advice) && raw.advice) ||
     "";
-
   const comment = truncateByChars(commentSource, 110);
 
   return {
@@ -175,16 +170,44 @@ function normalizeAnalyzeMealResult(raw: any) {
 }
 
 /**
- * ✅ analyze_label の出力を正規化（P/F/C + 任意でラベルkcal）
- *  - ラベルは「推定NG」前提：読めないなら null を許容
+ * ✅ analyze_label(複数商品) の出力を正規化
+ * - items: 各商品（ラベルから読めたPFCを格納）
+ * - total: 合計（itemsから計算して確定）
+ * - 互換: protein/fat/carbs/calories/menu_items/comment も返す（NutritionCardの既存parse用）
  */
-function normalizeAnalyzeLabelResult(raw: any) {
+type LabelItem = {
+  name: string;
+  serving_label: string;
+  p: number | null;
+  f: number | null;
+  c: number | null;
+  label_kcal: number | null;
+  confidence: "high" | "med" | "low";
+};
+
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+function toConf(v: any): "high" | "med" | "low" {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "high") return "high";
+  if (s === "low") return "low";
+  return "med";
+}
+function normServingLabel(v: any) {
+  return truncateByChars(isNonEmptyString(v) ? v : "", 24);
+}
+function normName(v: any) {
+  const s = isNonEmptyString(v) ? v.trim() : "";
+  return truncateByChars(s, 40);
+}
+function pickItemFromLegacy(raw: any): LabelItem {
   const p = toNum(raw?.p ?? raw?.protein ?? raw?.protein_g, null);
   const f = toNum(raw?.f ?? raw?.fat ?? raw?.fat_g, null);
   const c = toNum(raw?.c ?? raw?.carbs ?? raw?.carbs_g, null);
-  const labelKcal = toNum(raw?.label_kcal ?? raw?.calories ?? raw?.kcal, null);
+  const kcal = toNum(raw?.label_kcal ?? raw?.calories ?? raw?.kcal, null);
 
-  const servingLabel =
+  const serving =
     (isNonEmptyString(raw?.serving_label) && raw.serving_label) ||
     (isNonEmptyString(raw?.serving) && raw.serving) ||
     "";
@@ -194,56 +217,117 @@ function normalizeAnalyzeLabelResult(raw: any) {
     : Array.isArray(raw?.names)
       ? raw.names
       : [];
-
-  const name_candidates = nameCandidatesRaw
-    .filter((x: any) => isNonEmptyString(x))
-    .slice(0, 3)
-    .map((s: string) => truncateByChars(s, 40));
-
-  const rawOcrText =
-    (isNonEmptyString(raw?.raw_ocr_text) && raw.raw_ocr_text) ||
-    (isNonEmptyString(raw?.ocr_text) && raw.ocr_text) ||
-    "";
-
-  // confidence：数値が揃ってるほど上げる（雑でOK）
-  const hasPFC = p !== null && f !== null && c !== null && (p > 0 || f > 0 || c > 0);
-  const confidenceSource =
-    (isNonEmptyString(raw?.confidence) && raw.confidence) ||
-    (hasPFC ? "high" : "low");
-
-  const conf = ["high", "med", "low"].includes(confidenceSource) ? confidenceSource : "med";
-
-  // nutrition_logs の型が numeric(6,1) 前提なので 0.1刻みに寄せる
-  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const name0 =
+    normName(raw?.name) ||
+    (nameCandidatesRaw.find((x: any) => isNonEmptyString(x)) ? normName(nameCandidatesRaw.find((x: any) => isNonEmptyString(x))) : "");
 
   return {
+    name: name0 || "加工食品",
+    serving_label: normServingLabel(serving),
     p: p === null ? null : clamp(round1(p), 0, 300),
     f: f === null ? null : clamp(round1(f), 0, 300),
     c: c === null ? null : clamp(round1(c), 0, 800),
-
-    label_kcal: labelKcal === null ? null : clamp(Math.round(labelKcal), 0, 5000),
-
-    serving_label: truncateByChars(servingLabel, 24),
-    name_candidates,
-    confidence: conf as "high" | "med" | "low",
-    raw_ocr_text: truncateByChars(rawOcrText, 1200),
+    label_kcal: kcal === null ? null : clamp(Math.round(kcal), 0, 5000),
+    confidence: toConf(raw?.confidence),
   };
 }
 
-function looksBadAnalyzeLabel(result: {
-  p: number | null;
-  f: number | null;
-  c: number | null;
-  name_candidates: string[];
+function normalizeAnalyzeLabelMultiResult(raw: any) {
+  // 想定スキーマ（Geminiに要求する形）
+  // {
+  //   items: [{name, serving_label, p, f, c, label_kcal, confidence}],
+  //   total: {p,f,c,label_kcal},
+  //   comment: string
+  // }
+  let itemsRaw: any[] = [];
+  if (Array.isArray(raw?.items)) itemsRaw = raw.items;
+  else if (Array.isArray(raw?.products)) itemsRaw = raw.products;
+  else if (Array.isArray(raw?.foods)) itemsRaw = raw.foods;
+
+  // 互換（旧スキーマしか来ないケース）→ 1件として扱う
+  if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
+    itemsRaw = [raw];
+  }
+
+  const items: LabelItem[] = itemsRaw.slice(0, 8).map((it: any) => {
+    const name = normName(it?.name) || "加工食品";
+    const serving_label = normServingLabel(it?.serving_label ?? it?.serving ?? it?.basis);
+
+    const p = toNum(it?.p ?? it?.protein ?? it?.protein_g, null);
+    const f = toNum(it?.f ?? it?.fat ?? it?.fat_g, null);
+    const c = toNum(it?.c ?? it?.carbs ?? it?.carbs_g, null);
+    const kcal = toNum(it?.label_kcal ?? it?.kcal ?? it?.calories, null);
+
+    return {
+      name,
+      serving_label,
+      p: p === null ? null : clamp(round1(p), 0, 300),
+      f: f === null ? null : clamp(round1(f), 0, 300),
+      c: c === null ? null : clamp(round1(c), 0, 800),
+      label_kcal: kcal === null ? null : clamp(Math.round(kcal), 0, 5000),
+      confidence: toConf(it?.confidence),
+    };
+  });
+
+  // total（itemsから合算）
+  const sumP = round1(items.reduce((acc, it) => acc + (toNum(it.p, 0) ?? 0), 0));
+  const sumF = round1(items.reduce((acc, it) => acc + (toNum(it.f, 0) ?? 0), 0));
+  const sumC = round1(items.reduce((acc, it) => acc + (toNum(it.c, 0) ?? 0), 0));
+  const sumK = Math.round(items.reduce((acc, it) => acc + (toNum(it.label_kcal, 0) ?? 0), 0));
+
+  const totalRaw = raw?.total ?? raw?.sum ?? null;
+  const tP = toNum(totalRaw?.p ?? totalRaw?.protein, null);
+  const tF = toNum(totalRaw?.f ?? totalRaw?.fat, null);
+  const tC = toNum(totalRaw?.c ?? totalRaw?.carbs, null);
+  const tK = toNum(totalRaw?.label_kcal ?? totalRaw?.kcal ?? totalRaw?.calories, null);
+
+  const total = {
+    p: tP === null ? sumP : clamp(round1(tP), 0, 1000),
+    f: tF === null ? sumF : clamp(round1(tF), 0, 1000),
+    c: tC === null ? sumC : clamp(round1(tC), 0, 2000),
+    label_kcal: tK === null ? (sumK > 0 ? clamp(sumK, 0, 15000) : null) : clamp(Math.round(tK), 0, 15000),
+  };
+
+  // menu_items：NutritionCardの既存表示にそのまま使える文字列に寄せる
+  const menu_items = items.slice(0, 6).map((it) => ({
+    name: it.name,
+    estimated_amount: it.serving_label || "1食分",
+    note: `P${toNum(it.p, 0).toFixed(1)} F${toNum(it.f, 0).toFixed(1)} C${toNum(it.c, 0).toFixed(1)}` + (it.label_kcal != null ? ` / ${it.label_kcal}kcal` : ""),
+  }));
+
+  const commentSource =
+    (isNonEmptyString(raw?.comment) && raw.comment) ||
+    (isNonEmptyString(raw?.advice_markdown) && raw.advice_markdown) ||
+    (isNonEmptyString(raw?.advice) && raw.advice) ||
+    "";
+  const comment = truncateByChars(commentSource, 110);
+
+  // ✅ 互換用フィールド（NutritionCardのparseGeminiResultStrictが読む）
+  // calories は参考値として total.label_kcal を入れる（なくてもOK）
+  const compat = {
+    calories: total.label_kcal ?? null,
+    protein: total.p,
+    fat: total.f,
+    carbs: total.c,
+  };
+
+  return {
+    items,
+    total,
+    menu_items,
+    comment,
+    ...compat,
+  };
+}
+
+function looksBadAnalyzeLabelMulti(result: {
+  items: LabelItem[];
+  total: { p: number; f: number; c: number; label_kcal: number | null };
 }) {
-  const pBad = result.p === null || result.p === 0;
-  const fBad = result.f === null || result.f === 0;
-  const cBad = result.c === null || result.c === 0;
-
-  const hasName = (result.name_candidates ?? []).some((s) => (s ?? "").trim().length >= 2);
-
-  // PFCが全部ゼロ/空っぽ かつ 名前も取れてない → ダメ
-  if (pBad && fBad && cBad && !hasName) return true;
+  const hasAny = Array.isArray(result.items) && result.items.length > 0;
+  const sumZero = (result.total.p ?? 0) === 0 && (result.total.f ?? 0) === 0 && (result.total.c ?? 0) === 0;
+  if (!hasAny) return true;
+  if (sumZero) return true;
   return false;
 }
 
@@ -318,8 +402,7 @@ function buildCompactSummaryText(s: { headline: string; what_went_well: string[]
 }
 
 /**
- * liteが「感想だけ」や「空っぽ」に寄った/数値が入らない など、品質が悪いかを判定
- * → これに引っかかったらFlashにリトライして品質を担保する
+ * analyze_meal 品質判定
  */
 function looksBadAnalyzeMeal(result: {
   calories: number | null;
@@ -340,7 +423,6 @@ function looksBadAnalyzeMeal(result: {
   const tooCompliment = /(美味しそう|いいですね|いかがでしょうか|元気な一日)/.test(comment);
   const hasNutritionWords = /(タンパク|たんぱく|炭水化物|脂質|PFC|kcal|g|不足|追加|改善)/.test(comment);
 
-  // 数値/中身が薄い or 感想寄り
   if ((calBad && pBad && cBad) && (!hasItemName || !hasAmount)) return true;
   if (tooCompliment && !hasNutritionWords) return true;
 
@@ -349,7 +431,6 @@ function looksBadAnalyzeMeal(result: {
 
 /**
  * Gemini呼び出し（共通）
- * - 失敗時はエラー内容を返す
  */
 async function callGemini(params: {
   apiKey: string;
@@ -357,7 +438,6 @@ async function callGemini(params: {
   parts: any[];
   temperature: number;
   maxOutputTokens: number;
-  // analyze_meal の 422対策で、より厳しいJSON生成を促したい時に true
   strictJson?: boolean;
 }) {
   const { apiKey, model, parts, temperature, maxOutputTokens } = params;
@@ -368,8 +448,6 @@ async function callGemini(params: {
       responseMimeType: "application/json",
       temperature,
       maxOutputTokens,
-      // strictJson フラグがある時は “なるべく余計な出力をさせない”
-      // （Gemini側が完全遵守しないケースがあるため、ここは控えめに）
     },
   };
 
@@ -384,12 +462,11 @@ async function callGemini(params: {
 
   if (!res.ok) {
     const t = await res.text();
-    return { ok: false as const, status: res.status, detail: t.slice(0, 1200), raw: null };
+    return { ok: false as const, status: res.status, detail: t.slice(0, 1200), raw: null, text: "" };
   }
 
   const raw = await res.json();
   const text = extractGeminiText(raw);
-
   return { ok: true as const, status: 200, detail: null, raw, text };
 }
 
@@ -494,7 +571,7 @@ JSON以外の文字を1文字でも出したら失格。
         model: GEMINI_MODEL_LITE,
         parts,
         temperature: 0.2,
-        maxOutputTokens: 320, // ← JSON破損しやすいので少し増やす
+        maxOutputTokens: 320,
       });
 
       if (!first.ok) {
@@ -567,8 +644,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
             textPreview: String(second.text).slice(0, 800),
             err: String((e2 as Error)?.message ?? e2),
           });
-
-          // ここで 422 を返す（今まで通り）
           return json(
             {
               error: "Failed to parse Gemini JSON",
@@ -580,8 +655,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         }
 
         const result2 = normalizeAnalyzeMealResult(parsed);
-
-        // ③ flashでも薄いなら（念のため）返すが、rawを返してデバッグ可能にする
         return json({
           ok: true,
           result: result2,
@@ -591,7 +664,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
 
       const result1 = normalizeAnalyzeMealResult(parsed);
 
-      // ④ liteの品質が薄い場合もflashへリトライ（感想だけ防止）
+      // ④ liteの品質が薄い場合もflashへリトライ
       if (looksBadAnalyzeMeal(result1)) {
         console.warn("[nutrition-gemini] lite result looks bad -> retry flash", {
           litePreview: result1,
@@ -637,7 +710,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
             status: second2.status,
             detail: second2.detail,
           });
-          // 今回は “品質担保” を優先するためエラー返す
           return json({ error: `Gemini error ${second2.status}`, detail: second2.detail }, 502);
         }
 
@@ -668,7 +740,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         });
       }
 
-      // liteで十分
       return json({
         ok: true,
         result: result1,
@@ -676,39 +747,50 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       });
     }
 
-    // ======= analyze_label ✅追加 =======
+    // ======= analyze_label（複数商品→合算） =======
     if (body.type === "analyze_label") {
       const imgs = Array.isArray(body.imagesBase64) ? body.imagesBase64 : [];
       if (imgs.length < 1) return json({ error: "imagesBase64 is required" }, 400);
 
-      // 画像枚数上限（事故防止）
-      const imagesBase64 = imgs.slice(0, 3).filter((s) => typeof s === "string" && s.length > 50);
+      // 上限：最大6枚（“複数商品”の実用を考えて増やす）
+      const imagesBase64 = imgs.slice(0, 6).filter((s) => typeof s === "string" && s.length > 50);
       if (imagesBase64.length < 1) return json({ error: "imagesBase64 is empty" }, 400);
 
       const prompt = `
-あなたは食品ラベル読取AI。画像に写る「栄養成分表示」からP/F/C（g）と任意でラベル記載kcalを抽出する。
+あなたは食品ラベル読取AI。画像に写る「栄養成分表示」から、商品ごとにP/F/C(g)とkcalを抽出し、最後に合計を出す。
 雑談・感想は禁止。必ずJSONのみ。前置き/説明/コードブロック禁止。
 重要：推定は禁止。読めない値は null にする。
 
-必須で返す（null可）:
+必ずこのJSONで返す（キー名変更禁止）:
 {
-  "p": number|null,
-  "f": number|null,
-  "c": number|null,
-  "label_kcal": number|null,
-  "serving_label": string,
-  "name_candidates": [string,string,string],
-  "confidence": "high"|"med"|"low",
-  "raw_ocr_text": string
+  "items": [
+    {
+      "name": string,
+      "serving_label": string,
+      "p": number|null,
+      "f": number|null,
+      "c": number|null,
+      "label_kcal": number|null,
+      "confidence": "high"|"med"|"low"
+    }
+  ],
+  "total": {
+    "p": number|null,
+    "f": number|null,
+    "c": number|null,
+    "label_kcal": number|null
+  },
+  "comment": string
 }
 
 ルール:
-- 単位は g / kcal を前提。gの小数はあり得る
-- 「炭水化物」は糖質/食物繊維と分かれていても合算して c にする（判断できなければ炭水化物の値を優先）
-- 「1食分あたり」「1包装あたり」「1個あたり」「100gあたり」などの基準は serving_label に短く入れる（例:"1個あたり","1袋あたり","100gあたり"）
-- 複数枚ある場合は情報を統合して最も妥当な1つにまとめる
-- raw_ocr_text には読み取った主要テキストを短くまとめて入れる（長文禁止）
-- 自信が低い場合は confidence を下げる
+- items は画像ごとに「別商品」として扱う（同じ商品が重複してもOK）
+- serving_label は短く（例:"1袋あたり","1本あたり","100gあたり","1食(◯g)あたり"）
+- 「炭水化物」が糖質/食物繊維に分かれていても、合算して c にする（合算不可能なら炭水化物の値を優先）
+- total は items の合計を基本（ただし画像の都合で読み取りが不完全なら null を許容）
+- comment は日本語110字以内で3行:
+  1) 取れている/取れていない（注意点） 2) 不足しやすい 3) 次の一手
+- “推定”は絶対禁止（読めないものはnull）
 `.trim();
 
       const parts: any[] = [];
@@ -729,7 +811,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         model: GEMINI_MODEL_LITE,
         parts,
         temperature: 0.1,
-        maxOutputTokens: 520,
+        maxOutputTokens: 900,
       });
 
       if (!first.ok) {
@@ -746,23 +828,18 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       } catch (e) {
         console.error("[nutrition-gemini] analyze_label JSON parse failed (lite) -> retry flash", {
           model: GEMINI_MODEL_LITE,
-          textPreview: String(first.text).slice(0, 700),
+          textPreview: String(first.text).slice(0, 900),
           err: String((e as Error)?.message ?? e),
         });
 
         const retryPrompt = `
 あなたは「JSON生成器」。必ず有効なJSONのみを返す。前置き/説明/謝罪は禁止。
 推定は禁止。読めない値は null。
-次のスキーマ厳守:
+スキーマ厳守:
 {
-  "p": number|null,
-  "f": number|null,
-  "c": number|null,
-  "label_kcal": number|null,
-  "serving_label": string,
-  "name_candidates": [string,string,string],
-  "confidence": "high"|"med"|"low",
-  "raw_ocr_text": string
+  "items": [{"name": string, "serving_label": string, "p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null, "confidence": "high"|"med"|"low"}],
+  "total": {"p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null},
+  "comment": string
 }
 `.trim();
 
@@ -783,7 +860,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts,
           temperature: 0.1,
-          maxOutputTokens: 600,
+          maxOutputTokens: 1100,
           strictJson: true,
         });
 
@@ -800,20 +877,22 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         } catch (e2) {
           console.error("[nutrition-gemini] analyze_label JSON parse failed (flash)", {
             model: GEMINI_MODEL_FLASH,
-            textPreview: String(second.text).slice(0, 900),
+            textPreview: String(second.text).slice(0, 1100),
             err: String((e2 as Error)?.message ?? e2),
           });
           return json(
             {
               error: "Failed to parse Gemini JSON",
               detail: String((e2 as Error)?.message ?? e2),
-              textPreview: String(second.text).slice(0, 900),
+              textPreview: String(second.text).slice(0, 1100),
             },
             422
           );
         }
 
-        const result2 = normalizeAnalyzeLabelResult(parsed);
+        const result2 = normalizeAnalyzeLabelMultiResult(parsed);
+
+        // 互換：parseGeminiResultStrict が読む形も出す
         return json({
           ok: true,
           result: result2,
@@ -821,28 +900,22 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         });
       }
 
-      const result1 = normalizeAnalyzeLabelResult(parsed);
+      const result1 = normalizeAnalyzeLabelMultiResult(parsed);
 
-      // ② 形式はOKだが中身が薄い → flash再トライ
-      if (looksBadAnalyzeLabel(result1)) {
+      // ② 中身薄い → flash 再トライ（ただし失敗したら lite を返して進める）
+      if (looksBadAnalyzeLabelMulti(result1)) {
         console.warn("[nutrition-gemini] analyze_label lite result looks bad -> retry flash", {
           litePreview: result1,
-          textPreview: String(first.text).slice(0, 700),
+          textPreview: String(first.text).slice(0, 900),
         });
 
         const retryPrompt2 = `
-あなたは食品ラベル読取AI。画像の栄養成分表示からP/F/C(g)とkcalを抽出する。
+あなたは食品ラベル読取AI。栄養成分表示から各商品P/F/C(g)を抽出し合計を出す。
 必ずJSONのみ。推定は禁止。読めない値は null。
-スキーマ:
 {
-  "p": number|null,
-  "f": number|null,
-  "c": number|null,
-  "label_kcal": number|null,
-  "serving_label": string,
-  "name_candidates": [string,string,string],
-  "confidence": "high"|"med"|"low",
-  "raw_ocr_text": string
+  "items": [{"name": string, "serving_label": string, "p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null, "confidence": "high"|"med"|"low"}],
+  "total": {"p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null},
+  "comment": string
 }
 `.trim();
 
@@ -863,7 +936,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts2,
           temperature: 0.1,
-          maxOutputTokens: 600,
+          maxOutputTokens: 1100,
           strictJson: true,
         });
 
@@ -872,7 +945,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
             status: second2.status,
             detail: second2.detail,
           });
-          // UX優先：liteを返して前に進める（確認画面で手修正できる）
           return json({
             ok: true,
             result: result1,
@@ -886,7 +958,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         } catch (e2) {
           console.error("[nutrition-gemini] analyze_label JSON parse failed (flash retry bad quality)", {
             model: GEMINI_MODEL_FLASH,
-            textPreview: String(second2.text).slice(0, 900),
+            textPreview: String(second2.text).slice(0, 1100),
             err: String((e2 as Error)?.message ?? e2),
           });
           return json({
@@ -896,7 +968,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           });
         }
 
-        const result2 = normalizeAnalyzeLabelResult(parsed2);
+        const result2 = normalizeAnalyzeLabelMultiResult(parsed2);
         return json({
           ok: true,
           result: result2,
@@ -915,14 +987,14 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
     if (body.type === "generate_plan") {
       const p = body.profile ?? {};
       const prompt = `
-      必ずJSONのみで返す。説明文は禁止。
-      {
-      "bmr": number|null,
-      "tdee": number|null,
-      "target": {"protein": number|null, "fat": number|null, "carbs": number|null},
-      "advice": string
-      }
-      プロフィール:${JSON.stringify(p)}
+必ずJSONのみで返す。説明文は禁止。
+{
+ "bmr": number|null,
+ "tdee": number|null,
+ "target": {"protein": number|null, "fat": number|null, "carbs": number|null},
+ "advice": string
+}
+プロフィール:${JSON.stringify(p)}
 `.trim();
 
       const parts = [{ text: prompt }];
@@ -967,7 +1039,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         return json({ error: "target/totals/gaps are required" }, 400);
       }
 
-      // 空送信ガード
       const cal = toNum(body.totals.cal, 0) ?? 0;
       const p = toNum(body.totals.p, 0) ?? 0;
       const f = toNum(body.totals.f, 0) ?? 0;
@@ -977,21 +1048,21 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       }
 
       let prompt = `
-        必ずJSONのみで返す。説明文は禁止。
-        {
-        "headline": string,
-        "what_went_well": [string,string],
-        "one_next_action": string
-        }
-        制約:
-        - headline最大28文字
-        - what_went_well最大2つ（各最大32文字）
-        - one_next_action最大24文字
-        入力:
-        target=${JSON.stringify(body.target)}
-        totals=${JSON.stringify(body.totals)}
-        gaps=${JSON.stringify(body.gaps)}
-      `.trim();
+必ずJSONのみで返す。説明文は禁止。
+{
+ "headline": string,
+ "what_went_well": [string,string],
+ "one_next_action": string
+}
+制約:
+- headline最大28文字
+- what_went_well最大2つ（各最大32文字）
+- one_next_action最大24文字
+入力:
+target=${JSON.stringify(body.target)}
+totals=${JSON.stringify(body.totals)}
+gaps=${JSON.stringify(body.gaps)}
+`.trim();
 
       if (body.note && body.note.trim()) {
         prompt += `\n補足:${truncateByChars(body.note.trim(), 160)}`;

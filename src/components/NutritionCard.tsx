@@ -117,6 +117,7 @@ function addDays(yyyyMMdd: string, delta: number) {
 /**
  * nutrition-gemini の返却を厳格にパース（必須キーが揃わない場合は throw）
  * ✅ caloriesは参考値として残し、保存/表示はPFC由来kcalに統一
+ * （analyze_meal 用）
  */
 function parseGeminiResultStrict(json: any) {
   const r = json?.result ?? json?.data ?? json ?? {};
@@ -131,16 +132,10 @@ function parseGeminiResultStrict(json: any) {
   const fN = Number(fat);
   const cN = Number(carbs);
 
-  const ok =
-    Number.isFinite(pN) && pN >= 0 &&
-    Number.isFinite(fN) && fN >= 0 &&
-    Number.isFinite(cN) && cN >= 0;
+  const ok = Number.isFinite(pN) && pN >= 0 && Number.isFinite(fN) && fN >= 0 && Number.isFinite(cN) && cN >= 0;
 
   if (!ok) {
-    const msg =
-      r?.error ??
-      r?.message ??
-      "Gemini返却に必須値（protein/fat/carbs）が見つかりません";
+    const msg = r?.error ?? r?.message ?? "Gemini返却に必須値（protein/fat/carbs）が見つかりません";
     const detail = JSON.stringify({ calories, protein, fat, carbs, keys: Object.keys(r ?? {}) }, null, 2);
     throw new Error(`${msg}\n${detail}`);
   }
@@ -162,6 +157,66 @@ function parseGeminiResultStrict(json: any) {
     ai_calories: Number.isFinite(calsN) ? Math.round(calsN) : null, // 参考値として残す
     menu_items: Array.isArray(menuItems) ? menuItems : [],
     advice_markdown: comment != null ? String(comment) : null,
+    raw: json,
+  };
+}
+
+/**
+ * ✅ analyze_label 用：ラベルOCRの返却をパース（推定禁止、読めない場合は null を許容）
+ * - ただし P/F/C が全部 0 or null なら「読めてない」ので throw（撮り直し誘導）
+ * - kcal は保存/表示は PFC(4-9-4) に統一、label_kcal は analysis_meta に残す
+ */
+function parseGeminiLabelResultStrict(json: any) {
+  const r = json?.result ?? json?.data ?? json ?? {};
+
+  const safeNonNegNumOrNull = (x: any) => {
+    if (x == null) return null;
+    const n = Number(x);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  // Edge Functionの normalizeAnalyzeLabelResult() を想定
+  const p = safeNonNegNumOrNull(r?.p ?? r?.protein ?? r?.protein_g);
+  const f = safeNonNegNumOrNull(r?.f ?? r?.fat ?? r?.fat_g);
+  const c = safeNonNegNumOrNull(r?.c ?? r?.carbs ?? r?.carbohydrate ?? r?.carbohydrate_g);
+
+  const labelKcal = safeNonNegNumOrNull(r?.label_kcal ?? r?.kcal ?? r?.calories ?? r?.total_calories);
+
+  const servingLabel = typeof r?.serving_label === "string" ? r.serving_label : "";
+  const confidence = typeof r?.confidence === "string" ? r.confidence : "med";
+  const rawOcrText = typeof r?.raw_ocr_text === "string" ? r.raw_ocr_text : "";
+
+  // “何も読めてない” 判定（推定禁止なのでここで撮り直しを促す）
+  const hasAny = (p ?? 0) > 0 || (f ?? 0) > 0 || (c ?? 0) > 0;
+  if (!hasAny) {
+    const msg = r?.error ?? r?.message ?? "ラベルからP/F/Cを読み取れませんでした（撮り直してください）";
+    const detail = JSON.stringify({ keys: Object.keys(r ?? {}), preview: r }, null, 2);
+    throw new Error(`${msg}\n${detail}`);
+  }
+
+  const totalCalories = kcalFromPFC(p ?? 0, f ?? 0, c ?? 0);
+
+  // ラベル解析結果は menu_items は作らない（推定禁止）
+  const menuItems: any[] = [];
+
+  // advice_markdown は“ラベル情報メモ”として残す（UIに出るので短めに）
+  const adviceMarkdown =
+    `ラベル読取: ${servingLabel || "（基準不明）"} / 信頼度:${confidence}` +
+    (rawOcrText ? `\n抜粋: ${rawOcrText}` : "");
+
+  return {
+    total_calories: totalCalories,
+    p: toNum(p ?? 0, 0),
+    f: toNum(f ?? 0, 0),
+    c: toNum(c ?? 0, 0),
+
+    label_kcal: labelKcal != null ? Math.round(labelKcal) : null,
+    serving_label: servingLabel || null,
+    confidence,
+    raw_ocr_text: rawOcrText || null,
+
+    menu_items: menuItems,
+    advice_markdown: adviceMarkdown,
     raw: json,
   };
 }
@@ -249,12 +304,17 @@ function buildQuickSuggestions(deficits: DeficitRow[] | null) {
   const calNeed = Math.max(0, toNum(byKey.cal?.remain, 0));
 
   const primary =
-    pNeed >= 15 ? "p" :
-    cNeed >= 40 ? "c" :
-    fNeed >= 10 ? "f" :
-    calNeed >= 300 ? "cal" :
-    pNeed > 0 || cNeed > 0 || fNeed > 0 || calNeed > 0 ? "mix" :
-    "ok";
+    pNeed >= 15
+      ? "p"
+      : cNeed >= 40
+      ? "c"
+      : fNeed >= 10
+      ? "f"
+      : calNeed >= 300
+      ? "cal"
+      : pNeed > 0 || cNeed > 0 || fNeed > 0 || calNeed > 0
+      ? "mix"
+      : "ok";
 
   const pcCombo = pNeed >= 15 && cNeed >= 40;
 
@@ -267,42 +327,22 @@ function buildQuickSuggestions(deficits: DeficitRow[] | null) {
   }
 
   if (pcCombo) {
-    return [
-      "ご飯（中）＋鶏むね/ささみ（目安）",
-      "おにぎり2個＋ツナ/サバ缶（半分〜1缶）",
-      "うどん＋卵/納豆（タンパク質を足す）",
-    ];
+    return ["ご飯（中）＋鶏むね/ささみ（目安）", "おにぎり2個＋ツナ/サバ缶（半分〜1缶）", "うどん＋卵/納豆（タンパク質を足す）"];
   }
 
   if (primary === "p") {
-    return [
-      "鶏むね・ささみ（目安）／脂質を抑えてPを足す",
-      "卵＋納豆（手軽にPを積む）",
-      "プロテイン1杯＋ヨーグルト（補食で埋める）",
-    ];
+    return ["鶏むね・ささみ（目安）／脂質を抑えてPを足す", "卵＋納豆（手軽にPを積む）", "プロテイン1杯＋ヨーグルト（補食で埋める）"];
   }
 
   if (primary === "c") {
-    return [
-      "おにぎり2個（まず主食で埋める）",
-      "ご飯＋汁物（消化しやすく）",
-      "バナナ＋ヨーグルト（補食でCを足す）",
-    ];
+    return ["おにぎり2個（まず主食で埋める）", "ご飯＋汁物（消化しやすく）", "バナナ＋ヨーグルト（補食でCを足す）"];
   }
 
   if (primary === "f") {
-    return [
-      "ナッツひと握り（20g目安）",
-      "オリーブオイルを料理に小さじ1〜2追加",
-      "サバ缶（脂質もPも足せる）",
-    ];
+    return ["ナッツひと握り（20g目安）", "オリーブオイルを料理に小さじ1〜2追加", "サバ缶（脂質もPも足せる）"];
   }
 
-  return [
-    "主食＋主菜＋果物（まず“セット”で増やす）",
-    "補食：おにぎり＋乳製品（簡単に底上げ）",
-    "夕食：丼もの/定食スタイルで“量”を確保",
-  ];
+  return ["主食＋主菜＋果物（まず“セット”で増やす）", "補食：おにぎり＋乳製品（簡単に底上げ）", "夕食：丼もの/定食スタイルで“量”を確保"];
 }
 
 /** menu_items は jsonb/配列/文字列(JSON) があり得るので正規化 */
@@ -364,8 +404,7 @@ export function NutritionCard({
   const [mealType, setMealType] = useState<MealType>("朝食");
   const [mealSlot, setMealSlot] = useState<number>(1);
 
-  const recordDate =
-    toTokyoDateString(date) ?? toTokyoDateString(new Date()) ?? new Date().toISOString().slice(0, 10);
+  const recordDate = toTokyoDateString(date) ?? toTokyoDateString(new Date()) ?? new Date().toISOString().slice(0, 10);
 
   // ✅ 表示を即更新するためのローカル状態（propsと同期）
   const [localLogs, setLocalLogs] = useState<NutritionLog[]>(Array.isArray(nutritionLogs) ? nutritionLogs : []);
@@ -393,16 +432,13 @@ export function NutritionCard({
     );
 
     // 初回ロード中の“0チラつき”回避：props totals を使う（ただしcalはPFCで統一したい）
-    const canUsePropsTotals =
-      nutritionLoading && (!Array.isArray(localLogs) || localLogs.length === 0) && nutritionTotals;
+    const canUsePropsTotals = nutritionLoading && (!Array.isArray(localLogs) || localLogs.length === 0) && nutritionTotals;
 
     if (canUsePropsTotals) {
       const p = toNum((nutritionTotals as any).p, 0);
       const f = toNum((nutritionTotals as any).f, 0);
       const c = toNum((nutritionTotals as any).c, 0);
-      const cal = (p > 0 || f > 0 || c > 0)
-        ? kcalFromPFC(p, f, c)
-        : toNum((nutritionTotals as any).cal, 0);
+      const cal = p > 0 || f > 0 || c > 0 ? kcalFromPFC(p, f, c) : toNum((nutritionTotals as any).cal, 0);
 
       return { cal, p, f, c };
     }
@@ -534,7 +570,7 @@ export function NutritionCard({
             const p = toNum(r?.p, 0);
             const f = toNum(r?.f, 0);
             const c = toNum(r?.c, 0);
-            const cal = (p > 0 || f > 0 || c > 0) ? kcalFromPFC(p, f, c) : Math.round(toNum(r?.total_calories, 0));
+            const cal = p > 0 || f > 0 || c > 0 ? kcalFromPFC(p, f, c) : Math.round(toNum(r?.total_calories, 0));
             return { date: String(r.report_date), cal, p, f, c };
           });
           setDailyRows(rows);
@@ -557,9 +593,12 @@ export function NutritionCard({
           const p = toNum((r as any).p, 0);
           const f = toNum((r as any).f, 0);
           const c = toNum((r as any).c, 0);
-          const cal = (p > 0 || f > 0 || c > 0) ? kcalFromPFC(p, f, c) : Math.round(toNum((r as any).total_calories, 0));
+          const cal = p > 0 || f > 0 || c > 0 ? kcalFromPFC(p, f, c) : Math.round(toNum((r as any).total_calories, 0));
           const prev = map.get(d) ?? { date: d, cal: 0, p: 0, f: 0, c: 0 };
-          prev.p += p; prev.f += f; prev.c += c; prev.cal += cal;
+          prev.p += p;
+          prev.f += f;
+          prev.c += c;
+          prev.cal += cal;
           map.set(d, prev);
         }
         const rows = Array.from(map.values())
@@ -702,10 +741,7 @@ export function NutritionCard({
       // ✅ pending 作った場合は failed 記録
       if (insertedId != null) {
         try {
-          await supabase
-            .from("nutrition_logs")
-            .update({ analysis_status: "failed", analysis_error: msg.slice(0, 2000) })
-            .eq("id", insertedId);
+          await supabase.from("nutrition_logs").update({ analysis_status: "failed", analysis_error: msg.slice(0, 2000) }).eq("id", insertedId);
         } catch (markErr) {
           console.error("[NutritionCard] failed status update error:", markErr);
         }
@@ -719,7 +755,6 @@ export function NutritionCard({
   /**
    * ✅ バックアップ：ラベルOCR（複数写真）
    * - Edge Function に type:"analyze_label" で投げる
-   * - 関数未実装なら、エラーメッセージで誘導
    */
   const handleSelectLabelPhotos = async (files: FileList | null) => {
     const list = files ? Array.from(files) : [];
@@ -739,18 +774,17 @@ export function NutritionCard({
 
       // base64（最大3枚）
       const imagesBase64 = await Promise.all(list.slice(0, 3).map(fileToBase64));
-
       const context = `meal_type=${mealType}${mealType === "補食" ? ` slot=${safeSlot}` : ""}`;
 
-      // ① ラベル解析（関数側が analyze_label を実装している前提）
+      // ① ラベル解析
       const geminiJson = await callNutritionGeminiViaInvoke({
         type: "analyze_label",
         imagesBase64,
         context,
       });
 
-      // ② 解析結果を meal として扱う（PFC必須想定）
-      const parsed = parseGeminiResultStrict(geminiJson);
+      // ✅ analyze_label 専用パース（推定禁止/ラベル仕様）
+      const parsed = parseGeminiLabelResultStrict(geminiJson);
       const meta = geminiJson?.meta ?? null;
 
       // ③ nutrition_logs へ保存（画像は任意なので null でOK）
@@ -766,17 +800,27 @@ export function NutritionCard({
           p: parsed.p,
           f: parsed.f,
           c: parsed.c,
-          menu_items: parsed.menu_items,
+          menu_items: parsed.menu_items, // []
           advice_markdown: parsed.advice_markdown,
 
           image_path: null,
           image_url: null,
-          image_meta: { source: "label_ocr", label_images: list.slice(0, 3).map((f) => ({ name: f.name, size: f.size, type: f.type })) },
+          image_meta: {
+            source: "label_ocr",
+            label_images: list.slice(0, 3).map((f) => ({ name: f.name, size: f.size, type: f.type })),
+          },
 
           analysis_status: "success",
           analysis_error: null,
 
-          analysis_meta: { ...(meta ?? {}), ai_calories: parsed.ai_calories ?? null },
+          // ✅ ラベル由来の情報は meta に残す
+          analysis_meta: {
+            ...(meta ?? {}),
+            label_kcal: parsed.label_kcal ?? null,
+            serving_label: parsed.serving_label ?? null,
+            confidence: parsed.confidence ?? null,
+            raw_ocr_text: parsed.raw_ocr_text ?? null,
+          },
           analysis_model: meta?.used_model ?? null,
           analysis_reason: meta?.reason ?? null,
         })
@@ -808,7 +852,7 @@ export function NutritionCard({
       if (msg.includes("Unknown type") || msg.includes("analyze_label")) {
         setUploadErr(
           "ラベル解析（analyze_label）が未実装です。\n" +
-          "nutrition-gemini に type:'analyze_label' を追加実装したら動きます。"
+            "nutrition-gemini に type:'analyze_label' を追加実装したら動きます。"
         );
       } else {
         setUploadErr(msg);
@@ -817,10 +861,7 @@ export function NutritionCard({
       // pending を作ってないので基本不要だが、将来変更に備えて残す
       if (insertedId != null) {
         try {
-          await supabase
-            .from("nutrition_logs")
-            .update({ analysis_status: "failed", analysis_error: msg.slice(0, 2000) })
-            .eq("id", insertedId);
+          await supabase.from("nutrition_logs").update({ analysis_status: "failed", analysis_error: msg.slice(0, 2000) }).eq("id", insertedId);
         } catch (markErr) {
           console.error("[NutritionCard] failed status update error:", markErr);
         }
@@ -934,9 +975,7 @@ export function NutritionCard({
       <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/20 p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-gray-900 dark:text-white">履歴（直近14日）</p>
-          <span className="text-[11px] text-gray-500 dark:text-gray-400">
-            {onSelectDate ? "タップで日付切替" : "（日付切替は親側で対応）"}
-          </span>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">{onSelectDate ? "タップで日付切替" : "（日付切替は親側で対応）"}</span>
         </div>
 
         {dailyLoading ? (
@@ -1000,9 +1039,7 @@ export function NutritionCard({
         </div>
 
         {!targets ? (
-          <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            体重データがあると、推定目標（BMR/TDEE/PFC）が出せます。
-          </div>
+          <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">体重データがあると、推定目標（BMR/TDEE/PFC）が出せます。</div>
         ) : nutritionLoading ? (
           <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">集計中…</div>
         ) : (
@@ -1021,9 +1058,7 @@ export function NutritionCard({
                   ))}
                 </div>
               ) : (
-                <div className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                  目標はだいたい到達（超過が気になる場合は脂質/間食を見直し）
-                </div>
+                <div className="mt-1 text-sm text-slate-700 dark:text-slate-200">目標はだいたい到達（超過が気になる場合は脂質/間食を見直し）</div>
               )}
 
               {gaps && (
@@ -1067,9 +1102,7 @@ export function NutritionCard({
         {nutritionLoading ? (
           <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">読み込み中...</div>
         ) : !Array.isArray(localLogs) || localLogs.length === 0 ? (
-          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            まだ栄養記録がありません（朝/昼/夕/補食を追加していこう）
-          </div>
+          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">まだ栄養記録がありません（朝/昼/夕/補食を追加していこう）</div>
         ) : (
           <div className="mt-2 space-y-2">
             {localLogs.map((log: any) => {
@@ -1098,9 +1131,7 @@ export function NutritionCard({
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
                           {formatMealLabel(log.meal_type, log.meal_slot)}
-                          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                            {kcal} kcal
-                          </span>
+                          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{kcal} kcal</span>
                           {log.analysis_status && (
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                               {String(log.analysis_status)}
@@ -1114,21 +1145,15 @@ export function NutritionCard({
                         </p>
 
                         {menuText && (
-                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 break-words">
-                            推定メニュー: {menuText}
-                          </p>
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 break-words">推定メニュー: {menuText}</p>
                         )}
 
                         {log.advice_markdown && (
-                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
-                            {String(log.advice_markdown)}
-                          </p>
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 whitespace-pre-wrap">{String(log.advice_markdown)}</p>
                         )}
 
                         {log.analysis_status === "failed" && log.analysis_error && (
-                          <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap">
-                            解析失敗: {String(log.analysis_error)}
-                          </p>
+                          <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap">解析失敗: {String(log.analysis_error)}</p>
                         )}
                       </div>
                     </div>
