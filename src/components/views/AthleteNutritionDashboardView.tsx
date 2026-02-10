@@ -22,11 +22,13 @@ type Props = {
   // （任意）InBody/練習データがあるなら渡す（無ければ null/[] でOK）
   latestInbody?: any | null;
   trainingRecords?: any[] | null;
-  latestWeightKg?: number | null; // ✅追加
+  latestWeightKg?: number | null;
 
   // （任意）保存後に親側で再fetchしたい時に渡す
   onRefreshNutrition?: () => void;
-  onChangeDate?: (date: string) => void; // ✅追加（未使用）
+
+  // ✅ 日付切替（NutritionCardの履歴クリック → 親でdate更新 → 再fetch）
+  onChangeDate?: (date: string) => void;
 };
 
 export default function AthleteNutritionDashboardView({
@@ -41,13 +43,16 @@ export default function AthleteNutritionDashboardView({
   trainingRecords = [],
   latestWeightKg = null,
   onRefreshNutrition,
-  onChangeDate, 
+  onChangeDate,
 }: Props) {
   // 「進捗」だけはダッシュボードらしく残す（思想：評価しない / 見える化だけ）
   const completedCount = useMemo(() => {
     const confirmed =
       nutritionLogs?.filter(
-        (l) => l?.status === "confirmed" || l?.is_confirmed === true || l?.analysis_status === "success"
+        (l) =>
+          l?.status === "confirmed" ||
+          l?.is_confirmed === true ||
+          l?.analysis_status === "success"
       ).length ?? 0;
     return confirmed > 0 ? confirmed : nutritionLogs?.length ?? 0;
   }, [nutritionLogs]);
@@ -65,14 +70,10 @@ export default function AthleteNutritionDashboardView({
   const normalizedTotals = useMemo(() => {
     const t = nutritionTotals ?? {};
     // いろんなキー揺れを吸収
-    const cal =
-      Number(t?.cal ?? t?.kcal ?? t?.calories ?? t?.total_calories ?? 0) || 0;
-    const p =
-      Number(t?.p ?? t?.protein_g ?? t?.p_g ?? t?.protein ?? 0) || 0;
-    const f =
-      Number(t?.f ?? t?.fat_g ?? t?.f_g ?? t?.fat ?? 0) || 0;
-    const c =
-      Number(t?.c ?? t?.carbs_g ?? t?.c_g ?? t?.carbs ?? 0) || 0;
+    const cal = Number(t?.cal ?? t?.kcal ?? t?.calories ?? t?.total_calories ?? 0) || 0;
+    const p = Number(t?.p ?? t?.protein_g ?? t?.p_g ?? t?.protein ?? 0) || 0;
+    const f = Number(t?.f ?? t?.fat_g ?? t?.f_g ?? t?.fat ?? 0) || 0;
+    const c = Number(t?.c ?? t?.carbs_g ?? t?.c_g ?? t?.carbs ?? 0) || 0;
 
     return { cal, p, f, c };
   }, [nutritionTotals]);
@@ -89,9 +90,11 @@ export default function AthleteNutritionDashboardView({
                 栄養ダッシュボード
               </h2>
             </div>
+
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               今日の栄養摂取状況を確認しましょう。
             </p>
+
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
               {user?.name ?? "ユーザー"}さん · {date}
             </p>
@@ -106,7 +109,8 @@ export default function AthleteNutritionDashboardView({
             </div>
           </div>
 
-          <button type="button"
+          <button
+            type="button"
             onClick={onBackHome}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
@@ -121,7 +125,6 @@ export default function AthleteNutritionDashboardView({
         user={user}
         latestInbody={latestInbody}
         date={date}
-        onChangeDate={onChangeDate}
         trainingRecords={trainingRecords}
         nutritionLogs={nutritionLogs}
         nutritionTotals={normalizedTotals}
@@ -130,6 +133,10 @@ export default function AthleteNutritionDashboardView({
         latestWeightKg={latestWeightKg}
         onSaved={() => {
           if (typeof onRefreshNutrition === "function") onRefreshNutrition();
+        }}
+        // ✅ 履歴（直近14日）タップ → 親に日付変更を依頼
+        onSelectDate={(newDate) => {
+          if (typeof onChangeDate === "function") onChangeDate(newDate);
         }}
       />
 
