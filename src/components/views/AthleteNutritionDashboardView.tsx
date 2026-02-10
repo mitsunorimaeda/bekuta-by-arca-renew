@@ -41,6 +41,7 @@ export default function AthleteNutritionDashboardView({
   trainingRecords = [],
   latestWeightKg = null,
   onRefreshNutrition,
+  onChangeDate, 
 }: Props) {
   // 「進捗」だけはダッシュボードらしく残す（思想：評価しない / 見える化だけ）
   const completedCount = useMemo(() => {
@@ -120,6 +121,7 @@ export default function AthleteNutritionDashboardView({
         user={user}
         latestInbody={latestInbody}
         date={date}
+        onChangeDate={onChangeDate}
         trainingRecords={trainingRecords}
         nutritionLogs={nutritionLogs}
         nutritionTotals={normalizedTotals}
