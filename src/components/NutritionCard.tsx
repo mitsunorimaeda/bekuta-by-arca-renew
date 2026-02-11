@@ -457,35 +457,44 @@ export function NutritionCard({
 
   async function callNutritionGeminiViaInvoke(payload: any) {
     const { data, error } = await supabase.functions.invoke("nutrition-gemini", { body: payload });
-
+  
     if (error) {
-      // ✅ 422 等の中身を拾って、原因が分かるようにする
       const ctx = (error as any)?.context;
       const status = ctx?.status ?? (error as any)?.status ?? null;
-
-      let detail = "";
+  
+      // ✅ 422本文を最大限拾う（ctx.bodyが空でも拾う）
+      let bodyText = "";
       try {
-        // ctx.body が文字列 or JSON のことがある
-        const body = ctx?.body;
-        if (body) {
-          detail = typeof body === "string" ? body : JSON.stringify(body, null, 2);
-        }
-      } catch { /* noop */ }
-
-      const msg =
-        (error as any)?.message ??
-        "nutrition-gemini invoke error";
-
-      const full = status ? `${msg} (status=${status})` : msg;
-
-      // UI には短く、詳細は console に
-      console.error("[nutrition-gemini invoke error]", { error, payload, detail });
-
-      throw new Error(detail ? `${full}\n${detail}` : full);
+        const b = ctx?.body;
+        if (b) bodyText = typeof b === "string" ? b : JSON.stringify(b);
+      } catch {}
+  
+      const details = String((error as any)?.details ?? "");
+      const message = String((error as any)?.message ?? "Edge Function error");
+  
+      // ここで “{}” しかない問題を回避（何も取れない場合も情報を出す）
+      const debug = [
+        status ? `status=${status}` : null,
+        message ? `message=${message}` : null,
+        details ? `details=${details}` : null,
+        bodyText ? `body=${bodyText}` : null,
+      ].filter(Boolean).join("\n");
+  
+      console.error("[nutrition-gemini invoke error]", { error, payload, ctx });
+  
+      // ✅ UIに出す文言（ユーザー向けに短く）
+      const userMsg =
+        status === 422
+          ? "解析に失敗しました（写真の内容が判定できない/形式が合わない可能性）。撮り直すか、手入力で記録してください。"
+          : "解析に失敗しました。少し時間をおいて再度お試しください。";
+  
+      // ✅ 開発用の詳細は末尾に（必要なら表示）
+      throw new Error(`${userMsg}\n\n---debug---\n${debug}`);
     }
-
+  
     return data;
   }
+  
 
   // 体重（InBody優先 → 体重記録latestWeightKg → user.profile）
   const targetsAndRefs = useMemo(() => {

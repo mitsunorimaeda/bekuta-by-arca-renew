@@ -646,12 +646,16 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           });
           return json(
             {
-              error: "Failed to parse Gemini JSON",
+              error: "FAILED_TO_PARSE_GEMINI_JSON",
+              message: "Geminiの出力をJSONとして解釈できませんでした",
               detail: String((e2 as Error)?.message ?? e2),
-              textPreview: String(second.text).slice(0, 800),
+              model: GEMINI_MODEL_FLASH,
+              preview: String(second.text).slice(0, 800),
+              hint: "GeminiがJSON以外の文字を含めた可能性があります",
             },
             422
           );
+          
         }
 
         const result2 = normalizeAnalyzeMealResult(parsed);
@@ -882,12 +886,16 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           });
           return json(
             {
-              error: "Failed to parse Gemini JSON",
+              error: "FAILED_TO_PARSE_GEMINI_LABEL_JSON",
+              message: "ラベル解析JSONの解釈に失敗しました",
               detail: String((e2 as Error)?.message ?? e2),
-              textPreview: String(second.text).slice(0, 1100),
+              model: GEMINI_MODEL_FLASH,
+              preview: String(second.text).slice(0, 1100),
+              hint: "GeminiがJSON以外を出力した可能性",
             },
             422
           );
+          
         }
 
         const result2 = normalizeAnalyzeLabelMultiResult(parsed);
@@ -1021,9 +1029,17 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           err: String((e as Error)?.message ?? e),
         });
         return json(
-          { error: "Failed to parse Gemini JSON", detail: String((e as Error)?.message ?? e), textPreview: String(res.text).slice(0, 800) },
+          {
+            error: "FAILED_TO_PARSE_GEMINI_LABEL_JSON",
+            message: "ラベル解析JSONの解釈に失敗しました",
+            detail: String((e2 as Error)?.message ?? e2),
+            model: GEMINI_MODEL_FLASH,
+            preview: String(second.text).slice(0, 1100),
+            hint: "GeminiがJSON以外を出力した可能性",
+          },
           422
         );
+        
       }
 
       const result = normalizeGeneratePlanResult(parsed);
@@ -1163,6 +1179,15 @@ gaps=${JSON.stringify(body.gaps)}
       err: String((e as Error)?.message ?? e),
       stack: (e as Error)?.stack ?? null,
     });
-    return json({ error: "Unhandled error", detail: String((e as Error)?.message ?? e) }, 500);
+    return json(
+      {
+        error: "UNHANDLED_ERROR",
+        message: "Edge Functionで予期しないエラーが発生しました",
+        detail: String((e as Error)?.message ?? e),
+        stack: (e as Error)?.stack ?? null,
+      },
+      500
+    );
+    
   }
 });
