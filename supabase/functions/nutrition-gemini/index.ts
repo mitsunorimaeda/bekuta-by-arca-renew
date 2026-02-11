@@ -574,6 +574,10 @@ JSON以外の文字を1文字でも出したら失格。
         maxOutputTokens: 320,
       });
 
+      console.log("[nutrition-gemini] analyze_meal first model=", GEMINI_MODEL_LITE);
+      console.log("[nutrition-gemini] analyze_meal first text preview=", first.ok ? first.text.slice(0, 300) : "");
+
+
       if (!first.ok) {
         console.error("[nutrition-gemini] Gemini lite error", {
           status: first.status,
@@ -627,6 +631,10 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           maxOutputTokens: 360,
           strictJson: true,
         });
+
+        console.log("[nutrition-gemini] analyze_meal retry model=", GEMINI_MODEL_FLASH);
+        console.log("[nutrition-gemini] analyze_meal retry text preview=", second.ok ? second.text.slice(0, 300) : "");
+
 
         if (!second.ok) {
           console.error("[nutrition-gemini] Gemini flash retry error", {
