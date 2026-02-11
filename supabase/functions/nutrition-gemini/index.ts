@@ -571,7 +571,7 @@ JSON以外の文字を1文字でも出したら失格。
         model: GEMINI_MODEL_LITE,
         parts,
         temperature: 0.2,
-        maxOutputTokens: 320,
+        maxOutputTokens: 600,
       });
 
       console.log("[nutrition-gemini] analyze_meal first model=", GEMINI_MODEL_LITE);
@@ -628,7 +628,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts,
           temperature: 0.1,
-          maxOutputTokens: 360,
+          maxOutputTokens: 600,
           strictJson: true,
         });
 
@@ -713,7 +713,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts2,
           temperature: 0.1,
-          maxOutputTokens: 360,
+          maxOutputTokens: 600,
           strictJson: true,
         });
 
