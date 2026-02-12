@@ -136,38 +136,7 @@ function extractGeminiText(raw: any): string {
   return String(t1 ?? "").trim();
 }
 
-/**
- * analyze_meal の出力を正規化
- */
-function normalizeAnalyzeMealResult(raw: any) {
-  const calories = toNum(raw?.calories, null);
-  const protein = toNum(raw?.protein, null);
-  const fat = toNum(raw?.fat, null);
-  const carbs = toNum(raw?.carbs, null);
 
-  const menuItemsRaw = Array.isArray(raw?.menu_items) ? raw.menu_items : [];
-  const menu_items = menuItemsRaw.slice(0, 6).map((it: any) => ({
-    name: isNonEmptyString(it?.name) ? it.name : "",
-    estimated_amount: isNonEmptyString(it?.estimated_amount) ? it.estimated_amount : "",
-    note: isNonEmptyString(it?.note) ? it.note : "",
-  }));
-
-  const commentSource =
-    (isNonEmptyString(raw?.comment) && raw.comment) ||
-    (isNonEmptyString(raw?.advice_markdown) && raw.advice_markdown) ||
-    (isNonEmptyString(raw?.advice) && raw.advice) ||
-    "";
-  const comment = truncateByChars(commentSource, 110);
-
-  return {
-    calories: calories === null ? null : clamp(calories, 0, 5000),
-    protein: protein === null ? null : clamp(protein, 0, 300),
-    fat: fat === null ? null : clamp(fat, 0, 300),
-    carbs: carbs === null ? null : clamp(carbs, 0, 800),
-    menu_items,
-    comment,
-  };
-}
 
 /**
  * ✅ analyze_label(複数商品) の出力を正規化
@@ -360,37 +329,56 @@ function normalizeGeneratePlanResult(raw: any) {
   };
 }
 
-/**
- * daily_summary の出力を正規化
- */
+
+function normalizeAnalyzeMealResult(raw: any) {
+  const calories = toNum(raw?.calories, null);
+  const protein = toNum(raw?.protein, null);
+  const fat = toNum(raw?.fat, null);
+  const carbs = toNum(raw?.carbs, null);
+
+  const menuItemsRaw = Array.isArray(raw?.menu_items) ? raw.menu_items : [];
+  const menu_items = menuItemsRaw.slice(0, 6).map((it: any) => ({
+    name: isNonEmptyString(it?.name) ? it.name : "",
+    estimated_amount: isNonEmptyString(it?.estimated_amount) ? it.estimated_amount : "",
+    note: isNonEmptyString(it?.note) ? it.note : "",
+  }));
+
+  const linesRaw = Array.isArray(raw?.comment_lines) ? raw.comment_lines : [];
+  const comment_lines = linesRaw
+    .filter((x: any) => isNonEmptyString(x))
+    .slice(0, 3)
+    .map((s: string) => truncateByChars(s, 40));
+
+  const comment = truncateByChars(comment_lines.join(" / "), 110);
+
+  return {
+    calories: calories === null ? null : clamp(calories, 0, 5000),
+    protein: protein === null ? null : clamp(protein, 0, 300),
+    fat: fat === null ? null : clamp(fat, 0, 300),
+    carbs: carbs === null ? null : clamp(carbs, 0, 800),
+    menu_items,
+    comment,        // 既存互換
+    comment_lines,  // 新規
+  };
+}
+
 function normalizeDailySummaryResult(raw: any) {
-  const headlineSource =
-    (isNonEmptyString(raw?.headline) && raw.headline) ||
-    (isNonEmptyString(raw?.title) && raw.title) ||
-    (isNonEmptyString(raw?.summary) && raw.summary) ||
-    "";
-  const headline = truncateByChars(headlineSource, 28);
-
-  const wRaw = Array.isArray(raw?.what_went_well)
-    ? raw.what_went_well
-    : Array.isArray(raw?.highlights)
-      ? raw.highlights
-      : [];
-
-  const what_went_well = wRaw
+  const headline = isNonEmptyString(raw?.headline) ? truncateByChars(raw.headline, 28) : "";
+  const w = Array.isArray(raw?.what_went_well) ? raw.what_went_well : [];
+  const what_went_well = w
     .filter((x: any) => isNonEmptyString(x))
     .slice(0, 2)
     .map((s: string) => truncateByChars(s, 32));
 
-  const oneNextSource =
-    (isNonEmptyString(raw?.one_next_action) && raw.one_next_action) ||
-    (isNonEmptyString(raw?.next_action) && raw.next_action) ||
-    (isNonEmptyString(raw?.action_for_tomorrow) && raw.action_for_tomorrow) ||
-    "";
-  const one_next_action = truncateByChars(oneNextSource, 24);
+  const one_next_action = isNonEmptyString(raw?.one_next_action)
+    ? truncateByChars(raw.one_next_action, 24)
+    : "";
 
   return { headline, what_went_well, one_next_action };
 }
+
+
+
 
 function buildCompactSummaryText(s: { headline: string; what_went_well: string[] }) {
   const lines: string[] = [];
@@ -410,7 +398,7 @@ function looksBadAnalyzeMeal(result: {
   fat: number | null;
   carbs: number | null;
   menu_items: Array<{ name: string; estimated_amount: string; note: string }>;
-  comment: string;
+  comment_lines?: string[];
 }) {
   const calBad = result.calories === null || result.calories === 0;
   const pBad = result.protein === null || result.protein === 0;
@@ -419,7 +407,7 @@ function looksBadAnalyzeMeal(result: {
   const hasItemName = result.menu_items?.some((it) => (it?.name ?? "").trim().length >= 2);
   const hasAmount = result.menu_items?.some((it) => (it?.estimated_amount ?? "").trim().length >= 2);
 
-  const comment = (result.comment ?? "").trim();
+  const comment = Array.isArray(result.comment_lines) ? result.comment_lines.join(" ") : "";
   const tooCompliment = /(美味しそう|いいですね|いかがでしょうか|元気な一日)/.test(comment);
   const hasNutritionWords = /(タンパク|たんぱく|炭水化物|脂質|PFC|kcal|g|不足|追加|改善)/.test(comment);
 
@@ -428,6 +416,31 @@ function looksBadAnalyzeMeal(result: {
 
   return false;
 }
+
+// index.ts の上の方（関数群が並んでるあたり）に置く
+const mealSchema = {
+  type: "object",
+  properties: {
+    calories: { type: ["number", "null"] },
+    protein: { type: ["number", "null"] },
+    fat: { type: ["number", "null"] },
+    carbs: { type: ["number", "null"] },
+    menu_items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          estimated_amount: { type: "string" },
+          note: { type: "string" },
+        },
+        required: ["name", "estimated_amount", "note"],
+      },
+    },
+    comment_lines: { type: "array", items: { type: "string" } },
+  },
+  required: ["calories", "protein", "fat", "carbs", "menu_items", "comment_lines"],
+} as const;
 
 /**
  * Gemini呼び出し（共通）
@@ -438,26 +451,25 @@ async function callGemini(params: {
   parts: any[];
   temperature: number;
   maxOutputTokens: number;
-  strictJson?: boolean;
+  schema?: any;           // ✅追加
 }) {
-  const { apiKey, model, parts, temperature, maxOutputTokens } = params;
+  const { apiKey, model, parts, temperature, maxOutputTokens, schema } = params;
+
+  const generationConfig: any = {
+    responseMimeType: "application/json",
+    temperature,
+    maxOutputTokens,
+  };
+  if (schema) generationConfig.responseSchema = schema; // ✅ analyze_meal の時だけ
 
   const body = {
     contents: [{ role: "user", parts }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature,
-      maxOutputTokens,
-    },
+    generationConfig,
   };
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
   );
 
   if (!res.ok) {
@@ -470,6 +482,10 @@ async function callGemini(params: {
   return { ok: true as const, status: 200, detail: null, raw, text };
 }
 
+
+
+
+
 serve(async (req) => {
   try {
     if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -478,8 +494,9 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) return json({ error: "Gemini config missing: GEMINI_API_KEY" }, 500);
 
-    const GEMINI_MODEL_LITE =
-      Deno.env.get("GEMINI_MODEL_LITE") ?? "gemini-2.5-flash-lite";
+    const GEMINI_MODEL_PRIMARY =
+      Deno.env.get("GEMINI_MODEL_PRIMARY") ?? "gemini-2.5-flash";
+
     const GEMINI_MODEL_FLASH =
       Deno.env.get("GEMINI_MODEL_FLASH") ?? "gemini-2.5-flash";
 
@@ -531,28 +548,30 @@ serve(async (req) => {
       if (!body.imageBase64) return json({ error: "imageBase64 is required" }, 400);
 
       const prompt = `
-あなたはスポーツ栄養士AI。画像の食事を見て「料理名・構成・量」を推定し、P/F/Cとkcalを推定する。
-雑談・感想は禁止。必ず推定値を出す（不明でも合理的に推定して埋める）。
-JSON以外の文字を1文字でも出したら失格。
-
-必ずJSONのみで返す（説明文/コードブロック禁止）。
-{
- "calories": number|null,
- "protein": number|null,
- "fat": number|null,
- "carbs": number|null,
- "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
- "comment": string
-}
-
-推定ルール:
-- menu_itemsは主食/主菜/副菜/汁/飲料を意識して最大6つ
-- estimated_amountは必ず入れる（例: "ご飯200g", "ルー180g", "肉50g", "1皿"）
-- calories/protein/fat/carbs は1食合計の推定値（数字で）
-- commentは日本語110字以内で3行:
-  1) 良い点 2) 不足しやすい点 3) 次の一手
-- 「美味しそう」等の感想だけは不可。栄養と改善を必ず含める
-`.trim();
+      あなたはスポーツ栄養士AI。画像の食事を見て「料理名・構成・量」を推定し、P/F/Cとkcalを推定する。
+      雑談・感想は禁止。必ず推定値を出す（不明でも合理的に推定して埋める）。
+      JSON以外の文字を1文字でも出したら失格。
+      
+      必ずJSONのみで返す（説明文/コードブロック禁止）。
+      {
+       "calories": number|null,
+       "protein": number|null,
+       "fat": number|null,
+       "carbs": number|null,
+       "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
+       "comment_lines": [string,string,string]
+      }
+      
+      推定ルール:
+      - menu_itemsは主食/主菜/副菜/汁/飲料を意識して最大6つ
+      - estimated_amountは必ず入れる（例: "ご飯200g", "ルー180g", "肉50g", "1皿"）
+      - calories/protein/fat/carbs は1食合計の推定値（数字で）
+      - comment_lines は必ず3つ:
+        1) 良い点 2) 不足しやすい点 3) 次の一手
+      - comment_lines の各要素は最大40文字
+      - JSON文字列内に改行は禁止（配列で表現する）
+      `.trim();
+      
 
       const parts = [
         { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
@@ -565,21 +584,24 @@ JSON以外の文字を1文字でも出したら失格。
         },
       ];
 
-      // ① まず lite
+
       const first = await callGemini({
         apiKey: GEMINI_API_KEY,
-        model: GEMINI_MODEL_LITE,
+        model: GEMINI_MODEL_FLASH,
         parts,
-        temperature: 0.2,
-        maxOutputTokens: 600,
+        temperature: 0.1,
+        maxOutputTokens: 700,
+        schema: mealSchema, // ✅ここだけ追加
       });
+      
+      
 
-      console.log("[nutrition-gemini] analyze_meal first model=", GEMINI_MODEL_LITE);
+      console.log("[nutrition-gemini] analyze_meal first model=", GEMINI_MODEL_FLASH);
       console.log("[nutrition-gemini] analyze_meal first text preview=", first.ok ? first.text.slice(0, 300) : "");
 
 
       if (!first.ok) {
-        console.error("[nutrition-gemini] Gemini lite error", {
+        console.error("[nutrition-gemini] Gemini flash error", {
           status: first.status,
           detail: first.detail,
         });
@@ -591,9 +613,8 @@ JSON以外の文字を1文字でも出したら失格。
       try {
         parsed = safeParseJsonFromText(first.text);
       } catch (e) {
-        // liteが壊した → flashにリトライ
-        console.error("[nutrition-gemini] JSON parse failed (lite) -> retry flash", {
-          model: GEMINI_MODEL_LITE,
+        console.error("[nutrition-gemini] JSON parse failed (flash) -> retry flash", {
+          model: GEMINI_MODEL_FLASH,
           textPreview: String(first.text).slice(0, 600),
           err: String((e as Error)?.message ?? e),
         });
@@ -607,7 +628,7 @@ JSON以外の文字を1文字でも出したら失格。
  "fat": number|null,
  "carbs": number|null,
  "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
- "comment": string
+ "comment_lines": [string,string,string]
 }
 commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6。
 `.trim();
@@ -629,9 +650,9 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           parts: retryParts,
           temperature: 0.1,
           maxOutputTokens: 600,
-          strictJson: true,
+          schema: mealSchema, // ✅ここも
         });
-
+        
         console.log("[nutrition-gemini] analyze_meal retry model=", GEMINI_MODEL_FLASH);
         console.log("[nutrition-gemini] analyze_meal retry text preview=", second.ok ? second.text.slice(0, 300) : "");
 
@@ -678,7 +699,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
 
       // ④ liteの品質が薄い場合もflashへリトライ
       if (looksBadAnalyzeMeal(result1)) {
-        console.warn("[nutrition-gemini] lite result looks bad -> retry flash", {
+        console.warn("[nutrition-gemini] flash result looks bad -> retry flash", {
           litePreview: result1,
           textPreview: String(first.text).slice(0, 600),
         });
@@ -692,7 +713,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
  "fat": number|null,
  "carbs": number|null,
  "menu_items": [{"name": string, "estimated_amount": string, "note": string}],
- "comment": string
+ "comment_lines": [string,string,string]
 }
 commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6。
 `.trim();
@@ -714,7 +735,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           parts: retryParts2,
           temperature: 0.1,
           maxOutputTokens: 600,
-          strictJson: true,
+          schema: mealSchema, // ✅ここも
         });
 
         if (!second2.ok) {
@@ -755,7 +776,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       return json({
         ok: true,
         result: result1,
-        meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_ok" },
+        meta: { used_model: GEMINI_MODEL_FLASH, reason: "lite_ok" },
       });
     }
 
@@ -792,7 +813,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
     "c": number|null,
     "label_kcal": number|null
   },
-  "comment": string
+  "comment_lines": [string,string,string]
 }
 
 ルール:
@@ -820,7 +841,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       // ① lite
       const first = await callGemini({
         apiKey: GEMINI_API_KEY,
-        model: GEMINI_MODEL_LITE,
+        model: GEMINI_MODEL_PRIMARY,
         parts,
         temperature: 0.1,
         maxOutputTokens: 900,
@@ -839,7 +860,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
         parsed = safeParseJsonFromText(first.text);
       } catch (e) {
         console.error("[nutrition-gemini] analyze_label JSON parse failed (lite) -> retry flash", {
-          model: GEMINI_MODEL_LITE,
+          model: GEMINI_MODEL_FLASH,
           textPreview: String(first.text).slice(0, 900),
           err: String((e as Error)?.message ?? e),
         });
@@ -851,7 +872,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
 {
   "items": [{"name": string, "serving_label": string, "p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null, "confidence": "high"|"med"|"low"}],
   "total": {"p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null},
-  "comment": string
+  "comment_lines": [string,string,string]
 }
 `.trim();
 
@@ -873,7 +894,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           parts: retryParts,
           temperature: 0.1,
           maxOutputTokens: 1100,
-          strictJson: true,
         });
 
         if (!second.ok) {
@@ -931,7 +951,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
 {
   "items": [{"name": string, "serving_label": string, "p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null, "confidence": "high"|"med"|"low"}],
   "total": {"p": number|null, "f": number|null, "c": number|null, "label_kcal": number|null},
-  "comment": string
+  "comment_lines": [string,string,string]
 }
 `.trim();
 
@@ -953,7 +973,6 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           parts: retryParts2,
           temperature: 0.1,
           maxOutputTokens: 1100,
-          strictJson: true,
         });
 
         if (!second2.ok) {
@@ -964,7 +983,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           return json({
             ok: true,
             result: result1,
-            meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_bad_but_returned" },
+            meta: { used_model: GEMINI_MODEL_FLASH, reason: "lite_bad_but_returned" },
           });
         }
 
@@ -980,7 +999,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           return json({
             ok: true,
             result: result1,
-            meta: { used_model: GEMINI_MODEL_LITE, reason: "flash_parse_failed_return_lite" },
+            meta: { used_model: GEMINI_MODEL_FLASH, reason: "flash_parse_failed_return_lite" },
           });
         }
 
@@ -995,7 +1014,7 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
       return json({
         ok: true,
         result: result1,
-        meta: { used_model: GEMINI_MODEL_LITE, reason: "lite_ok" },
+        meta: { used_model: GEMINI_MODEL_FLASH, reason: "lite_ok" },
       });
     }
 
@@ -1017,10 +1036,10 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
 
       const res = await callGemini({
         apiKey: GEMINI_API_KEY,
-        model: (Deno.env.get("GEMINI_MODEL_PLAN") ?? GEMINI_MODEL_LITE),
+        model: (Deno.env.get("GEMINI_MODEL_PLAN") ?? GEMINI_MODEL_FLASH),
         parts,
-        temperature: 0.2,
-        maxOutputTokens: 420,
+        temperature: 0.1,
+        maxOutputTokens: 700,
       });
 
       if (!res.ok) {
@@ -1040,9 +1059,9 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           {
             error: "FAILED_TO_PARSE_GEMINI_LABEL_JSON",
             message: "ラベル解析JSONの解釈に失敗しました",
-            detail: String((e2 as Error)?.message ?? e2),
+            detail: String((e as Error)?.message ?? e),
             model: GEMINI_MODEL_FLASH,
-            preview: String(second.text).slice(0, 1100),
+            preview: String(res.text).slice(0, 1100),
             hint: "GeminiがJSON以外を出力した可能性",
           },
           422
@@ -1098,8 +1117,8 @@ gaps=${JSON.stringify(body.gaps)}
         apiKey: GEMINI_API_KEY,
         model: (Deno.env.get("GEMINI_MODEL_SUMMARY") ?? GEMINI_MODEL_FLASH),
         parts,
-        temperature: 0.2,
-        maxOutputTokens: 260,
+        temperature: 0.1,
+        maxOutputTokens: 700,
       });
 
       if (!res.ok) {
@@ -1122,6 +1141,8 @@ gaps=${JSON.stringify(body.gaps)}
       }
 
       const normalized = normalizeDailySummaryResult(parsed);
+
+
 
       const summaryText = buildCompactSummaryText({
         headline: normalized.headline,
