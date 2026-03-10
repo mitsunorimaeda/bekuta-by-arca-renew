@@ -4418,6 +4418,7 @@ export type Database = {
           gender: string | null
           height_cm: number | null
           id: string
+          is_active: boolean
           last_alert_email_sent: string | null
           name: string
           phone_number: string | null
@@ -4435,6 +4436,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id: string
+          is_active?: boolean
           last_alert_email_sent?: string | null
           name: string
           phone_number?: string | null
@@ -4452,6 +4454,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id?: string
+          is_active?: boolean
           last_alert_email_sent?: string | null
           name?: string
           phone_number?: string | null

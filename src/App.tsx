@@ -14,6 +14,7 @@ import { AdminView } from './components/AdminView';
 import { BadgeModalController } from './components/BadgeModalController';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import InviteExpired from './pages/InviteExpired';
+import { JoinPage } from './pages/JoinPage';
 import { GlobalHeader } from './components/GlobalHeader';
 import { ProfileGate } from "./components/ProfileGate";
 
@@ -113,7 +114,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome'>('app');
+    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
@@ -130,6 +131,11 @@ function App() {
 
     if (pathname.startsWith('/auth/callback')) {
       setCurrentPage('auth-callback');
+      return;
+    }
+
+    if (pathname.startsWith('/join')) {
+      setCurrentPage('join');
       return;
     }
 
@@ -236,6 +242,18 @@ function App() {
     );
   }
 
+  // ✅ シェアリンク自己登録ページ（認証不要）
+  if (currentPage === 'join') {
+    return (
+      <JoinPage
+        onLoginSuccess={() => {
+          setCurrentPage('app');
+          window.history.replaceState({}, '', '/');
+        }}
+      />
+    );
+  }
+
   if (!user) return <LoginForm onLogin={signIn} />;
 
   return (
@@ -258,6 +276,30 @@ function App() {
               }}
               userName={userProfile.name}
             />
+          );
+        }
+
+        // ✅ スタッフ承認待ち
+        if (userProfile.is_active === false) {
+          return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 max-w-md w-full text-center">
+                <div className="text-5xl mb-4">⏳</div>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                  アカウントは承認待ちです
+                </h1>
+                <p className="text-gray-600 dark:text-gray-300 text-sm mt-2">
+                  管理者がアカウントを承認するまでお待ちください。
+                  承認が完了するとログインできるようになります。
+                </p>
+                <button
+                  onClick={signOut}
+                  className="mt-6 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline"
+                >
+                  ログアウト
+                </button>
+              </div>
+            </div>
           );
         }
   

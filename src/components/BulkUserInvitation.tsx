@@ -310,6 +310,14 @@ export function BulkUserInvitation({
         }
 
         // === ④ send-email (テンプレート版) 呼び出し ===
+        // メールクライアントのプリフェッチ対策:
+        // Supabase action_link をそのまま使うとトークンが事前消費されるため
+        // /auth/callback?verify=... でラップしてボタン押下時に初めて消費させる
+        const wrappedSetupLink =
+          `${window.location.origin}/auth/callback` +
+          `?verify=${encodeURIComponent(passwordSetupLink)}` +
+          `&next=/reset-password`;
+
         let emailSent = false;
         let emailErrorMsg = '';
 
@@ -332,7 +340,7 @@ export function BulkUserInvitation({
                   email: row.email,
                   role: row.role,
                   teamName: row.teamName,
-                  passwordSetupLink,
+                  passwordSetupLink: wrappedSetupLink,
                   expiresInHours: 24,
                 },
               }),

@@ -15,6 +15,8 @@ import { OrganizationSettings } from './OrganizationSettings';
 import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
+import { InviteLinkGenerator } from './InviteLinkGenerator';
+import { PendingStaffApproval } from './PendingStaffApproval';
 
 interface OrganizationAdminViewProps {
   user: User;
@@ -30,9 +32,9 @@ interface OrganizationAdminViewProps {
 export function OrganizationAdminView({ user, alerts, organizationId, organizationName, onNavigateToPrivacy, onNavigateToTerms, onNavigateToCommercial, onNavigateToHelp }: OrganizationAdminViewProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'organization'>('overview');
-  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage'>('invite');
+  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'pending'>('invite');
   const [organizationSubTab, setOrganizationSubTab] = useState<'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'>('members');
-  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
+  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk' | 'link'>('single');
   const [loading, setLoading] = useState(true);
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
@@ -257,6 +259,17 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                         <UserCog className="w-3.5 h-3.5" />
                         <span>管理</span>
                       </button>
+                      <button
+                        onClick={() => setUsersSubTab('pending')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
+                          usersSubTab === 'pending'
+                            ? 'border-orange-500 text-orange-700 dark:text-orange-400'
+                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>承認待ち</span>
+                      </button>
                     </>
                   )}
                   {activeTab === 'organization' && (
@@ -354,6 +367,16 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                           >
                             一括招待 (CSV)
                           </button>
+                          <button
+                            onClick={() => setInviteSubTab('link')}
+                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                              inviteSubTab === 'link'
+                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                            }`}
+                          >
+                            シェアリンク
+                          </button>
                         </nav>
                       </div>
 
@@ -366,7 +389,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                             allowAdminInvite={false}
                           />
                         </div>
-                      ) : (
+                      ) : inviteSubTab === 'bulk' ? (
                         <div data-tutorial="bulk-invite">
                           <BulkUserInvitation
                             teams={teams}
@@ -375,12 +398,19 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                             allowAdminInvite={false}
                           />
                         </div>
+                      ) : (
+                        <InviteLinkGenerator
+                          organizationId={organizationId}
+                          teams={teams}
+                        />
                       )}
                     </div>
                   ) : usersSubTab === 'manage' ? (
                     <div data-tutorial="user-list">
                       <UserManagement teams={teams} restrictToOrganizationId={organizationId} />
                     </div>
+                  ) : usersSubTab === 'pending' ? (
+                    <PendingStaffApproval organizationId={organizationId} />
                   ) : null}
                 </div>
               ) : activeTab === 'organization' ? (

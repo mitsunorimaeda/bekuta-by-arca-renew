@@ -170,12 +170,22 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
 
       const inviteExpiredUrl = `${window.location.origin}/invite-expired`;
 
+      // メールクライアントのプリフェッチ対策:
+      // Supabase の action_link をそのまま埋め込むと、GmailやOutlookが
+      // スパム対策でリンクを自動クロールし、ワンタイムトークンが消費される。
+      // /auth/callback?verify=... でラップすることで、ユーザーがボタンを
+      // 押すまでトークンが消費されないようにする。
+      const wrappedSetupLink =
+        `${window.location.origin}/auth/callback` +
+        `?verify=${encodeURIComponent(passwordSetupLink)}` +
+        `&next=/reset-password`;
+
       const emailHTML = generateInvitationEmailHTML({
         name: formData.name,
         email: formData.email,
         role: formData.role,
         teamName: teamName || organizationName,
-        passwordSetupLink: passwordSetupLink,
+        passwordSetupLink: wrappedSetupLink,
         inviteExpiredUrl,
         inviterName: currentUser?.name,
         expiresInHours: 24,
@@ -186,7 +196,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         email: formData.email,
         role: formData.role,
         teamName: teamName || organizationName,
-        passwordSetupLink: passwordSetupLink,
+        passwordSetupLink: wrappedSetupLink,
         inviteExpiredUrl,
         inviterName: currentUser?.name,
         expiresInHours: 24,
@@ -239,7 +249,7 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         user_id: userResult.user?.user_id,
         invitedAt: new Date().toLocaleString('ja-JP'),
         emailSent,
-        inviteUrl: passwordSetupLink,
+        inviteUrl: wrappedSetupLink,
         
       };
 

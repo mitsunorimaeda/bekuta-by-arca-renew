@@ -68,10 +68,27 @@ function safeDateYYYYMMDD(s: string) {
  * Geminiが返した text からJSONだけ抜き出してparse（混在・前置き対策）
  */
 function safeParseJsonFromText(text: string) {
-  const cleaned = String(text ?? "")
+  let cleaned = String(text ?? "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
+
+  // --- sanitize: よくある壊れ方を修復 ---
+  cleaned = cleaned
+    .replace(/\uFEFF/g, "") // BOM
+    .replace(/\u2028|\u2029/g, " "); // JSの行区切り文字
+
+  // 全角引用符を半角へ（たまに混ざる）
+  cleaned = cleaned.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+  // 末尾カンマ除去  ,}  ,] を } ]
+  cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
+
+  // NaN/Infinity を null に（クォート外の裸トークンだけ）
+  cleaned = cleaned
+    .replace(/\bNaN\b/g, "null")
+    .replace(/\bInfinity\b/g, "null")
+    .replace(/\b-Infinity\b/g, "null");
 
   // ① まず全文JSONでいけるか
   try {
@@ -88,35 +105,15 @@ function safeParseJsonFromText(text: string) {
     try {
       return JSON.parse(slice);
     } catch {
-      // noop
-    }
-  }
-
-  // ③ 複数候補を走査
-  const candidates: string[] = [];
-  const idxs: number[] = [];
-  for (let i = 0; i < cleaned.length; i++) {
-    if (cleaned[i] === "{") idxs.push(i);
-  }
-  for (const s of idxs) {
-    for (let e = cleaned.length - 1; e > s; e--) {
-      if (cleaned[e] === "}") {
-        const cand = cleaned.slice(s, e + 1);
-        if (cand.length > 20) candidates.push(cand);
-        break;
-      }
-    }
-  }
-  for (const cand of candidates) {
-    try {
-      return JSON.parse(cand);
-    } catch {
-      // continue
+      // ここも sanitize して再挑戦
+      const slice2 = slice.replace(/,\s*([}\]])/g, "$1");
+      return JSON.parse(slice2);
     }
   }
 
   throw new Error(`JSON parse failed: ${cleaned.slice(0, 240)}...`);
 }
+
 
 /**
  * candidates.parts から text を全部連結
@@ -127,14 +124,18 @@ function extractGeminiText(raw: any): string {
     const texts = parts
       .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
       .filter((t: string) => t.length > 0);
-    if (texts.length > 0) return texts.join("\n").trim();
+
+    if (texts.length > 0) return texts.join("").trim(); // ← "\n" じゃなく ""！
   }
+
   const t1 =
     raw?.candidates?.[0]?.content?.parts?.[0]?.text ??
     raw?.candidates?.[0]?.content?.text ??
     "";
+
   return String(t1 ?? "").trim();
 }
+
 
 
 
@@ -460,7 +461,7 @@ async function callGemini(params: {
     temperature,
     maxOutputTokens,
   };
-  if (schema) generationConfig.responseSchema = schema; // ✅ analyze_meal の時だけ
+  //if (schema) generationConfig.responseSchema = schema; // ✅ analyze_meal の時だけ
 
   const body = {
     contents: [{ role: "user", parts }],
@@ -571,18 +572,36 @@ serve(async (req) => {
       - comment_lines の各要素は最大40文字
       - JSON文字列内に改行は禁止（配列で表現する）
       `.trim();
+
+      function stripDataUrl(b64: string) {
+        return b64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "").trim();
+      }
+      
+      function guessMimeTypeFromB64(b64: string) {
+        const s = stripDataUrl(b64);
+        if (s.startsWith("/9j")) return "image/jpeg";   // JPEG
+        if (s.startsWith("iVBOR")) return "image/png";  // PNG
+        if (s.startsWith("UklGR")) return "image/webp"; // WEBP
+        return "image/jpeg";
+      }
+      
+      const imgB64 = stripDataUrl(body.imageBase64);
+      const mime = guessMimeTypeFromB64(body.imageBase64);
       
 
+
       const parts = [
-        { inlineData: { mimeType: "image/jpeg", data: body.imageBase64 } },
-        {
-          text:
-            prompt +
-            (body.context && body.context.trim()
-              ? `\n補足:${truncateByChars(body.context.trim(), 220)}`
-              : ""),
-        },
+        { inlineData: { mimeType: mime, data: imgB64 } },
+        { text: prompt },
+        ...(body.context && body.context.trim()
+          ? [
+              {
+                text: `補足情報：${truncateByChars(body.context.trim(), 220)}`,
+              },
+            ]
+          : []),
       ];
+      
 
 
       const first = await callGemini({
@@ -590,14 +609,26 @@ serve(async (req) => {
         model: GEMINI_MODEL_FLASH,
         parts,
         temperature: 0.1,
-        maxOutputTokens: 700,
-        schema: mealSchema, // ✅ここだけ追加
+        maxOutputTokens: 4096,
+        //schema: mealSchema, // ✅ここだけ追加
       });
-      
-      
 
+      console.log("[nutrition-gemini] raw keys", Object.keys(first.raw ?? {}));
+      console.log("[nutrition-gemini] candidate content", first.raw?.candidates?.[0]?.content);
+
+      
       console.log("[nutrition-gemini] analyze_meal first model=", GEMINI_MODEL_FLASH);
       console.log("[nutrition-gemini] analyze_meal first text preview=", first.ok ? first.text.slice(0, 300) : "");
+
+      console.log(
+        "[nutrition-gemini] parts count =",
+        first.raw?.candidates?.[0]?.content?.parts?.length
+      );
+      console.log(
+        "[nutrition-gemini] parts preview =",
+        (first.raw?.candidates?.[0]?.content?.parts ?? []).map((p: any) => String(p?.text ?? "").slice(0, 80))
+      );
+      
 
 
       if (!first.ok) {
@@ -649,8 +680,8 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts,
           temperature: 0.1,
-          maxOutputTokens: 600,
-          schema: mealSchema, // ✅ここも
+          maxOutputTokens: 4096,
+          //schema: mealSchema, // ✅ここも
         });
         
         console.log("[nutrition-gemini] analyze_meal retry model=", GEMINI_MODEL_FLASH);
@@ -679,11 +710,13 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
               message: "Geminiの出力をJSONとして解釈できませんでした",
               detail: String((e2 as Error)?.message ?? e2),
               model: GEMINI_MODEL_FLASH,
-              preview: String(second.text).slice(0, 800),
-              hint: "GeminiがJSON以外の文字を含めた可能性があります",
+              len: String(second.text ?? "").length,
+              head: String(second.text ?? "").slice(0, 600),
+              tail: String(second.text ?? "").slice(-600),
             },
             422
           );
+          
           
         }
 
@@ -734,8 +767,8 @@ commentは3行(良い点/不足/次の一手)、110字以内。menu_items最大6
           model: GEMINI_MODEL_FLASH,
           parts: retryParts2,
           temperature: 0.1,
-          maxOutputTokens: 600,
-          schema: mealSchema, // ✅ここも
+          maxOutputTokens: 4096,
+          //schema: mealSchema, // ✅ここも
         });
 
         if (!second2.ok) {
