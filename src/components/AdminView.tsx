@@ -5,6 +5,8 @@ import { Alert } from '../lib/alerts';
 import { UserInvitation } from './UserInvitation';
 import { BulkUserInvitation } from './BulkUserInvitation';
 import { UserManagement } from './UserManagement';
+import { InviteLinkGenerator } from './InviteLinkGenerator';
+import { PendingStaffApproval } from './PendingStaffApproval';
 import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
@@ -74,8 +76,8 @@ export function AdminView({
   const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization'>('system');
   const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
 
-  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody'>('invite');
-  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk'>('single');
+  const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody' | 'pending'>('invite');
+  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk' | 'link'>('single');
 
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [organizationSubTab, setOrganizationSubTab] = useState<
@@ -474,6 +476,18 @@ export function AdminView({
                         <FileText className="w-3.5 h-3.5" />
                         <span>InBody(CSV)</span>
                       </button>
+
+                      <button
+                        onClick={() => setUsersSubTab('pending')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
+                          usersSubTab === 'pending'
+                            ? 'border-yellow-500 text-yellow-700'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+                        }`}
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>承認待ち</span>
+                      </button>
                     </>
                   )}
 
@@ -665,6 +679,16 @@ export function AdminView({
                           >
                             一括招待 (CSV)
                           </button>
+                          <button
+                            onClick={() => setInviteSubTab('link')}
+                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                              inviteSubTab === 'link'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            シェアリンク
+                          </button>
                         </nav>
                       </div>
 
@@ -672,10 +696,23 @@ export function AdminView({
                         <div>
                           <UserInvitation teams={teams} onUserInvited={() => {}} />
                         </div>
-                      ) : (
+                      ) : inviteSubTab === 'bulk' ? (
                         <div>
                           <BulkUserInvitation teams={teams} onUsersInvited={() => {}} />
                         </div>
+                      ) : (
+                        selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
+                          <InviteLinkGenerator
+                            organizationId={selectedOrganizationId}
+                            teams={teams.filter(t => t.organization_id === selectedOrganizationId)}
+                          />
+                        ) : (
+                          <div className="text-center py-12">
+                            <p className="text-gray-600 mb-4">
+                              シェアリンクを管理するには、上部のドロップダウンから組織を選択してください。
+                            </p>
+                          </div>
+                        )
                       )}
                     </div>
                   ) : usersSubTab === 'manage' ? (
@@ -696,6 +733,16 @@ export function AdminView({
                       </div>
                       <AdminInbodyCsvImport />
                     </div>
+                  ) : usersSubTab === 'pending' ? (
+                    selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
+                      <PendingStaffApproval organizationId={selectedOrganizationId} />
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600 mb-4">
+                          承認待ちスタッフを確認するには、上部のドロップダウンから組織を選択してください。
+                        </p>
+                      </div>
+                    )
                   ) : null}
                 </div>
               ) : activeTab === 'organization' ? (
