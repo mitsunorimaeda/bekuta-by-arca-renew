@@ -10,22 +10,20 @@ import {
 import { Activity } from 'lucide-react';
 import { useTeamRadar } from '../hooks/useTeamRadar';
 
-function PercentileBadge({ percentile }: { percentile: number }) {
-  const cls =
-    percentile >= 80
-      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-      : percentile >= 60
-      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-      : percentile >= 40
-      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+function getGrade(percentile: number): { grade: string; cls: string } {
+  if (percentile >= 90) return { grade: 'S', cls: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' };
+  if (percentile >= 75) return { grade: 'A', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' };
+  if (percentile >= 60) return { grade: 'B', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' };
+  if (percentile >= 40) return { grade: 'C', cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' };
+  if (percentile >= 20) return { grade: 'D', cls: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' };
+  return { grade: 'E', cls: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' };
+}
 
-  const label =
-    percentile >= 80 ? '上位' : percentile >= 60 ? '平均以上' : percentile >= 40 ? '平均' : '要改善';
-
+function GradeBadge({ percentile }: { percentile: number }) {
+  const { grade, cls } = getGrade(percentile);
   return (
-    <span className={`inline-flex items-center rounded-full font-medium text-xs px-2 py-1 ${cls}`}>
-      {label} {percentile}%
+    <span className={`inline-flex items-center rounded-full font-bold text-xs px-2 py-1 ${cls}`}>
+      {grade}
     </span>
   );
 }
@@ -71,13 +69,13 @@ export function TeamRadarChart({ teamId }: TeamRadarChartProps) {
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
           チーム能力バランス
           <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 font-normal">
-            全選手比較パーセンタイル（チーム平均）
+            全選手比較（チーム平均）
           </span>
         </h3>
         {overallScore !== null && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">総合:</span>
-            <PercentileBadge percentile={overallScore} />
+            <GradeBadge percentile={overallScore} />
           </div>
         )}
       </div>
@@ -123,7 +121,7 @@ export function TeamRadarChart({ teamId }: TeamRadarChartProps) {
                 {cat.athleteCount}名 / {cat.testCount}種目
               </span>
             </div>
-            <PercentileBadge percentile={cat.avgPercentile} />
+            <GradeBadge percentile={cat.avgPercentile} />
           </div>
         ))}
       </div>

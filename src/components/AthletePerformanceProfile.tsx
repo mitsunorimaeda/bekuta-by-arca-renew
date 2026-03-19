@@ -28,25 +28,24 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   agility: <Target className="w-5 h-5" />,
 };
 
-// --- Percentile badge ---
-function PercentileBadge({ percentile, size = 'md' }: { percentile: number; size?: 'sm' | 'md' }) {
-  const cls =
-    percentile >= 80
-      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-      : percentile >= 60
-      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-      : percentile >= 40
-      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+// --- Grade helpers ---
+function getGrade(percentile: number): { grade: string; label: string; cls: string } {
+  if (percentile >= 90) return { grade: 'S', label: 'トップ', cls: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' };
+  if (percentile >= 75) return { grade: 'A', label: '上位', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' };
+  if (percentile >= 60) return { grade: 'B', label: '平均以上', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' };
+  if (percentile >= 40) return { grade: 'C', label: '平均', cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' };
+  if (percentile >= 20) return { grade: 'D', label: '平均以下', cls: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' };
+  return { grade: 'E', label: '要改善', cls: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' };
+}
 
-  const label =
-    percentile >= 80 ? '上位' : percentile >= 60 ? '平均以上' : percentile >= 40 ? '平均' : '要改善';
-
+// --- Grade badge ---
+function GradeBadge({ percentile, size = 'md' }: { percentile: number; size?: 'sm' | 'md' }) {
+  const { grade, cls } = getGrade(percentile);
   const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1';
 
   return (
-    <span className={`inline-flex items-center rounded-full font-medium ${cls} ${sizeClass}`}>
-      {label} {percentile}%
+    <span className={`inline-flex items-center rounded-full font-bold ${cls} ${sizeClass}`}>
+      {grade}
     </span>
   );
 }
@@ -62,27 +61,26 @@ function formatValue(value: number, unit: string): string {
 function OverallScoreCircle({ score }: { score: number | null }) {
   if (score === null) return null;
 
+  const { grade, cls } = getGrade(score);
   const color =
-    score >= 80
-      ? 'text-emerald-500'
-      : score >= 60
-      ? 'text-blue-500'
-      : score >= 40
-      ? 'text-yellow-500'
+    score >= 90 ? 'text-purple-500'
+      : score >= 75 ? 'text-emerald-500'
+      : score >= 60 ? 'text-blue-500'
+      : score >= 40 ? 'text-yellow-500'
+      : score >= 20 ? 'text-orange-500'
       : 'text-red-500';
 
   const bgColor =
-    score >= 80
-      ? 'from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20'
-      : score >= 60
-      ? 'from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20'
-      : score >= 40
-      ? 'from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20'
+    score >= 90 ? 'from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20'
+      : score >= 75 ? 'from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20'
+      : score >= 60 ? 'from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20'
+      : score >= 40 ? 'from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20'
+      : score >= 20 ? 'from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20'
       : 'from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20';
 
   return (
     <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br ${bgColor}`}>
-      <span className={`text-2xl font-bold ${color}`}>{score}</span>
+      <span className={`text-3xl font-bold ${color}`}>{grade}</span>
       <span className="text-[10px] text-gray-500 dark:text-gray-400">総合</span>
     </div>
   );
@@ -146,7 +144,7 @@ function CategoryCard({
             {cat.categoryDisplayName}
           </span>
           {cat.hasSufficientData ? (
-            <PercentileBadge percentile={cat.percentile} />
+            <GradeBadge percentile={cat.percentile} />
           ) : (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">
               データ不足
@@ -177,7 +175,7 @@ function CategoryCard({
                       <span className="text-xs text-gray-400 ml-0.5">{test.unit}</span>
                     </span>
                     {test.hasSufficientData ? (
-                      <PercentileBadge percentile={test.percentile} size="sm" />
+                      <GradeBadge percentile={test.percentile} size="sm" />
                     ) : (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">
                         n={test.totalAthletes}
@@ -282,7 +280,7 @@ export default function AthletePerformanceProfile({ userId, onClose }: AthletePe
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 text-center">
             能力バランス
             <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 font-normal">
-              全選手比較パーセンタイル
+              全選手比較
             </span>
           </h3>
           <ResponsiveContainer width="100%" height={280}>

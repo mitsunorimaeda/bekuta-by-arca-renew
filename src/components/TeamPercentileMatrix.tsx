@@ -2,12 +2,18 @@ import React from 'react';
 import { Users } from 'lucide-react';
 import { useTeamPercentileMatrix } from '../hooks/useTeamPercentileMatrix';
 
-function cellColor(percentile: number | undefined): string {
-  if (percentile === undefined) return 'bg-gray-50 dark:bg-gray-800 text-gray-400';
-  if (percentile >= 80) return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300';
-  if (percentile >= 60) return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
-  if (percentile >= 40) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300';
-  return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300';
+function getGrade(percentile: number): { grade: string; cls: string } {
+  if (percentile >= 90) return { grade: 'S', cls: 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300' };
+  if (percentile >= 75) return { grade: 'A', cls: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300' };
+  if (percentile >= 60) return { grade: 'B', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' };
+  if (percentile >= 40) return { grade: 'C', cls: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' };
+  if (percentile >= 20) return { grade: 'D', cls: 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300' };
+  return { grade: 'E', cls: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' };
+}
+
+function cellGrade(percentile: number | undefined): { grade: string; cls: string } {
+  if (percentile === undefined) return { grade: '-', cls: 'bg-gray-50 dark:bg-gray-800 text-gray-400' };
+  return getGrade(percentile);
 }
 
 function averagePercentile(
@@ -66,7 +72,7 @@ export function TeamPercentileMatrix({ teamId }: TeamPercentileMatrixProps) {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-        選手パーセンタイルマトリクス
+        選手評価マトリクス
         <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 font-normal">
           全選手比較（カテゴリ平均）
         </span>
@@ -103,22 +109,26 @@ export function TeamPercentileMatrix({ teamId }: TeamPercentileMatrixProps) {
                     </td>
                     {categories.map((cat) => {
                       const val = matrix[athlete.userId]?.[cat.name];
+                      const { grade, cls } = cellGrade(val);
                       return (
                         <td key={cat.name} className="px-3 py-2.5 text-center">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${cellColor(val)}`}
+                            className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${cls}`}
                           >
-                            {val !== undefined ? val : '-'}
+                            {grade}
                           </span>
                         </td>
                       );
                     })}
                     <td className="px-3 py-2.5 text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${cellColor(avg ?? undefined)}`}
-                      >
-                        {avg !== null ? avg : '-'}
-                      </span>
+                      {(() => {
+                        const { grade, cls } = cellGrade(avg ?? undefined);
+                        return (
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold ${cls}`}>
+                            {grade}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
@@ -129,10 +139,12 @@ export function TeamPercentileMatrix({ teamId }: TeamPercentileMatrixProps) {
       </div>
 
       <div className="flex flex-wrap gap-3 text-[10px] text-gray-400 px-1">
-        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-900/30" /> 80+ 上位</span>
-        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/30" /> 60-79 平均以上</span>
-        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-100 dark:bg-yellow-900/30" /> 40-59 平均</span>
-        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" /> 0-39 要改善</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-100 dark:bg-purple-900/30" /> S トップ</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-900/30" /> A 上位</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/30" /> B 平均以上</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-100 dark:bg-yellow-900/30" /> C 平均</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100 dark:bg-orange-900/30" /> D 平均以下</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" /> E 要改善</span>
       </div>
     </div>
   );
