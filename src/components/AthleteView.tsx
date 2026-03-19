@@ -67,7 +67,8 @@ import {
   Droplets,
   Flame,
   Sword, // ★ 追加
-  ChevronRight // ★ 追加
+  ChevronRight, // ★ 追加
+  User,
 } from 'lucide-react';
 
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -88,6 +89,7 @@ const MessagingPanel = lazy(() => import('./MessagingPanel').then((m) => ({ defa
 const AthletePerformanceView = lazy(() =>
   import("./views/AthletePerformanceView").then((m) => ({ default: m.default }))
 );
+const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
 // =========================
 // ✅ 추가：Lazy-load（タブ系・チャート系）
 // =========================
@@ -397,7 +399,8 @@ export function AthleteView({
     | 'gamification'
     | 'settings'
     | 'messages'
-    | 'rehab'; // ★ 追加
+    | 'rehab'
+    | 'profile';
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('unified');
 
@@ -1039,6 +1042,8 @@ export function AthleteView({
               ? 'データから新しい発見を'
               : activeTab === 'performance'
               ? 'パフォーマンスを測定'
+              : activeTab === 'profile'
+              ? 'マイプロフィール'
               : activeTab === 'conditioning'
               ? 'コンディション管理'
               : activeTab === 'cycle'
@@ -1219,6 +1224,22 @@ export function AthleteView({
               >
                 <Zap className="w-4 h-4" />
                 <span className="text-sm font-medium">パフォーマンス</span>
+              </button>
+
+              {/* マイプロフィール（パフォーマンス分析） */}
+              <button type="button"
+                onClick={() => {
+                  setActiveTab('profile');
+                  setMenuOpen(false);
+                }}
+                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                  activeTab === 'profile'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span className="text-sm font-medium">マイプロフィール</span>
               </button>
 
               {/* ゲーミフィケーション */}
@@ -1949,6 +1970,16 @@ export function AthleteView({
             user={user}
             onBackHome={() => setActiveTab('unified')}
           />
+        </Suspense>
+      ) : activeTab === 'profile' ? (
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" />
+            </div>
+          }
+        >
+          <AthletePerformanceProfileLazy userId={user.id} />
         </Suspense>
       ) : activeTab === 'conditioning' ? (
           /* Conditioning Tab */

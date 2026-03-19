@@ -20,6 +20,7 @@ import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
 import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
 import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
+import { PerformanceAnalysisPanel } from './PerformanceAnalysisPanel';
 import type { CoachRankingsViewProps } from './CoachRankingsView';
 import { Calendar } from 'lucide-react';
 import TeamSeasonPhaseSettings from './TeamSeasonPhaseSettings';
@@ -34,7 +35,8 @@ import {
   HelpCircle,
   FileText,
   Lock,
-  Trophy, 
+  Trophy,
+  Target,
 } from 'lucide-react';
 
 const TeamExportPanel = lazy(() =>
@@ -44,6 +46,8 @@ const ReportView = lazy(() =>
   import('./ReportView').then((m) => ({ default: m.ReportView }))
 );
 
+
+const TeamAnalysisViewLazy = lazy(() => import('./TeamAnalysisView'));
 
 const CoachRankingsViewLazy =
   lazy(async () => {
@@ -264,7 +268,7 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports'|'settings'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
 
     // =========================
   // Rankings -> Performance Modal
@@ -1269,8 +1273,33 @@ useEffect(() => {
                       </div>
                     </button>
 
+                    <button
+                      onClick={() => setActiveTab('performance')}
+                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
+                        activeTab === 'performance'
+                          ? 'border-purple-500 text-purple-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <Activity className="w-4 h-4 mr-2" />
+                        パフォーマンス分析
+                      </div>
+                    </button>
 
-
+                    <button
+                      onClick={() => setActiveTab('team-analysis')}
+                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
+                        activeTab === 'team-analysis'
+                          ? 'border-indigo-500 text-indigo-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <Target className="w-4 h-4 mr-2" />
+                        チーム分析
+                      </div>
+                    </button>
 
                   </nav>
 
@@ -1285,6 +1314,8 @@ useEffect(() => {
                       <option value="rankings">ランキング</option>
                       <option value="settings">設定（フェーズ）</option>
                       <option value="reports">レポート</option>
+                      <option value="performance">パフォーマンス分析</option>
+                      <option value="team-analysis">チーム分析</option>
                     </select>
                   </div>
                 </div>
@@ -1475,6 +1506,28 @@ useEffect(() => {
                       }
                     >
                       <ReportView team={selectedTeam!} />
+                    </Suspense>
+                  )}
+
+                  {activeTab === 'performance' && (
+                    <PerformanceAnalysisPanel
+                      organizationId={currentOrganizationId}
+                      allowOrgFilter={false}
+                      presetTeamId={selectedTeam?.id}
+                    />
+                  )}
+
+                  {activeTab === 'team-analysis' && selectedTeam && (
+                    <Suspense
+                      fallback={
+                        <div className="flex items-center justify-center h-64">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" />
+                        </div>
+                      }
+                    >
+                      <ChartErrorBoundary name="TeamAnalysisView">
+                        <TeamAnalysisViewLazy teamId={selectedTeam.id} />
+                      </ChartErrorBoundary>
                     </Suspense>
                   )}
                 </div>

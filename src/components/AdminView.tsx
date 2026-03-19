@@ -27,9 +27,11 @@ import {
   Layout,
   ShieldCheck,
   MessageSquare,
-  FileText
+  FileText,
+  Activity
 } from 'lucide-react';
 import { OrganizationManagement } from './OrganizationManagement';
+import { PerformanceAnalysisPanel } from './PerformanceAnalysisPanel';
 import { OrganizationOverview } from './OrganizationOverview';
 import { SubscriptionManagement } from './SubscriptionManagement';
 import { OrganizationSettings } from './OrganizationSettings';
@@ -73,7 +75,7 @@ export function AdminView({
   }
 
   const [teams, setTeams] = useState<Team[]>([]);
-  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'organization' | 'performance'>('system');
   const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
 
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody' | 'pending'>('invite');
@@ -403,6 +405,18 @@ export function AdminView({
                 >
                   <Building2 className="w-4 h-4" />
                   <span>組織管理</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('performance')}
+                  className={`py-4 px-6 border-b-2 font-medium text-sm flex items-center space-x-2 whitespace-nowrap transition-colors ${
+                    activeTab === 'performance'
+                      ? 'border-purple-500 text-purple-600 bg-purple-50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Activity className="w-4 h-4" />
+                  <span>パフォーマンス分析</span>
                 </button>
               </nav>
             </div>
@@ -865,6 +879,11 @@ export function AdminView({
                     </div>
                   ) : null}
                 </div>
+              ) : activeTab === 'performance' ? (
+                <PerformanceAnalysisPanel
+                  organizationId={selectedOrganizationId}
+                  allowOrgFilter={true}
+                />
               ) : null}
             </div>
           </div>

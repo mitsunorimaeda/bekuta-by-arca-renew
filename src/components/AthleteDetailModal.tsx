@@ -1,6 +1,6 @@
 // src/components/AthleteDetailModal.tsx
-import React, { useMemo, useState } from 'react';
-import { X, Activity, Scale, BarChart2 } from 'lucide-react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
+import { X, Activity, Scale, BarChart2, User as UserIcon } from 'lucide-react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
@@ -25,7 +25,9 @@ interface AthleteDetailModalProps {
   weekCard?: { is_sharing_active?: boolean; sleep_hours_avg?: number | null } | undefined;
 }
 
-type TabKey = 'overview' | 'weight' | 'rpe';
+const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
+
+type TabKey = 'overview' | 'weight' | 'rpe' | 'profile';
 
 function getNextActions(risk: { riskLevel: 'high' | 'caution' | 'low'; reasons: string[]; acwr?: number | null }) {
   const reasons = risk.reasons || [];
@@ -423,6 +425,17 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: Athlete
               <BarChart2 className="w-4 h-4" />
               RPE / 負荷 / ACWR
             </button>
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`flex items-center gap-1 px-3 py-2 border-b-2 text-sm whitespace-nowrap ${
+                activeTab === 'profile'
+                  ? 'border-indigo-500 text-indigo-600 font-semibold'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <UserIcon className="w-4 h-4" />
+              プロフィール
+            </button>
           </div>
         </div>
 
@@ -651,6 +664,19 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: Athlete
                 </div>
               )}
             </div>
+          )}
+
+          {/* --- プロフィールタブ --- */}
+          {activeTab === 'profile' && (
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600" />
+                </div>
+              }
+            >
+              <AthletePerformanceProfileLazy userId={athlete.id} />
+            </Suspense>
           )}
         </div>
       </div>
