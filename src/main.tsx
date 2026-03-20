@@ -31,8 +31,6 @@ Sentry.init({
   environment: import.meta.env.MODE,
 });
 
-console.log("🚀 main.tsx is executing");
-
 // ✅✅ ここに差し込み（createRoot より前）
 if (import.meta.env.PROD) {
   // ✅ chunk / module 読み込み失敗をSentryに残す（どのURLが落ちたか取る）

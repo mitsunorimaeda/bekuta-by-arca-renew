@@ -81,7 +81,7 @@ export function PaginatedTable<T>({
   if (data.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">{emptyMessage}</p>
+        <p className="text-gray-500 dark:text-gray-400">{emptyMessage}</p>
       </div>
     );
   }
@@ -89,7 +89,7 @@ export function PaginatedTable<T>({
   return (
     <div className="space-y-4">
       {/* データ情報 */}
-      <div className="flex items-center justify-between text-sm text-gray-600">
+      <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
         <div>
           {startIndex + 1} - {Math.min(endIndex, data.length)} / {data.length}件を表示
         </div>
@@ -113,7 +113,7 @@ export function PaginatedTable<T>({
           <button
             onClick={goToFirstPage}
             disabled={currentPage === 1}
-            className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             title="最初のページ"
           >
             <ChevronsLeft className="w-4 h-4" />
@@ -123,7 +123,7 @@ export function PaginatedTable<T>({
           <button
             onClick={goToPreviousPage}
             disabled={currentPage === 1}
-            className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             title="前のページ"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -134,14 +134,14 @@ export function PaginatedTable<T>({
             {getPageNumbers().map((pageNumber, index) => (
               <React.Fragment key={index}>
                 {pageNumber === '...' ? (
-                  <span className="px-3 py-2 text-gray-500">...</span>
+                  <span className="px-3 py-2 text-gray-500 dark:text-gray-400">...</span>
                 ) : (
                   <button
                     onClick={() => goToPage(pageNumber as number)}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       currentPage === pageNumber
                         ? 'bg-blue-600 text-white'
-                        : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                     }`}
                   >
                     {pageNumber}
@@ -155,7 +155,7 @@ export function PaginatedTable<T>({
           <button
             onClick={goToNextPage}
             disabled={currentPage === totalPages}
-            className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             title="次のページ"
           >
             <ChevronRight className="w-4 h-4" />
@@ -165,7 +165,7 @@ export function PaginatedTable<T>({
           <button
             onClick={goToLastPage}
             disabled={currentPage === totalPages}
-            className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             title="最後のページ"
           >
             <ChevronsRight className="w-4 h-4" />
@@ -175,7 +175,7 @@ export function PaginatedTable<T>({
 
       {/* ページサイズ選択 */}
       <div className="flex items-center justify-center space-x-2 text-sm">
-        <span className="text-gray-600">表示件数:</span>
+        <span className="text-gray-600 dark:text-gray-400">表示件数:</span>
         <select
           value={itemsPerPage}
           onChange={(e) => {
@@ -183,7 +183,7 @@ export function PaginatedTable<T>({
             // ページサイズ変更時は1ページ目に戻る
             setCurrentPage(1);
           }}
-          className="border border-gray-300 rounded px-2 py-1"
+          className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
         >
           <option value={10}>10件</option>
           <option value={20}>20件</option>

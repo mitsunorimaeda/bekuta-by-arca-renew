@@ -104,7 +104,6 @@ export function PerformanceRecordForm({
     const isStrengthTest = strengthTestNames.includes(selectedTestType.name);
     if (isStrengthTest) {
       const weight = getLatestWeight();
-      console.log('🏋️ Strength test selected, latest weight:', weight);
       setLatestWeight(weight);
     } else {
       setLatestWeight(null);
@@ -286,12 +285,9 @@ export function PerformanceRecordForm({
       const weight = parseFloat(newValues.weight || '0');
       const reps = parseFloat(newValues.reps || '0');
 
-      console.log('💪 Calculating relative 1RM from:', { weight, reps, latestWeight });
-
       if (weight > 0 && reps > 0) {
         const oneRM = weight * (1 + reps / 30);
         const relative = oneRM / latestWeight;
-        console.log('✅ 1RM:', oneRM.toFixed(1), 'kg, Relative 1RM:', relative.toFixed(2));
         setRelative1RM(Math.round(relative * 100) / 100);
       } else {
         setRelative1RM(null);

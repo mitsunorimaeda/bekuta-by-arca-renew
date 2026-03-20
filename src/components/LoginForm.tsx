@@ -34,9 +34,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
     setError('');
 
     try {
-      console.log('🔐 Login attempt for:', email.trim());
       await onLogin(email.trim(), password);
-      console.log('✅ Login successful');
     } catch (err: any) {
       console.error('❌ Login error:', err);
       console.error('Error message:', err.message);
@@ -102,8 +100,6 @@ export function LoginForm({ onLogin }: LoginFormProps) {
     setLoading(true);
   
     try {
-      console.log('🔐 Requesting password reset for:', trimmedEmail);
-  
       const response = await fetch(`${supabaseUrl}/functions/v1/request-password-reset`, {
         method: 'POST',
         headers: {
@@ -136,7 +132,6 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         return;
       }
   
-      console.log('✅ Password reset request accepted:', result);
       setResetSent(true);
     } catch (err: any) {
       console.error('❌ Password reset request failed:', err);

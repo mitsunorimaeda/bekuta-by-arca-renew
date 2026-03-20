@@ -120,8 +120,6 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
       const organizationName = organizations.find(o => o.id === formData.organizationId)?.name;
 
 
-      console.log('🚀 Starting user creation process...');
-
       // Step 1: Create user - let Edge Function generate password
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const payload = {
@@ -132,8 +130,6 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         organizationId: formData.organizationId || undefined,
         redirectUrl: `${window.location.origin}/reset-password`,
       };
-
-      console.log('📤 Sending user creation request...');
 
       const userResponse = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
         method: 'POST',
@@ -151,22 +147,16 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
         throw new Error(userResult.error || 'ユーザーの作成に失敗しました');
       }
 
-      console.log('✅ User created successfully');
-
       // Get password setup link from Edge Function
       const passwordSetupLink = userResult.passwordSetupLink;
-
-      console.log('🔗 Password setup link received');
 
       if (!passwordSetupLink) {
         throw new Error('Edge Functionからパスワード設定リンクが返されませんでした');
       }
 
       // Step 2: No need to save invitation token - password setup link is self-contained
-      console.log('✅ Skipping token storage - using Supabase native password reset flow');
 
       // Step 3: Send email with password setup link
-      console.log('📧 Preparing to send invitation email...');
 
       const inviteExpiredUrl = `${window.location.origin}/invite-expired`;
 
@@ -206,8 +196,6 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
       let emailError = '';
 
       try {
-        console.log('📧 Sending invitation email to:', formData.email);
-
         const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
           method: 'POST',
           headers: {
@@ -232,8 +220,6 @@ export function UserInvitation({ teams:_teams, onUserInvited, restrictToOrganiza
             error: emailError,
             result: emailResult
           });
-        } else {
-          console.log('✅ Email sent successfully to:', formData.email);
         }
       } catch (emailErr: any) {
         emailError = emailErr.message || 'Network error';

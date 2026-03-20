@@ -98,7 +98,7 @@ export default function MaintenancePage({
               )}
 
               <a
-                href="https://bekuta.netlify.app/"
+                href="/"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white ring-1 ring-slate-200 px-5 py-3 font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.99] transition"
               >
                 <ExternalLink className="h-4 w-4" />

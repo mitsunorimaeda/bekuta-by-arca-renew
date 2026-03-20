@@ -1975,7 +1975,7 @@ export function AthleteView({
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" />
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
             </div>
           }
         >
@@ -2018,7 +2018,7 @@ export function AthleteView({
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">睡眠推移グラフ</h3>
                 {sleepLoading ? (
                   <div className="flex items-center justify-center h-96">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                   </div>
                 ) : (
                   <Suspense fallback={<TabFallback label="睡眠グラフ読み込み中..." heightClass="h-96" />}>

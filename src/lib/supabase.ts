@@ -52,7 +52,7 @@ export async function recoverFromInvalidRefreshToken(err: unknown) {
   ) {
     try {
       await supabase.auth.signOut();
-    } catch (_) {}
+    } catch (e) { console.warn("signOut during token recovery failed:", e); }
 
     try {
       const keys = Object.keys(window.localStorage);
@@ -61,7 +61,7 @@ export async function recoverFromInvalidRefreshToken(err: unknown) {
           window.localStorage.removeItem(k);
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn("localStorage cleanup during token recovery failed:", e); }
 
     window.location.reload();
   }

@@ -262,8 +262,6 @@ export function BulkUserInvitation({
         }
 
         // === ③ create-user Edge Function 呼び出し ===
-        console.log('🚀 Creating user:', row.email);
-
         const response = await fetch(
           `${supabaseUrl}/functions/v1/create-user`,
           {
@@ -322,8 +320,6 @@ export function BulkUserInvitation({
         let emailErrorMsg = '';
 
         try {
-          console.log('📧 Sending invitation email to:', row.email);
-
           const emailResponse = await fetch(
             `${supabaseUrl}/functions/v1/send-email`,
             {
@@ -357,8 +353,6 @@ export function BulkUserInvitation({
               error: emailErrorMsg,
               result: emailResult,
             });
-          } else {
-            console.log('✅ Email sent successfully to:', row.email);
           }
         } catch (emailError: any) {
           emailErrorMsg = emailError.message || 'Network error';

@@ -237,7 +237,7 @@ export function AdminView({
       }
 
       const res = await fetch(
-        "https://cymnqmbdwaveccoooics.supabase.co/functions/v1/calculate-metabolism",
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/calculate-metabolism`,
         {
           method: "POST",
           headers: {
@@ -252,7 +252,6 @@ export function AdminView({
       );
 
       const json = await res.json();
-      console.log("🧪 calculate-metabolism result:", json);
 
       if (!res.ok) {
         alert(`失敗: ${res.status}\n` + JSON.stringify(json, null, 2));

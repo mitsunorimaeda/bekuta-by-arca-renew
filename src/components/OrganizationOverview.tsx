@@ -151,13 +151,11 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
 
     try {
       if (memberRole === 'athlete') {
-        console.log('➕ Adding athlete to team using update_athlete_team function');
         const { data, error } = await supabase.rpc('update_athlete_team', {
           athlete_id: userId,
           new_team_id: selectedTeam.id
         });
 
-        console.log('📊 Function response:', { data, error });
         if (error) throw error;
       } else {
         const { error } = await supabase
@@ -170,14 +168,13 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
         if (error) throw error;
       }
 
-      console.log('🔄 Reloading teams and members...');
       await loadTeamsAndMembers();
       await loadOrganizationMembers();
       setShowAddMemberModal(false);
       setSelectedTeam(null);
       alert('メンバーをチームに追加しました');
     } catch (err) {
-      console.error('❌ Error assigning member:', err);
+      console.error('Error assigning member:', err);
       alert('メンバーの追加に失敗しました: ' + (err instanceof Error ? err.message : '不明なエラー'));
     }
   };
@@ -186,20 +183,14 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
     if (!confirm('このメンバーをチームから削除しますか？')) return;
 
     try {
-      console.log('🗑️ Removing member:', { userId, memberRole, teamId });
-
       if (memberRole === 'athlete') {
-        console.log('🔄 Calling update_athlete_team function with null team_id');
         const { data, error } = await supabase.rpc('update_athlete_team', {
           athlete_id: userId,
           new_team_id: null
         });
 
-        console.log('📊 Function response:', { data, error });
         if (error) throw error;
-        console.log('✅ Athlete removed successfully');
       } else {
-        console.log('🔄 Deleting staff_team_link');
         const { error } = await supabase
           .from('staff_team_links')
           .delete()
@@ -207,14 +198,12 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
           .eq('team_id', teamId);
 
         if (error) throw error;
-        console.log('✅ Staff removed successfully');
       }
 
-      console.log('🔄 Reloading teams and members...');
       await loadTeamsAndMembers();
       alert('メンバーをチームから削除しました');
     } catch (err) {
-      console.error('❌ Error removing member:', err);
+      console.error('Error removing member:', err);
       alert('メンバーの削除に失敗しました: ' + (err instanceof Error ? err.message : '不明なエラー'));
     }
   };
@@ -490,10 +479,6 @@ function AddMemberToTeamModal({
 
     return true;
   });
-
-  console.log('Search query:', searchQuery);
-  console.log('Organization members:', organizationMembers);
-  console.log('Available members after filter:', availableMembers);
 
   const athletes = availableMembers.filter(m => m.role === 'athlete');
   const staff = availableMembers.filter(m => m.role === 'staff');

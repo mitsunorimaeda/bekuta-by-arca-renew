@@ -38,9 +38,6 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
           return;
         }
 
-        console.log('🔍 Fetching invitation with token:', token);
-        console.log('📡 Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/invitation_tokens?token=eq.${token}&select=email,name,role,team_id,organization_id,invited_by,expires_at`,
           {
@@ -53,8 +50,6 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
           },
         );
 
-        console.log('📬 Response status:', response.status);
-
         if (!response.ok) {
           const errorText = await response.text();
           console.error('❌ API Error:', errorText);
@@ -64,7 +59,6 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
         }
 
         const data = await response.json();
-        console.log('📦 Received data:', data);
 
         if (!data || data.length === 0) {
           console.warn('⚠️ No invitation found for token');
@@ -74,11 +68,9 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
         }
 
         const invitation = data[0];
-        console.log('✅ Invitation found:', invitation);
 
         let teamName: string | undefined = undefined;
         if (invitation.team_id) {
-          console.log('🏢 Fetching team info for:', invitation.team_id);
           const teamResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/teams?id=eq.${invitation.team_id}&select=name`,
             {
@@ -94,14 +86,12 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
             const teamData = await teamResponse.json();
             if (teamData && teamData.length > 0) {
               teamName = teamData[0].name;
-              console.log('✅ Team found:', teamName);
             }
           }
         }
 
         let organizationName: string | undefined = undefined;
         if (invitation.organization_id) {
-          console.log('🏢 Fetching organization info for:', invitation.organization_id);
           const orgResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/organizations?id=eq.${invitation.organization_id}&select=name`,
             {
@@ -117,7 +107,6 @@ export function WelcomePage({ onContinue }: WelcomePageProps) {
             const orgData = await orgResponse.json();
             if (orgData && orgData.length > 0) {
               organizationName = orgData[0].name;
-              console.log('✅ Organization found:', organizationName);
             }
           }
         }

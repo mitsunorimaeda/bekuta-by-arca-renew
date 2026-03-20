@@ -341,7 +341,6 @@ function App() {
                 onOpenAlertPanel={() => setShowAlertPanel(true)}
                 onLogout={handleLogout}
                 onHome={() => {
-                  console.log("🏠 Bekuta logo clicked");
                   setCurrentPage("app");
                   setDashboardMode("staff");
                   setShowAlertPanel(false);
@@ -363,8 +362,7 @@ function App() {
                     onLogout={signOut}
                     onUserUpdated={refreshUserProfile}
                     onHome={() => {
-                      console.log("🏠 Athlete Bekuta home tapped");
-                      window.location.assign("https://bekuta.netlify.app/");
+                      window.location.assign(window.location.origin + "/");
                     }}
                     onNavigateToPrivacy={() => setCurrentPage("privacy")}
                     onNavigateToTerms={() => setCurrentPage("terms")}
