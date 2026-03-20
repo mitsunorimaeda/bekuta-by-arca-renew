@@ -40,6 +40,7 @@ export function TeamExportPanel({ team, onClose }: TeamExportPanelProps) {
         .from('users')
         .select('*')
         .eq('role', 'athlete')
+        .eq('status', 'active')
         .eq('team_id', team.id);
 
       if (athletesError) throw athletesError;

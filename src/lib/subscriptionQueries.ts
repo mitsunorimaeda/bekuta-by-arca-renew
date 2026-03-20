@@ -216,6 +216,7 @@ export const subscriptionQueries = {
       .from('users')
       .select('id', { count: 'exact', head: false })
       .eq('role', 'athlete')
+      .eq('status', 'active')
       .eq('team_id', organizationId)
       .gte('created_at', thirtyDaysAgo.toISOString());
 

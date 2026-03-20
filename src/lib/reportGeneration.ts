@@ -485,7 +485,8 @@ export async function generateTeamReport(
     .from('users')
     .select('*')
     .eq('team_id', teamId)
-    .eq('role', 'athlete');
+    .eq('role', 'athlete')
+    .eq('status', 'active');
 
   if (athErr) throw athErr;
 

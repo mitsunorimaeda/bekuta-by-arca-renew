@@ -162,6 +162,7 @@ type AthleteViewProps = {
   onNavigateToCommercial: () => void;
   onNavigateToHelp: () => void;
   onUserUpdated?: () => Promise<void> | void;
+  readOnly?: boolean;
 };
 
 
@@ -187,6 +188,7 @@ export function AthleteView({
   onNavigateToCommercial,
   onNavigateToHelp,
   onUserUpdated,
+  readOnly = false,
 }: AthleteViewProps) {
   // =========================
   // ✅ DEVログは“必要な時だけ”
@@ -987,6 +989,13 @@ export function AthleteView({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      {readOnly && (
+        <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800 px-4 py-3 text-center">
+          <div className="text-sm font-medium text-blue-800 dark:text-blue-200">
+            このアカウントは凍結されています。過去データの閲覧のみ可能です。
+          </div>
+        </div>
+      )}
       <header className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 shadow-lg transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -2148,7 +2157,7 @@ export function AthleteView({
         onStepChange={setCurrentStepIndex}
       />
 
-      {showUnifiedCheckIn && (
+      {!readOnly && showUnifiedCheckIn && (
         <UnifiedDailyCheckIn
           userId={user.id}
           userGender={normalizedGenderBinary}
@@ -2176,7 +2185,7 @@ export function AthleteView({
         />
       )}
 
-            {activeTab === 'unified' && (
+            {!readOnly && activeTab === 'unified' && (
            <FloatingActionButton
            onClick={() => setShowUnifiedCheckIn(true)}
            onCameraClick={canUseNutrition ? () => galleryInputRef.current?.click() : undefined}

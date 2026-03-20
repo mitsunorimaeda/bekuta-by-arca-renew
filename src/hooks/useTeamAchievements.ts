@@ -52,7 +52,8 @@ export function useTeamAchievements(teamId: string | null) {
       .from('users')
       .select('id')
       .eq('team_id', teamId)
-      .eq('role', 'athlete');
+      .eq('role', 'athlete')
+      .eq('status', 'active');
 
     if (!teamMembers || teamMembers.length === 0) return;
 
@@ -102,7 +103,8 @@ export function useTeamAchievements(teamId: string | null) {
       .from('users')
       .select('id')
       .eq('team_id', teamId)
-      .eq('role', 'athlete');
+      .eq('role', 'athlete')
+      .eq('status', 'active');
 
     if (!teamMembers || teamMembers.length === 0) return;
 
@@ -155,7 +157,8 @@ export function useTeamAchievements(teamId: string | null) {
       .from('users')
       .select('id')
       .eq('team_id', teamId)
-      .eq('role', 'athlete');
+      .eq('role', 'athlete')
+      .eq('status', 'active');
 
     if (!teamMembers || teamMembers.length === 0) return;
 

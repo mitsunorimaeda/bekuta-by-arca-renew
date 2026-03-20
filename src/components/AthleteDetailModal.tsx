@@ -1,7 +1,7 @@
 // src/components/AthleteDetailModal.tsx
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets } from 'lucide-react';
-import { User } from '../lib/supabase';
+import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets, Snowflake } from 'lucide-react';
+import { User, supabase } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
 import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
@@ -25,6 +25,9 @@ interface AthleteDetailModalProps {
   onClose: () => void;
   risk?: AthleteRisk;
   weekCard?: { is_sharing_active?: boolean; sleep_hours_avg?: number | null } | undefined;
+  currentUserId?: string;
+  canFreeze?: boolean;
+  onFrozenChange?: () => void;
 }
 
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
@@ -96,7 +99,7 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: AthleteDetailModalProps) {
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
 
@@ -104,6 +107,35 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: Athlete
   const isFemale = athlete.gender === 'female' || athlete.gender === '女性';
   const cycleHook = useMenstrualCycleData(athlete.id);
   const cyclePhaseInfo = isFemale ? cycleHook.getCurrentPhaseInfo() : null;
+
+  // 凍結/解除
+  const [freezeConfirm, setFreezeConfirm] = useState(false);
+  const [freezeLoading, setFreezeLoading] = useState(false);
+  const isFrozen = athlete.status === 'frozen';
+
+  const handleToggleFreeze = async () => {
+    setFreezeLoading(true);
+    try {
+      if (isFrozen) {
+        await supabase.from('users').update({
+          status: 'active',
+          frozen_at: null,
+          frozen_by: null,
+        }).eq('id', athlete.id);
+      } else {
+        await supabase.from('users').update({
+          status: 'frozen',
+          frozen_at: new Date().toISOString(),
+          frozen_by: currentUserId ?? null,
+        }).eq('id', athlete.id);
+      }
+      onFrozenChange?.();
+      setFreezeConfirm(false);
+      onClose();
+    } finally {
+      setFreezeLoading(false);
+    }
+  };
 
   // ✅ undefined でも落ちないように正規化
   const records = Array.isArray(td?.records) ? td.records : [];
@@ -346,10 +378,55 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: Athlete
             </h2>
             <p className="text-sm text-blue-100 mt-1">{athlete.email}</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {canFreeze && (
+              <button
+                onClick={() => setFreezeConfirm(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isFrozen
+                    ? 'bg-green-500/20 hover:bg-green-500/30 text-green-100'
+                    : 'bg-white/10 hover:bg-white/20 text-blue-100'
+                }`}
+              >
+                <Snowflake className="w-3.5 h-3.5" />
+                {isFrozen ? '凍結解除' : '凍結する'}
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* 凍結確認ダイアログ */}
+        {freezeConfirm && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-6 py-4">
+            <div className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+              {isFrozen
+                ? `${athlete.name} の凍結を解除しますか？選手一覧に復帰します。`
+                : `${athlete.name} を凍結しますか？選手一覧から非表示になり、本人は読み取り専用になります。`}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleToggleFreeze}
+                disabled={freezeLoading}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-colors ${
+                  isFrozen
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-red-600 hover:bg-red-700'
+                } disabled:opacity-50`}
+              >
+                {freezeLoading ? '処理中...' : isFrozen ? '解除する' : '凍結する'}
+              </button>
+              <button
+                onClick={() => setFreezeConfirm(false)}
+                className="px-4 py-1.5 rounded-lg text-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ✅ 状態 → 原因 → 次の一手 */}
         {risk && (

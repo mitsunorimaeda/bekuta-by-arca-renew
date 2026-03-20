@@ -56,6 +56,7 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
             .select('*')
             .eq('team_id', team.id)
             .eq('role', 'athlete')
+            .eq('status', 'active')
             .order('name');
 
           if (athletesError) throw athletesError;

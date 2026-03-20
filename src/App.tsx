@@ -361,6 +361,7 @@ function App() {
                     alerts={alerts}
                     onLogout={signOut}
                     onUserUpdated={refreshUserProfile}
+                    readOnly={userProfile.status === 'frozen'}
                     onHome={() => {
                       window.location.assign(window.location.origin + "/");
                     }}

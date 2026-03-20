@@ -24,6 +24,7 @@ import { CoachActionCards } from './CoachActionCards';
 import type { FocusItem } from './CoachActionCards';
 import { CoachAthletesTab } from './CoachAthletesTab';
 import { CoachTeamTrendsTab } from './CoachTeamTrendsTab';
+import { FrozenAthletesTab } from './FrozenAthletesTab';
 
 import {
   Users,
@@ -34,6 +35,7 @@ import {
   Trophy,
   Target,
   Calendar,
+  Snowflake,
 } from 'lucide-react';
 
 // Lazy-loaded components
@@ -203,7 +205,7 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
   // Rankings -> Performance Modal
@@ -792,7 +794,7 @@ export function StaffView({
                       <button
                         onClick={() => setShowMoreTabs(v => !v)}
                         className={`py-3.5 px-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                          ['rankings', 'reports', 'settings', 'performance', 'team-analysis'].includes(activeTab)
+                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis'].includes(activeTab)
                             ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                         }`}
@@ -809,6 +811,7 @@ export function StaffView({
                           <div className="fixed inset-0 z-10" onClick={() => setShowMoreTabs(false)} />
                           <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
                             {[
+                              { key: 'frozen' as const, icon: Snowflake, label: '凍結済み選手' },
                               { key: 'rankings' as const, icon: Trophy, label: 'ランキング' },
                               { key: 'reports' as const, icon: FileText, label: 'レポート' },
                               { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）' },
@@ -845,6 +848,7 @@ export function StaffView({
                     >
                       <option value="athletes">選手一覧</option>
                       <option value="team-trends">チーム傾向</option>
+                      <option value="frozen">凍結済み選手</option>
                       <option value="rankings">ランキング</option>
                       <option value="settings">設定（フェーズ）</option>
                       <option value="reports">レポート</option>
@@ -884,6 +888,13 @@ export function StaffView({
                       cycleError={cycleError}
                       teamDaily={teamDaily}
                       cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
+                    />
+                  )}
+
+                  {activeTab === 'frozen' && selectedTeam && (
+                    <FrozenAthletesTab
+                      teamId={selectedTeam.id}
+                      onAthleteSelect={handleAthleteSelect}
                     />
                   )}
 
@@ -946,6 +957,11 @@ export function StaffView({
           onClose={() => setSelectedAthlete(null)}
           risk={athleteRiskMap[selectedAthlete.id]}
           weekCard={weekCardMap[selectedAthlete.id]}
+          currentUserId={user.id}
+          canFreeze={true}
+          onFrozenChange={() => {
+            if (selectedTeam?.id) fetchTeamAthletesWithActivity(selectedTeam.id);
+          }}
         />
       )}
 

@@ -55,6 +55,7 @@ export function useTrendAnalysis(targetId: string | null, analysisType: 'user' |
           .from('users')
           .select('id')
           .eq('role', 'athlete')
+          .eq('status', 'active')
           .eq('team_id', targetId);
     
         if (athletesError) throw athletesError;

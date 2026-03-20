@@ -6248,6 +6248,9 @@ export type Database = {
           organization_id: string | null
           phone_number: string | null
           role: string
+          status: string
+          frozen_at: string | null
+          frozen_by: string | null
           team_id: string | null
           terms_accepted: boolean
           terms_accepted_at: string | null
@@ -6269,6 +6272,9 @@ export type Database = {
           organization_id?: string | null
           phone_number?: string | null
           role: string
+          status?: string
+          frozen_at?: string | null
+          frozen_by?: string | null
           team_id?: string | null
           terms_accepted?: boolean
           terms_accepted_at?: string | null
@@ -6290,6 +6296,9 @@ export type Database = {
           organization_id?: string | null
           phone_number?: string | null
           role?: string
+          status?: string
+          frozen_at?: string | null
+          frozen_by?: string | null
           team_id?: string | null
           terms_accepted?: boolean
           terms_accepted_at?: string | null
