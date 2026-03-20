@@ -132,6 +132,12 @@ export function useMenstrualCycleData(userId: string) {
   const quickLogPeriodStart = useCallback(async (date?: string) => {
     const startDate = date || new Date().toISOString().slice(0, 10);
 
+    // 同日に既に記録がある場合はスキップ（二重登録防止）
+    const existingToday = cycles.find(c => c.cycle_start_date === startDate);
+    if (existingToday) {
+      return null; // 新規作成なしを示す
+    }
+
     // 直前の周期を終了させる（cycle_end_dateが未設定の場合）
     const openCycle = cycles.find(c => !c.cycle_end_date);
     if (openCycle) {

@@ -3,7 +3,7 @@ import { Droplets, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { SYMPTOM_OPTIONS, FLOW_OPTIONS, type FlowIntensity } from '../lib/cycleConstants';
 
 interface CycleQuickLogProps {
-  onPeriodStart: (date?: string) => Promise<unknown>;
+  onPeriodStart: (date?: string) => Promise<unknown | null>;
   onPeriodEnd: (date?: string) => Promise<unknown>;
   hasOpenCycle: boolean;
 }
@@ -27,8 +27,8 @@ export function CycleQuickLog({ onPeriodStart, onPeriodEnd, hasOpenCycle }: Cycl
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
-      await onPeriodStart();
-      showSuccess('生理開始を記録しました');
+      const result = await onPeriodStart();
+      showSuccess(result === null ? '今日はすでに記録済みです' : '生理開始を記録しました');
       setShowDetails(false);
       setSelectedFlow(null);
       setSelectedSymptoms([]);
