@@ -144,19 +144,24 @@ export function useMenstrualCycleData(userId: string) {
         / (1000 * 60 * 60 * 24)
       );
 
+      // DB CHECK制約: cycle_length_days > 0 AND <= 60
+      // 60日超は異常値（記録漏れ等）なのでnullにする
       await updateCycle(openCycle.id, {
         cycle_end_date: endDateStr,
-        cycle_length_days: cycleLengthDays > 0 ? cycleLengthDays : null,
+        cycle_length_days: cycleLengthDays > 0 && cycleLengthDays <= 60 ? cycleLengthDays : null,
       });
     }
 
     // 過去データから平均を計算
     const prediction = predictNextCycle(cycles);
 
+    const avgCycle = prediction?.averageCycleLength;
+    const avgPeriod = prediction?.averagePeriodDuration;
+
     return addCycle({
       cycle_start_date: startDate,
-      cycle_length_days: prediction?.averageCycleLength || null,
-      period_duration_days: prediction?.averagePeriodDuration || null,
+      cycle_length_days: avgCycle && avgCycle <= 60 ? avgCycle : null,
+      period_duration_days: avgPeriod && avgPeriod <= 14 ? avgPeriod : null,
     });
   }, [cycles]);
 
@@ -175,8 +180,9 @@ export function useMenstrualCycleData(userId: string) {
       / (1000 * 60 * 60 * 24)
     ) + 1;
 
+    // DB CHECK制約: period_duration_days > 0 AND <= 14
     return updateCycle(openCycle.id, {
-      period_duration_days: durationDays > 0 ? durationDays : null,
+      period_duration_days: durationDays > 0 && durationDays <= 14 ? durationDays : null,
     });
   }, [cycles]);
 
