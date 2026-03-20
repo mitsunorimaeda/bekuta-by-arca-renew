@@ -16,8 +16,9 @@ const { CacheableResponsePlugin } = workbox.cacheableResponse;
 
 // =============================================
 // 1. アプリシェルのプリキャッシュ（install時）
+//    index.html をパースして JS/CSS も自動キャッシュ
 // =============================================
-const APP_SHELL_CACHE = 'bekuta-app-shell-v1';
+const APP_SHELL_CACHE = 'bekuta-app-shell-v2';
 const KNOWN_CACHES = [
   APP_SHELL_CACHE,
   'bekuta-navigations',
@@ -28,20 +29,49 @@ const KNOWN_CACHES = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) =>
-      cache.addAll([
-        '/index.html',
+    (async () => {
+      const shellCache = await caches.open(APP_SHELL_CACHE);
+
+      // 基本アセットをキャッシュ
+      await shellCache.addAll([
         '/manifest.json',
         '/pwa-192x192.png',
         '/pwa-512x512.png',
-      ])
-    )
+      ]);
+
+      // index.html を取得・キャッシュし、参照されるJS/CSSも抽出
+      try {
+        const response = await fetch('/index.html');
+        const html = await response.text();
+        await shellCache.put('/index.html', new Response(html, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }));
+
+        // HTML内の /assets/*.js と /assets/*.css のURLを抽出
+        const assetUrls = [];
+        const scriptMatches = html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g);
+        for (const match of scriptMatches) {
+          assetUrls.push(match[1]);
+        }
+
+        // 抽出したアセットを bekuta-static キャッシュに保存
+        if (assetUrls.length > 0) {
+          const staticCache = await caches.open('bekuta-static');
+          await Promise.allSettled(
+            assetUrls.map((url) => staticCache.add(url).catch(() => {}))
+          );
+        }
+      } catch (e) {
+        // ネットワークエラー時はスキップ（次回に再試行）
+        console.warn('[SW] install: asset precache failed', e);
+      }
+    })()
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  // 既知のキャッシュとworkbox内部キャッシュのみ保持、古いキャッシュは削除
+  // 既知のキャッシュとworkbox内部キャッシュのみ保持
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
@@ -70,6 +100,12 @@ registerRoute(
   new NetworkOnly()
 );
 
+// Workbox CDN → NetworkOnly（SW自身のライブラリ）
+registerRoute(
+  ({ url }) => url.hostname.includes('storage.googleapis.com'),
+  new NetworkOnly()
+);
+
 // ナビゲーション（HTML）→ NetworkFirst（3秒タイムアウト）
 const navigationHandler = new NetworkFirst({
   cacheName: 'bekuta-navigations',
@@ -81,7 +117,6 @@ const navigationHandler = new NetworkFirst({
 
 registerRoute(
   new NavigationRoute(navigationHandler, {
-    // Supabase auth callback は除外
     denylist: [/\/auth\/callback/],
   })
 );
@@ -127,13 +162,14 @@ registerRoute(
 
 // =============================================
 // 3. オフラインフォールバック
-//    NavigationRoute のキャッシュにない場合、
-//    プリキャッシュした index.html を返す
 // =============================================
 setCatchHandler(async ({ request }) => {
   if (request.destination === 'document') {
-    const cached = await caches.match('/index.html', { cacheName: APP_SHELL_CACHE });
-    if (cached) return cached;
+    // まず bekuta-navigations を確認、なければ app-shell を確認
+    const navCached = await caches.match('/index.html', { cacheName: 'bekuta-navigations' });
+    if (navCached) return navCached;
+    const shellCached = await caches.match('/index.html', { cacheName: APP_SHELL_CACHE });
+    if (shellCached) return shellCached;
   }
   return Response.error();
 });
