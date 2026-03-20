@@ -5,13 +5,23 @@ import {
   type CyclePrediction,
   getPhaseColor,
 } from '../lib/cyclePhaseUtils';
+import type { PmsInsight } from '../lib/pmsInsightUtils';
+import { SYMPTOM_OPTIONS, SYMPTOM_COMPAT } from '../lib/cycleConstants';
 
 interface CyclePhaseCardProps {
   phaseInfo: CyclePhaseInfo | null;
   prediction: CyclePrediction | null;
+  pmsInsight?: PmsInsight | null;
 }
 
-export function CyclePhaseCard({ phaseInfo, prediction }: CyclePhaseCardProps) {
+/** symptom value → 日本語ラベル */
+function getSymptomLabel(value: string): string {
+  const mapped = SYMPTOM_COMPAT[value] || value;
+  const opt = SYMPTOM_OPTIONS.find(o => o.value === mapped);
+  return opt ? `${opt.icon} ${opt.label}` : value;
+}
+
+export function CyclePhaseCard({ phaseInfo, prediction, pmsInsight }: CyclePhaseCardProps) {
   if (!phaseInfo) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center">
@@ -97,6 +107,23 @@ export function CyclePhaseCard({ phaseInfo, prediction }: CyclePhaseCardProps) {
           </p>
         )}
       </div>
+
+      {/* PMSインサイト */}
+      {pmsInsight && pmsInsight.isPmsLikely && (
+        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 mb-3">
+          <p className="text-sm font-bold text-purple-700 dark:text-purple-400 mb-1">
+            🌙 {pmsInsight.message}
+          </p>
+          <p className="text-xs text-purple-600 dark:text-purple-400">
+            {pmsInsight.matchingSymptoms.map(s => getSymptomLabel(s)).join('・')}は生理前によくある症状です。無理しないでね
+          </p>
+          {pmsInsight.daysUntilPeriod != null && pmsInsight.daysUntilPeriod > 0 && (
+            <p className="text-xs text-purple-500 dark:text-purple-500 mt-1">
+              あと約{pmsInsight.daysUntilPeriod}日で生理が来る予測です
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 次回予測 */}
       {daysUntilNext != null && daysUntilNext > 0 && prediction && (

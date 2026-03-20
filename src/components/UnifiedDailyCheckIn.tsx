@@ -5,7 +5,9 @@ import { TrainingRecord, WeightRecord, SleepRecord, MotivationRecord } from '../
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
+import { useMenstrualDailyLog } from '../hooks/useMenstrualDailyLog';
 import { CycleSection } from './checkin/CycleSection';
+import type { FlowIntensity } from '../lib/cycleConstants';
 
 // ✅ 追加：矢印/電波 UI
 import { VectorArrowPicker } from './VectorArrowPicker';
@@ -127,6 +129,8 @@ export function UnifiedDailyCheckIn({
   // ✅ cycle は「移行期間モード」：props があればそれを使う / なければ hook を使う
   const cycleEnabled = (enableCycle ?? (userGender === 'female')) === true;
 
+  const cycleHook = useMenstrualCycleData(userId);
+  const dailyLogHook = useMenstrualDailyLog(userId);
 
   const updateCycle =
     onCycleUpdate ??
@@ -172,13 +176,7 @@ export function UnifiedDailyCheckIn({
   const [stressLevel, setStressLevel] = useState<number>(lastMotivationRecord?.stress_level ?? 5);
   const [conditioningNotes, setConditioningNotes] = useState<string>('');
 
-  // Menstrual cycle tracking (for female users)
-  const [periodStart, setPeriodStart] = useState<boolean>(false);
-  const [periodDuration, setPeriodDuration] = useState<number>(5);
-  const [cycleLength, setCycleLength] = useState<number>(28);
-  const [flowIntensity, setFlowIntensity] = useState<'light' | 'moderate' | 'heavy'>('moderate');
-  const [symptoms, setSymptoms] = useState<string[]>([]);
-  const [cycleNotes, setCycleNotes] = useState<string>('');
+  // Menstrual cycle tracking: 新CycleSectionが内部で状態管理するため、ここでは不要
 
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -322,19 +320,7 @@ export function UnifiedDailyCheckIn({
       }
     
       if (section === 'cycle') {
-        if (periodStart) {
-          if (!onCycleSubmit) throw new Error('onCycleSubmit が未設定です');
-    
-          await onCycleSubmit({
-            cycle_start_date: selectedDate,
-            period_duration_days: periodDuration,
-            cycle_length_days: cycleLength,
-            flow_intensity: flowIntensity,
-            symptoms: symptoms.length > 0 ? symptoms : undefined,
-            notes: cycleNotes || undefined,
-          });
-        }
-    
+        // CycleSection が内部で保存済み → 完了だけマーク
         setCompletedSections((prev) => new Set(prev).add('cycle'));
         setTimeout(() => onClose(), 500);
         return;
@@ -928,18 +914,19 @@ export function UnifiedDailyCheckIn({
             {activeSection === 'cycle' && cycleEnabled && (
               <CycleSection
                 selectedDate={selectedDate}
-                periodStart={periodStart}
-                setPeriodStart={setPeriodStart}
-                flowIntensity={flowIntensity}
-                setFlowIntensity={setFlowIntensity}
-                symptoms={symptoms}
-                setSymptoms={setSymptoms}
-                cycleNotes={cycleNotes}
-                setCycleNotes={setCycleNotes}
-                periodDuration={periodDuration}
-                setPeriodDuration={setPeriodDuration}
-                cycleLength={cycleLength}
-                setCycleLength={setCycleLength}
+                onSave={async (data) => {
+                  // 日別ログを保存
+                  await dailyLogHook.upsertDailyLog({
+                    logDate: selectedDate,
+                    isPeriodDay: data.isPeriodDay,
+                    flowIntensity: data.flowIntensity,
+                    symptoms: data.symptoms,
+                  });
+                  // 生理開始の場合は周期も記録
+                  if (data.isPeriodDay) {
+                    await cycleHook.quickLogPeriodStart(selectedDate);
+                  }
+                }}
                 error={error || null}
               />
             )} 

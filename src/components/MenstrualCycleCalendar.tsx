@@ -9,11 +9,14 @@ import {
   type CyclePhaseInfo,
 } from '../lib/cyclePhaseUtils';
 
+import type { DailyLog } from '../hooks/useMenstrualDailyLog';
+
 interface MenstrualCycleCalendarProps {
   userId: string;
+  dailyLogs?: DailyLog[];
 }
 
-export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) {
+export function MenstrualCycleCalendar({ userId, dailyLogs = [] }: MenstrualCycleCalendarProps) {
   const { cycles } = useMenstrualCycleData(userId);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -130,6 +133,9 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
           const isPredicted = isPredictedDate(day);
           const isToday = day.getTime() === today.getTime();
           const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
+          const dayStr = day.toISOString().slice(0, 10);
+          const dayLog = dailyLogs.find(l => l.log_date === dayStr);
+          const hasSymptoms = dayLog && Array.isArray(dayLog.symptoms) && (dayLog.symptoms as string[]).length > 0;
 
           return (
             <div
@@ -166,7 +172,11 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
                   </div>
                 )}
 
-                {isPredicted && !phaseInfo && (
+                {hasSymptoms && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-purple-500 dark:bg-purple-400 mt-0.5" />
+                )}
+
+                {isPredicted && !phaseInfo && !hasSymptoms && (
                   <span className="text-[10px] text-pink-500 dark:text-pink-400 mt-0.5">予</span>
                 )}
               </div>
@@ -193,6 +203,10 @@ export function MenstrualCycleCalendar({ userId }: MenstrualCycleCalendarProps) 
         <div className="flex items-center gap-1">
           <AlertTriangle className="w-3 h-3 text-orange-500 dark:text-orange-400" />
           <span className="text-xs text-gray-600 dark:text-gray-400">注意期</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-purple-500 dark:bg-purple-400" />
+          <span className="text-xs text-gray-600 dark:text-gray-400">症状記録</span>
         </div>
       </div>
     </div>

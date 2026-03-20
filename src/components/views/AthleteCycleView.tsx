@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Droplets } from "lucide-react";
 
 import { useMenstrualCycleData } from "../../hooks/useMenstrualCycleData";
+import { useMenstrualDailyLog } from "../../hooks/useMenstrualDailyLog";
+import { detectPmsInsight } from "../../lib/pmsInsightUtils";
 import { CyclePhaseCard } from "../CyclePhaseCard";
 import { CycleQuickLog } from "../CycleQuickLog";
 import { MenstrualCycleCalendar } from "../MenstrualCycleCalendar";
@@ -28,6 +30,8 @@ export function AthleteCycleView({ userId, gender }: Props) {
     getPrediction,
   } = useMenstrualCycleData(userId);
 
+  const dailyLogHook = useMenstrualDailyLog(userId);
+
   if (gender !== "female") {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
@@ -53,21 +57,33 @@ export function AthleteCycleView({ userId, gender }: Props) {
   const phaseInfo = getCurrentPhaseInfo();
   const prediction = getPrediction();
   const hasOpenCycle = cycles.some(c => !c.cycle_end_date);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // PMS インサイト
+  const pmsInsight = detectPmsInsight(cycles, dailyLogHook.dailyLogs, today);
 
   return (
     <div className="space-y-4">
       {/* フェーズカード */}
-      <CyclePhaseCard phaseInfo={phaseInfo} prediction={prediction} />
+      <CyclePhaseCard phaseInfo={phaseInfo} prediction={prediction} pmsInsight={pmsInsight} />
 
       {/* クイックログ */}
       <CycleQuickLog
         onPeriodStart={quickLogPeriodStart}
         onPeriodEnd={quickLogPeriodEnd}
+        onDailyLog={async (data) => {
+          await dailyLogHook.upsertDailyLog({
+            logDate: today,
+            isPeriodDay: data.isPeriodDay,
+            flowIntensity: data.flowIntensity,
+            symptoms: data.symptoms,
+          });
+        }}
         hasOpenCycle={hasOpenCycle}
       />
 
       {/* カレンダー */}
-      <MenstrualCycleCalendar userId={userId} />
+      <MenstrualCycleCalendar userId={userId} dailyLogs={dailyLogHook.dailyLogs} />
 
       {/* サブタブ */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
