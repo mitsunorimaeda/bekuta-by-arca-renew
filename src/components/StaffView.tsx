@@ -1323,7 +1323,47 @@ useEffect(() => {
                 <div className="p-4 sm:p-6">
                   {activeTab === 'athletes' && (
                     <div>
-                      <div className="text-xs text-gray-600 mb-3 flex items-center gap-2">
+                      {/* チームスナップショット */}
+                      {!athletesLoading && !athletesError && safeAthletes.length > 0 && (() => {
+                        const total = safeAthletes.length;
+                        const highRisk = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'high').length;
+                        const cautionRisk = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'caution').length;
+                        const sharingOn = safeAthletes.filter(a => weekCardMap[a.id]?.is_sharing_active).length;
+                        const acwrValues = safeAthletes
+                          .map(a => athleteACWRMap[a.id]?.currentACWR)
+                          .filter((v): v is number => v != null && v > 0);
+                        const avgACWR = acwrValues.length > 0
+                          ? (acwrValues.reduce((s, v) => s + v, 0) / acwrValues.length).toFixed(2)
+                          : null;
+                        return (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
+                              <div className="text-2xl font-bold text-gray-900 dark:text-white">{total}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">選手数</div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
+                              <div className={`text-2xl font-bold ${highRisk > 0 ? 'text-red-600 dark:text-red-400' : cautionRisk > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {highRisk > 0 ? highRisk : cautionRisk}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {highRisk > 0 ? '要注意' : cautionRisk > 0 ? '注意' : '問題なし'}
+                              </div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
+                              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{sharingOn}/{total}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">共有ON</div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
+                              <div className={`text-2xl font-bold ${avgACWR ? (parseFloat(avgACWR) > 1.3 || parseFloat(avgACWR) < 0.8 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400') : 'text-gray-400'}`}>
+                                {avgACWR ?? '—'}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">平均ACWR</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-2">
                         <Lock className="w-4 h-4" />
                         共有OFF（🔒）の選手は、詳細モーダルを開けません
                         {acwrLoading && <span className="ml-2 text-xs text-gray-500">（ACWR取得中…）</span>}

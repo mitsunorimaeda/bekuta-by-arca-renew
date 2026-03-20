@@ -350,7 +350,7 @@ export function UnifiedDailyCheckIn({
             ? '体重'
             : section === 'cycle'
             ? '周期'
-            : 'コンディション'
+            : '体調・リカバリー'
         }記録の保存に失敗しました: ${errorMessage}`
       );
     } finally {
@@ -453,7 +453,7 @@ export function UnifiedDailyCheckIn({
       case 'weight':
         return '体重記録';
       case 'conditioning':
-        return 'コンディション';
+        return '体調・リカバリー';
       default:
         return '';
     }
@@ -595,7 +595,7 @@ export function UnifiedDailyCheckIn({
                         ? '体重'
                         : section === 'cycle'
                         ? '周期'
-                        : 'コンディション'}
+                        : '体調・リカバリー'}
                     </span>
                   </button>
                 );
@@ -732,8 +732,8 @@ export function UnifiedDailyCheckIn({
                     <Heart className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">コンディション</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">睡眠とメンタル状態を記録</p>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">体調・リカバリー</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">睡眠とメンタルの状態を記録</p>
                   </div>
                 </div>
 

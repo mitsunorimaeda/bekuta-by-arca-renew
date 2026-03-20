@@ -1045,7 +1045,7 @@ export function AthleteView({
               : activeTab === 'profile'
               ? 'マイプロフィール'
               : activeTab === 'conditioning'
-              ? 'コンディション管理'
+              ? '体調・リカバリー'
               : activeTab === 'cycle'
               ? '月経周期とコンディションを記録'
                : activeTab === 'nutrition'
@@ -1071,6 +1071,9 @@ export function AthleteView({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2">
+              {/* ── 記録セクション ── */}
+              <p className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">記録</p>
+
               {/* 🏠 ホーム */}
               <button type="button"
                 onClick={() => {
@@ -1121,7 +1124,7 @@ export function AthleteView({
                 <span className="text-sm font-medium">体重管理</span>
               </button>
 
-              {/* コンディション管理 */}
+              {/* 体調・リカバリー */}
               <button type="button"
                 onClick={() => {
                   setActiveTab('conditioning');
@@ -1134,7 +1137,7 @@ export function AthleteView({
                 }`}
               >
                 <Heart className="w-4 h-4" />
-                <span className="text-sm font-medium">コンディション管理</span>
+                <span className="text-sm font-medium">体調・リカバリー</span>
               </button>
 
               {/* 女性のみ：月経周期 */}
@@ -1171,26 +1174,6 @@ export function AthleteView({
                 <span className="text-sm font-medium">練習記録</span>
               </button>
 
-              {/*FTT計測*/}
-              {canUseFTT && (
-                <button type="button"
-                  onClick={() => {
-                    safeSetActiveTab('ftt');
-                    setMenuOpen(false);
-                  }}
-                  
-                  className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                    activeTab === 'ftt'
-                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Activity className="w-4 h-4" />
-                  <span className="text-sm font-medium">ニューロチェック（10秒）</span>
-                </button>
-              )}
-
-
               {/*栄養*/}
               {canUseNutrition && (
                 <button type="button"
@@ -1209,6 +1192,10 @@ export function AthleteView({
                   <span className="text-sm font-medium">栄養</span>
                 </button>
               )}
+
+              {/* ── 分析セクション ── */}
+              <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+              <p className="px-3 pt-1 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">分析</p>
 
               {/* パフォーマンス */}
               <button type="button"
@@ -1259,8 +1246,27 @@ export function AthleteView({
                 <span className="text-sm font-medium">ゲーミフィケーション</span>
               </button>
 
-              {/* 設定 */}
+              {/*FTT計測*/}
+              {canUseFTT && (
+                <button type="button"
+                  onClick={() => {
+                    safeSetActiveTab('ftt');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                    activeTab === 'ftt'
+                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Activity className="w-4 h-4" />
+                  <span className="text-sm font-medium">ニューロチェック（10秒）</span>
+                </button>
+              )}
+
+              {/* ── その他セクション ── */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+              <p className="px-3 pt-1 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">その他</p>
 
               <button type="button"
                 onClick={() => {
@@ -1276,9 +1282,6 @@ export function AthleteView({
                 <Settings className="w-4 h-4" />
                 <span className="text-sm font-medium">設定</span>
               </button>
-
-              {/* 法的情報 */}
-              <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
 
               {onNavigateToHelp && (
                 <button type="button"
