@@ -3,12 +3,8 @@ import React, { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'rea
 import { User, Team, supabase } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
 
-import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
-import { TeamACWRChart } from './TeamACWRChart';
-
 import { TutorialController } from './TutorialController';
-import { ChartErrorBoundary } from './ChartErrorBoundary';
 
 import { useTeamACWR } from '../hooks/useTeamACWR';
 import { useTutorialContext } from '../contexts/TutorialContext';
@@ -16,59 +12,46 @@ import { getTutorialSteps } from '../lib/tutorialContent';
 import { useOrganizations } from '../hooks/useOrganizations';
 import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/riskUtils';
 import { useTeamCyclePhases } from '../hooks/useTeamCyclePhases';
-
 import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
-import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
-import { useDailyGrowthMatrix } from '../hooks/useDailyGrowthMatrix';
+
 import CoachAthletePerformanceModal from './CoachAthletePerformanceModal';
 import { PerformanceAnalysisPanel } from './PerformanceAnalysisPanel';
 import type { CoachRankingsViewProps } from './CoachRankingsView';
-import { Calendar } from 'lucide-react';
 import TeamSeasonPhaseSettings from './TeamSeasonPhaseSettings';
 
+import { CoachHeroCard } from './CoachHeroCard';
+import { CoachActionCards } from './CoachActionCards';
+import type { FocusItem } from './CoachActionCards';
+import { CoachAthletesTab } from './CoachAthletesTab';
+import { CoachTeamTrendsTab } from './CoachTeamTrendsTab';
 
 import {
   Users,
   BarChart3,
-  TrendingUp,
   Activity,
   HelpCircle,
   FileText,
-  Lock,
   Trophy,
   Target,
+  Calendar,
 } from 'lucide-react';
 
+// Lazy-loaded components
 const TeamExportPanel = lazy(() =>
   import('./TeamExportPanel').then((m) => ({ default: m.TeamExportPanel }))
 );
 const ReportView = lazy(() =>
   import('./ReportView').then((m) => ({ default: m.ReportView }))
 );
-
-
-const TeamAnalysisViewLazy = lazy(() => import('./TeamAnalysisView'));
-
 const CoachRankingsViewLazy =
   lazy(async () => {
     const m = await import('./CoachRankingsView');
-    return { default: m.default }; // default export を使う
+    return { default: m.default };
   }) as React.LazyExoticComponent<React.ComponentType<CoachRankingsViewProps>>;
 
-/**
- * ✅ ここが超重要：
- * GrowthUnderstandingQuadrantSummary / GrowthUnderstandingMatrix は
- * 「default export」「named export」どっちでも拾えるようにして #306 を潰す。
- */
-const GrowthUnderstandingQuadrantSummaryLazy = lazy(async () => {
-  const m: any = await import('./GrowthUnderstandingQuadrantSummary');
-  return { default: m.GrowthUnderstandingQuadrantSummary ?? m.default };
-});
-const GrowthUnderstandingMatrixLazy = lazy(async () => {
-  const m: any = await import('./GrowthUnderstandingMatrix');
-  return { default: m.GrowthUnderstandingMatrix ?? m.default };
-});
-
+// -------------------------
+// Types
+// -------------------------
 interface StaffViewProps {
   user: User;
   alerts: Alert[];
@@ -78,7 +61,6 @@ interface StaffViewProps {
   onNavigateToHelp?: () => void;
 }
 
-// 既存の activity view 取得用（維持）
 type StaffAthleteWithActivity = User & {
   training_days_28d: number | null;
   training_sessions_28d: number | null;
@@ -89,24 +71,18 @@ type CoachWeekAthleteCard = {
   team_id: string;
   athlete_user_id: string;
   athlete_name: string;
-
   week_duration_min: number;
   week_rpe_avg: number | null;
   week_load_sum: number;
-
   sleep_hours_avg: number | null;
   sleep_quality_avg: number | null;
-
   motivation_avg: number | null;
   energy_avg: number | null;
   stress_avg: number | null;
-
   wellness_shared: boolean;
-
   action_total: number;
   action_done: number;
   action_done_rate: number;
-
   is_sharing_active: boolean;
   allow_condition: boolean;
   allow_training: boolean;
@@ -121,41 +97,45 @@ type TeamCauseTagRow = {
   cnt: number;
 };
 
+type AthleteACWRInfo = {
+  currentACWR: number | null;
+  acute7d?: number | null;
+  chronicLoad?: number | null;
+  dailyLoad?: number | null;
+  riskLevel?: RiskLevel;
+  daysOfData?: number | null;
+  lastDate?: string | null;
+};
+
+type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
+type SummaryTone = 'danger' | 'warn' | 'ok' | 'unknown';
+
+// -------------------------
+// Constants & Helpers
+// -------------------------
 const NO_DATA_DAYS_THRESHOLD = 14;
 
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 
-// ✅ JSTの "YYYY-MM-DD" 取得
-const getJSTDateKey = (d: Date) => {
-  return new Intl.DateTimeFormat('en-CA', {
+const getJSTDateKey = (d: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(d); // "YYYY-MM-DD"
-};
+  }).format(d);
 
 const getThisWeekRange = () => {
   const now = new Date();
-  const day = now.getDay(); // 0 Sun ... 6 Sat
-  const diffToMon = (day + 6) % 7; // Mon=0
-
+  const day = now.getDay();
+  const diffToMon = (day + 6) % 7;
   const mon = new Date(now);
   mon.setDate(now.getDate() - diffToMon);
   mon.setHours(0, 0, 0, 0);
-
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
-
   return { start: toISODate(mon), end: toISODate(sun) };
 };
-
-// -------------------------
-// ACWR helpers（表示用）
-// -------------------------
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
 
 const calcRisk = (acwr: number): RiskLevel => {
   if (acwr >= 1.5) return 'high';
@@ -163,8 +143,6 @@ const calcRisk = (acwr: number): RiskLevel => {
   if (acwr >= 0.8) return 'good';
   return 'low';
 };
-
-type SummaryTone = 'danger' | 'warn' | 'ok' | 'unknown';
 
 const getSummaryTone = (avg: number | null, valid: number, roster: number): SummaryTone => {
   const minValid = Math.min(5, Math.max(1, Math.floor(roster * 0.2)));
@@ -188,60 +166,18 @@ const getSummaryMessage = (tone: SummaryTone, valid: number, roster: number) => 
   return '安定：通常運用でOK';
 };
 
-const toneStyles: Record<SummaryTone, { box: string; badge: string; dot: string }> = {
-  danger: {
-    box: 'border-red-200 bg-red-50',
-    badge: 'bg-red-100 text-red-700 border-red-200',
-    dot: 'bg-red-500',
-  },
-  warn: {
-    box: 'border-amber-200 bg-amber-50',
-    badge: 'bg-amber-100 text-amber-700 border-amber-200',
-    dot: 'bg-amber-500',
-  },
-  ok: {
-    box: 'border-emerald-200 bg-emerald-50',
-    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    dot: 'bg-emerald-500',
-  },
-  unknown: {
-    box: 'border-gray-200 bg-gray-50',
-    badge: 'bg-gray-100 text-gray-700 border-gray-200',
-    dot: 'bg-gray-400',
-  },
-};
-
-type AthleteACWRInfo = {
-  currentACWR: number | null;
-  acute7d?: number | null;       // ✅追加
-  chronicLoad?: number | null;   // ✅追加
-  dailyLoad?: number | null;     // ✅追加
-  riskLevel?: RiskLevel;
-  daysOfData?: number | null;
-  lastDate?: string | null;
-};
-
-type AthleteACWRDailyRow = {
-  user_id: string;
-  date: string;
-  acwr: number | null;
-  days_of_data?: number | null;
-  //risk_level?: RiskLevel | null;
-};
-
 const chunk = <T,>(arr: T[], size: number) => {
   const res: T[][] = [];
   for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
   return res;
 };
 
+// -------------------------
+// Component
+// -------------------------
 export function StaffView({
   user,
   alerts,
-  onNavigateToPrivacy,
-  onNavigateToTerms,
-  onNavigateToCommercial,
-  onNavigateToHelp,
 }: StaffViewProps) {
   // =========================
   // State
@@ -258,23 +194,20 @@ export function StaffView({
   const [athleteACWRMap, setAthleteACWRMap] = useState<Record<string, AthleteACWRInfo>>({});
   const [acwrLoading, setAcwrLoading] = useState(false);
 
-  const [weekRange, setWeekRange] = useState(() => getThisWeekRange());
+  const [weekRange] = useState(() => getThisWeekRange());
   const [weekCards, setWeekCards] = useState<CoachWeekAthleteCard[]>([]);
   const [weekLoading, setWeekLoading] = useState(false);
-
   const [teamCauseTags, setTeamCauseTags] = useState<TeamCauseTagRow[]>([]);
 
   const [cycleBaseDate, setCycleBaseDate] = useState<string>(() => getJSTDateKey(new Date()));
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-average' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
+  const [showMoreTabs, setShowMoreTabs] = useState(false);
 
-    // =========================
   // Rankings -> Performance Modal
-  // =========================
   type MetricKey = 'primary_value' | 'relative_1rm';
-
   const [perfModal, setPerfModal] = useState<{
     open: boolean;
     athleteUserId: string;
@@ -290,11 +223,10 @@ export function StaffView({
   });
 
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showAvgRPE] = useState(true);
+  const [showAvgLoad] = useState(false);
 
-  const [showAvgRPE, setShowAvgRPE] = useState(true);
-  const [showAvgLoad, setShowAvgLoad] = useState(false);
-
-  // ===== ACWR request guard（チーム切替対策）=====
+  // ACWR request guard
   const selectedTeamIdRef = useRef<string | null>(null);
   const acwrRequestSeqRef = useRef(0);
   const athletesIdsKeyRef = useRef<string>('');
@@ -311,8 +243,7 @@ export function StaffView({
   const [noDataDismissedToday, setNoDataDismissedToday] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     try {
-      const key = `noDataDismissed-${user.id}-${todayKey}`;
-      return localStorage.getItem(key) === '1';
+      return localStorage.getItem(`noDataDismissed-${user.id}-${todayKey}`) === '1';
     } catch {
       return false;
     }
@@ -334,7 +265,6 @@ export function StaffView({
   const orgHook = useOrganizations(user.id);
   const organizations = Array.isArray(orgHook?.organizations) ? orgHook.organizations : [];
   const safeOrganizations = Array.isArray(organizations) ? organizations : [];
-
   const currentOrganizationId =
     selectedTeam?.organization_id || (safeOrganizations.length > 0 ? safeOrganizations[0].id : '');
 
@@ -350,142 +280,26 @@ export function StaffView({
   const teamACWRData = teamACWRHook.teamACWRData ?? teamACWRHook.data ?? [];
   const safeTeamACWRData = Array.isArray(teamACWRData) ? teamACWRData : [];
 
-// =========================
-// Derived: safe arrays
-// =========================
-const safeAthletes = Array.isArray(athletes) ? athletes : [];
-const safeAlerts = Array.isArray(alerts) ? alerts : [];
-const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
-
-// ✅ 追加（ここから）
-const teamAlerts = useMemo(() => {
-  const tid = selectedTeam?.id;
-  if (!tid) return safeAlerts;
-
-  return safeAlerts.filter((al: any) => {
-    if (al?.team_id == null) return true;
-    return al.team_id === tid;
-  });
-}, [safeAlerts, selectedTeam?.id]);
-
-// ✅ 追加（ここまで）
-
-// ✅ ここ：ids は毎回 new Array にならないよう useMemo 固定（無限fetch対策）
-const teamAthleteIds = useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
-
-// ✅ ここ：マトリクス用 athletes も useMemo 固定（無限fetch対策）
-const matrixAthletes = useMemo(
-  () =>
-    safeAthletes.map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      nickname: a.nickname,
-      email: a.email,
-    })),
-  [safeAthletes]
-);
-
-// ✅ 今日のマトリクス（hook → points/teamAvg を作る）
-const {
-  points: matrixPoints,
-  teamAvg: matrixTeamAvg,
-  loading: matrixLoading,
-  error: matrixError,
-} = useDailyGrowthMatrix({
-  date: todayKey,
-  athletes: matrixAthletes,
-});
-
-// ✅ 今週の4象限サマリー用：weekRange + teamAthleteIds から training_records を取って DataPoint[] 化
-type QuadrantDataPoint = {
-  arrow_score?: number | null;
-  signal_score?: number | null;
-  load?: number | null; // sRPE
-};
-
-const [weeklyQuadrantData, setWeeklyQuadrantData] = useState<QuadrantDataPoint[]>([]);
-const [weeklyQuadrantLoading, setWeeklyQuadrantLoading] = useState(false);
-const [weeklyQuadrantError, setWeeklyQuadrantError] = useState<string | null>(null);
-const weeklyReqSeqRef = useRef(0);
-
-// deps を安定させる（配列そのまま依存に入れない）
-const teamAthleteIdsKey = useMemo(() => teamAthleteIds.slice().sort().join(','), [teamAthleteIds]);
-
-useEffect(() => {
-  // team-average タブ以外では取りに行かない（リクエスト削減）
-  if (activeTab !== 'team-average') return;
-
-  if (!selectedTeam?.id || !weekRange.start || !weekRange.end || teamAthleteIds.length === 0) {
-    setWeeklyQuadrantData([]);
-    setWeeklyQuadrantLoading(false);
-    setWeeklyQuadrantError(null);
-    return;
-  }
-
-  const reqSeq = ++weeklyReqSeqRef.current;
-  let cancelled = false;
-
-  (async () => {
-    try {
-      setWeeklyQuadrantLoading(true);
-      setWeeklyQuadrantError(null);
-
-      const rows: any[] = [];
-      for (const ids of chunk(teamAthleteIds, 50)) {
-        const { data, error } = await supabase
-          .from('training_records')
-          .select('user_id,date,rpe,duration_min,load,arrow_score,signal_score')
-          .in('user_id', ids)
-          .gte('date', weekRange.start)
-          .lte('date', weekRange.end);
-
-        if (error) throw error;
-        rows.push(...(data ?? []));
-      }
-
-      if (cancelled) return;
-      if (reqSeq !== weeklyReqSeqRef.current) return;
-
-      const pts: QuadrantDataPoint[] = rows.map((r) => {
-        const arrow =
-          typeof r.arrow_score === 'number' && Number.isFinite(r.arrow_score)
-            ? r.arrow_score
-            : null;
-      
-        const signal =
-          typeof r.signal_score === 'number' && Number.isFinite(r.signal_score)
-            ? r.signal_score
-            : null;
-      
-        const load =
-          typeof r.load === 'number' && Number.isFinite(r.load)
-            ? r.load
-            : (Number(r.rpe) || 0) * (Number(r.duration_min) || 0);
-      
-        return {
-          arrow_score: arrow,
-          signal_score: signal,
-          load: Number.isFinite(load) ? load : 0,
-        };
-      });
-
-      setWeeklyQuadrantData(pts);
-    } catch (e: any) {
-      console.error('[weeklyQuadrant] error', e);
-      setWeeklyQuadrantError(e?.message ?? '週サマリー取得に失敗しました');
-      setWeeklyQuadrantData([]);
-    } finally {
-      if (!cancelled) setWeeklyQuadrantLoading(false);
-    }
-  })();
-
-  return () => {
-    cancelled = true;
-  };
-  // ✅ idsKey を依存に入れて、ids配列の参照差分で無限に走らないようにする
-}, [activeTab, selectedTeam?.id, weekRange.start, weekRange.end, teamAthleteIdsKey]);
   // =========================
-  // ✅ 週サイクル（チーム全体・日別平均7点）
+  // Derived: safe arrays
+  // =========================
+  const safeAthletes = Array.isArray(athletes) ? athletes : [];
+  const safeAlerts = Array.isArray(alerts) ? alerts : [];
+  const safeWeekCards = Array.isArray(weekCards) ? weekCards : [];
+
+  const teamAlerts = useMemo(() => {
+    const tid = selectedTeam?.id;
+    if (!tid) return safeAlerts;
+    return safeAlerts.filter((al: any) => {
+      if (al?.team_id == null) return true;
+      return al.team_id === tid;
+    });
+  }, [safeAlerts, selectedTeam?.id]);
+
+  const teamAthleteIds = useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
+
+  // =========================
+  // Weekly Growth Cycle
   // =========================
   const {
     weekRange: cycleWeekRange,
@@ -507,13 +321,11 @@ useEffect(() => {
 
   useEffect(() => {
     if (!selectedTeam?.id) return;
-
     setAthletes([]);
     setWeekCards([]);
     setTeamCauseTags([]);
     setAthleteACWRMap({});
     setAcwrLoading(false);
-
     fetchTeamAthletesWithActivity(selectedTeam.id);
     fetchWeekSummary(selectedTeam.id, weekRange.start, weekRange.end);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -531,30 +343,15 @@ useEffect(() => {
   const fetchStaffTeams = async () => {
     try {
       setLoading(true);
-
       const { data: staffTeamLinks, error } = await supabase
         .from('staff_team_links')
-        .select(
-          `
-            team_id,
-            teams (
-              id,
-              name,
-              created_at,
-              organization_id
-            )
-          `
-        )
+        .select(`team_id, teams (id, name, created_at, organization_id)`)
         .eq('staff_user_id', user.id);
-
       if (error) throw error;
-
       const teamsData = (staffTeamLinks || [])
         .map((link: any) => link.teams)
         .filter(Boolean) as Team[];
-
       setTeams(teamsData || []);
-
       if (teamsData && teamsData.length > 0) setSelectedTeam(teamsData[0]);
       else setSelectedTeam(null);
     } catch (error) {
@@ -570,26 +367,17 @@ useEffect(() => {
     try {
       setAthletesLoading(true);
       setAthletesError(null);
-  
       const currentTeamId = teamId;
-  
       const { data, error } = await supabase
         .from('staff_team_athletes_with_activity' as any)
         .select('*')
         .eq('team_id', teamId);
-  
       if (error) throw error;
-  
       if (selectedTeamIdRef.current !== currentTeamId) return;
-  
       const rows = (data || []) as StaffAthleteWithActivity[];
       setAthletes(rows);
-  
       const ids = rows.map((r) => r.id);
-  
-      // ✅ ここが超重要：useEffect待たずに同期更新（guardで弾かれない）
       athletesIdsKeyRef.current = ids.slice().sort().join(',');
-  
       fetchAthleteACWRFromDaily(teamId, ids);
     } catch (e) {
       console.error(e);
@@ -602,23 +390,12 @@ useEffect(() => {
   const fetchWeekSummary = async (teamId: string, startDate: string, endDate: string) => {
     try {
       setWeekLoading(true);
-
       const [weekRes, tagsRes] = await Promise.all([
-        supabase.rpc('get_coach_week_athlete_cards', {
-          p_team_id: teamId,
-          p_start_date: startDate,
-          p_end_date: endDate,
-        }),
-        supabase.rpc('get_coach_week_cause_tags', {
-          p_team_id: teamId,
-          p_start_date: startDate,
-          p_end_date: endDate,
-        }),
+        supabase.rpc('get_coach_week_athlete_cards', { p_team_id: teamId, p_start_date: startDate, p_end_date: endDate }),
+        supabase.rpc('get_coach_week_cause_tags', { p_team_id: teamId, p_start_date: startDate, p_end_date: endDate }),
       ]);
-
       if (weekRes.error) throw weekRes.error;
       if (tagsRes.error) throw tagsRes.error;
-
       setWeekCards((weekRes.data || []) as CoachWeekAthleteCard[]);
       setTeamCauseTags((tagsRes.data || []) as TeamCauseTagRow[]);
     } catch (e) {
@@ -632,9 +409,9 @@ useEffect(() => {
 
   const calcRiskLevelFromACWR = (acwr: number | null): RiskLevel | undefined => {
     if (acwr == null || !Number.isFinite(acwr) || acwr <= 0) return undefined;
-    return calcRisk(acwr); // すでに上で定義してる calcRisk を使う
+    return calcRisk(acwr);
   };
-  
+
   const fetchAthleteACWRFromDaily = async (teamId: string, athleteIds: string[]) => {
     if (!athleteIds || athleteIds.length === 0) {
       if (selectedTeamIdRef.current === teamId) {
@@ -643,89 +420,64 @@ useEffect(() => {
       }
       return;
     }
-  
+
     const reqSeq = ++acwrRequestSeqRef.current;
     const reqIdsKey = athleteIds.slice().sort().join(',');
-  
+
     try {
       setAcwrLoading(true);
-  
       const today = new Date();
       const from = new Date(today);
       from.setDate(from.getDate() - 90);
-  
       const fromKey = getJSTDateKey(from);
       const toKey = getJSTDateKey(today);
-  
+
       const idChunks = chunk(athleteIds, 50);
-      const allRows: Array<{
-        user_id: string;
-        date: string;
-        acwr: number | null;
-        days_of_data?: number | null;
-      }> = [];
-  
+      const allRows: any[] = [];
+
       for (const ids of idChunks) {
         const { data, error } = await supabase
           .from('athlete_acwr_daily')
-          // ✅ risk_level は取らない（存在しないなら400になる）
           .select('user_id,date,acwr,days_of_data,acute_7d,chronic_load,daily_load')
           .in('user_id', ids)
           .gte('date', fromKey)
           .lte('date', toKey)
           .order('date', { ascending: false });
-  
         if (error) throw error;
         allRows.push(...((data || []) as any[]));
       }
-  
-      // ---- request guard ----
+
+      // request guard
       if (selectedTeamIdRef.current !== teamId) return;
       if (reqSeq !== acwrRequestSeqRef.current) return;
-  
-      // ✅ ここ：idsKeyRef は fetchTeamAthletesWithActivity で同期更新済み
       if (athletesIdsKeyRef.current !== reqIdsKey) return;
-  
+
+      const toNum = (v: any): number | null => {
+        if (v === null || v === undefined) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
       const newMap: Record<string, AthleteACWRInfo> = {};
-  
       for (const r of allRows) {
-        if (newMap[r.user_id]) continue; // user_idごとに最新1件のみ
-  
-        const toNum = (v: any): number | null => {
-          if (v === null || v === undefined) return null;
-          const n = Number(v);
-          return Number.isFinite(n) ? n : null;
-        };
-        
-        const acwr = toNum((r as any).acwr);
-        const days = toNum((r as any).days_of_data);
-        const acute7d = toNum((r as any).acute_7d);
-        const chronicLoad = toNum((r as any).chronic_load);
-        const dailyLoad = toNum((r as any).daily_load);
-  
+        if (newMap[r.user_id]) continue;
+        const acwr = toNum(r.acwr);
         newMap[r.user_id] = {
           currentACWR: acwr,
-          acute7d,
-          chronicLoad,
-          dailyLoad,
-          daysOfData: days,
+          acute7d: toNum(r.acute_7d),
+          chronicLoad: toNum(r.chronic_load),
+          dailyLoad: toNum(r.daily_load),
+          daysOfData: toNum(r.days_of_data),
           lastDate: r.date ?? null,
           riskLevel: calcRiskLevelFromACWR(acwr) ?? 'unknown',
         };
       }
-  
-      // ✅ 取得できなかった選手もキーは作る（UIの安定）
+
       for (const id of athleteIds) {
         if (!newMap[id]) {
-          newMap[id] = {
-            currentACWR: null,
-            riskLevel: 'unknown',
-            daysOfData: null,
-            lastDate: null,
-          };
+          newMap[id] = { currentACWR: null, riskLevel: 'unknown', daysOfData: null, lastDate: null };
         }
       }
-  
       setAthleteACWRMap(newMap);
     } catch (e) {
       console.error('[fetchAthleteACWRFromDaily] failed', e);
@@ -744,7 +496,6 @@ useEffect(() => {
   const noDataAthletes = useMemo(() => {
     const now = new Date();
     const msPerDay = 1000 * 60 * 60 * 24;
-
     return safeAthletes
       .filter((a) => a.last_training_date)
       .map((a) => {
@@ -759,7 +510,6 @@ useEffect(() => {
   const latestTeamAvg = latestTeamACWR?.averageACWR ?? null;
   const latestValid = latestTeamACWR?.athleteCount ?? 0;
   const roster = safeAthletes.length;
-
   const summaryTone = getSummaryTone(
     typeof latestTeamAvg === 'number' ? latestTeamAvg : null,
     latestValid,
@@ -768,26 +518,13 @@ useEffect(() => {
 
   const handleOpenAthleteDetailFromFocus = (it: { user_id: string }) => {
     const target = safeAthletes.find((a) => a.id === it.user_id);
-    if (!target) {
-      window.alert('選手情報が見つかりませんでした');
-      return;
-    }
-
+    if (!target) { window.alert('選手情報が見つかりませんでした'); return; }
     const card = safeWeekCards.find((c) => c.athlete_user_id === target.id);
     if (card && !card.is_sharing_active) {
       window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
       return;
     }
-
     setSelectedAthlete(target);
-  };
-
-  type FocusItem = {
-    user_id: string;
-    name: string;
-    category: 'risk' | 'checkin' | 'praise';
-    reason: string;
-    meta?: string;
   };
 
   const focusItems = useMemo<FocusItem[]>(() => {
@@ -809,49 +546,29 @@ useEffect(() => {
       if (!c.is_sharing_active) return;
       const acwr = athleteACWRMap?.[c.athlete_user_id]?.currentACWR;
       if (typeof acwr === 'number' && acwr >= 1.5) {
-        items.push({
-          user_id: c.athlete_user_id,
-          name: c.athlete_name || 'unknown',
-          category: 'risk',
-          reason: 'ACWR高値',
-          meta: `ACWR ${acwr.toFixed(2)}`,
-        });
+        items.push({ user_id: c.athlete_user_id, name: c.athlete_name || 'unknown', category: 'risk', reason: 'ACWR高値', meta: `ACWR ${acwr.toFixed(2)}` });
       }
     });
 
     safeWeekCards.forEach((c) => {
       if (!c.is_sharing_active) return;
       if (c.sleep_hours_avg != null && c.sleep_hours_avg <= 5.5) {
-        items.push({
-          user_id: c.athlete_user_id,
-          name: c.athlete_name || 'unknown',
-          category: 'checkin',
-          reason: '睡眠が短め',
-          meta: `${c.sleep_hours_avg.toFixed(1)}h`,
-        });
+        items.push({ user_id: c.athlete_user_id, name: c.athlete_name || 'unknown', category: 'checkin', reason: '睡眠が短め', meta: `${c.sleep_hours_avg.toFixed(1)}h` });
       }
     });
 
     safeWeekCards.forEach((c) => {
       if (c.action_total > 0 && (c.action_done_rate ?? 0) >= 90) {
-        items.push({
-          user_id: c.athlete_user_id,
-          name: c.athlete_name || 'unknown',
-          category: 'praise',
-          reason: '行動目標が良い',
-          meta: `${Math.round(c.action_done_rate ?? 0)}%`,
-        });
+        items.push({ user_id: c.athlete_user_id, name: c.athlete_name || 'unknown', category: 'praise', reason: '行動目標が良い', meta: `${Math.round(c.action_done_rate ?? 0)}%` });
       }
     });
 
     const priority: Record<FocusItem['category'], number> = { risk: 3, checkin: 2, praise: 1 };
-
     const map = new Map<string, FocusItem>();
     for (const it of items) {
       const prev = map.get(it.user_id);
       if (!prev || priority[it.category] > priority[prev.category]) map.set(it.user_id, it);
     }
-
     const merged = Array.from(map.values());
     merged.sort((a, b) => priority[b.category] - priority[a.category]);
     return merged.slice(0, 5);
@@ -859,8 +576,7 @@ useEffect(() => {
 
   const handleDismissNoDataForToday = () => {
     if (typeof window !== 'undefined') {
-      const key = `noDataDismissed-${user.id}-${todayKey}`;
-      localStorage.setItem(key, '1');
+      localStorage.setItem(`noDataDismissed-${user.id}-${todayKey}`, '1');
     }
     setNoDataDismissedToday(true);
   };
@@ -877,7 +593,7 @@ useEffect(() => {
     return map;
   }, [noDataAthletes]);
 
-  // 女性選手の月経周期フェーズ（リスク評価に使用）
+  // Menstrual cycle phases for risk
   const femaleAthleteIds = useMemo(
     () => safeAthletes.filter(a => a.gender === 'female' || a.gender === '女性').map(a => a.id),
     [safeAthletes]
@@ -900,32 +616,8 @@ useEffect(() => {
   }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap, cyclePhaseMap]);
 
   const sortedAthletes = useMemo(() => {
-    return sortAthletesByRisk({
-      athletes: safeAthletes,
-      riskMap: athleteRiskMap,
-      weekCardMap,
-    });
+    return sortAthletesByRisk({ athletes: safeAthletes, riskMap: athleteRiskMap, weekCardMap });
   }, [safeAthletes, athleteRiskMap, weekCardMap]);
-
-  useEffect(() => {
-    if (!sortedAthletes || sortedAthletes.length === 0) return;
-    const withRisk = sortedAthletes.filter((a) => athleteRiskMap?.[a.id]?.riskLevel).length;
-
-    if (withRisk >= Math.floor(sortedAthletes.length * 0.7)) {
-      console.log(
-        '[sortedAthletes]',
-        sortedAthletes.map((a) => ({
-          name: a.name,
-          risk: athleteRiskMap[a.id]?.riskLevel,
-          sharing: weekCardMap[a.id]?.is_sharing_active,
-          acwr: athleteACWRMap[a.id]?.currentACWR,
-          reasons: athleteRiskMap[a.id]?.reasons?.length ?? 0,
-        }))
-      );
-    } else {
-      console.log(`[sortedAthletes] risk not ready: ${withRisk}/${sortedAthletes.length}`);
-    }
-  }, [sortedAthletes, athleteRiskMap, weekCardMap, athleteACWRMap]);
 
   const handleAthleteSelect = (athlete: User) => {
     const card = safeWeekCards.find((c) => c.athlete_user_id === athlete.id);
@@ -936,42 +628,49 @@ useEffect(() => {
     setSelectedAthlete(athlete);
   };
 
+  // Risk counts for hero card
+  const riskCount = useMemo(() => {
+    const high = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'high').length;
+    const caution = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'caution').length;
+    return { high, caution };
+  }, [safeAthletes, athleteRiskMap]);
+
   // =========================
   // Render
   // =========================
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* チーム選択バー（GlobalHeaderの下に表示） */}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      {/* Team selector bar */}
       {teams.length > 0 && (
-        <div className="bg-white border-b border-gray-200 sticky top-16 z-30">
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-16 z-30 transition-colors">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
             <div className="flex items-center gap-3">
-              <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <Users className="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0" />
               <select
                 value={selectedTeam?.id || ''}
                 onChange={(e) => {
                   const team = teams.find((t) => t.id === e.target.value);
                   if (team) setSelectedTeam(team);
                 }}
-                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                  bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                  focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
+                  <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
               </select>
               <button
                 onClick={startTutorial}
-                className="p-2 text-gray-500 hover:text-green-600 transition-colors"
+                className="p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 title="チュートリアル"
               >
                 <HelpCircle className="w-4 h-4" />
@@ -981,138 +680,70 @@ useEffect(() => {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
         {teams.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">担当チームがありません</h3>
-            <p className="text-gray-600">管理者にチームの割り当てを依頼してください。</p>
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Users className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">担当チームがありません</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">管理者にチームの割り当てを依頼してください。</p>
           </div>
         ) : (
-          <div className="space-y-6 sm:space-y-8">
+          <div className="space-y-4 sm:space-y-6">
+            {/* Hero Card */}
             {selectedTeam && (
-              <div className="space-y-4">
-                {!teamACWRLoading && latestTeamACWR && (
-                  <div className={`rounded-xl border p-4 sm:p-5 ${toneStyles[summaryTone].box}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span
-                            className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border text-xs font-semibold ${toneStyles[summaryTone].badge}`}
-                          >
-                            <span className={`w-2 h-2 rounded-full ${toneStyles[summaryTone].dot}`} />
-                            Today Summary
-                          </span>
-
-                          <span
-                            className={`inline-flex items-center px-3 py-1.5 rounded-full border text-sm font-bold ${toneStyles[summaryTone].badge}`}
-                          >
-                            {getSummaryLabel(summaryTone)}
-                          </span>
-                        </div>
-
-                        <div className="text-sm sm:text-base text-gray-900 font-semibold">
-                          {getSummaryMessage(summaryTone, latestValid, roster)}
-                        </div>
-
-                        <div className="mt-2 text-xs sm:text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
-                          <span>
-                            チームACWR：<b>{latestTeamACWR.averageACWR}</b>
-                          </span>
-                          <span>
-                            有効人数：<b>{latestValid}</b> / 在籍：<b>{roster}</b>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {!teamACWRLoading && !latestTeamACWR && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
-                    <div className="text-sm font-semibold text-gray-900 mb-1">Today Summary</div>
-                    <div className="text-sm text-gray-700">
-                      まだチームACWRを算出できるデータがありません。
-                      <br />
-                      （選手のRPEと練習時間の入力が増えると表示されます）
-                    </div>
-                  </div>
-                )}
-
-                {focusItems.length > 0 && (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm sm:text-base font-semibold text-gray-900">
-                        今日のフォーカス（最大5人）
-                      </div>
-                      <div className="text-xs text-gray-500">タップで選手詳細</div>
-                    </div>
-
-                    <ul className="space-y-2">
-                      {focusItems.map((it) => (
-                        <li key={it.user_id}>
-                          <button
-                            onClick={() => handleOpenAthleteDetailFromFocus({ user_id: it.user_id })}
-                            className="w-full text-left rounded-lg border border-gray-200 hover:bg-gray-50 px-3 py-2 flex items-start justify-between gap-3"
-                          >
-                            <div className="min-w-0">
-                              <div className="font-semibold text-gray-900 truncate">{it.name}</div>
-                              <div className="text-xs text-gray-700">
-                                {it.reason}
-                                {it.meta ? <span className="text-gray-500">（{it.meta}）</span> : null}
-                              </div>
-                            </div>
-
-                            <span
-                              className={`shrink-0 text-[11px] px-2 py-1 rounded-full border ${
-                                it.category === 'risk'
-                                  ? 'bg-red-50 text-red-700 border-red-200'
-                                  : it.category === 'checkin'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              }`}
-                            >
-                              {it.category === 'risk' ? '注意' : it.category === 'checkin' ? '声かけ' : '称賛'}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
+              <CoachHeroCard
+                teamName={selectedTeam.name}
+                summaryTone={summaryTone}
+                summaryMessage={getSummaryMessage(summaryTone, latestValid, roster)}
+                summaryLabel={getSummaryLabel(summaryTone)}
+                roster={roster}
+                averageACWR={latestTeamACWR?.averageACWR ?? null}
+                validCount={latestValid}
+                riskHigh={riskCount.high}
+                riskCaution={riskCount.caution}
+                loading={teamACWRLoading}
+              />
             )}
 
+            {/* Action Cards */}
+            {selectedTeam && focusItems.length > 0 && (
+              <CoachActionCards
+                focusItems={focusItems}
+                riskHigh={riskCount.high}
+                riskCaution={riskCount.caution}
+                onOpenAthlete={handleOpenAthleteDetailFromFocus}
+              />
+            )}
+
+            {/* No Data Warning */}
             {noDataAthletes.length > 0 && !noDataDismissedToday && (
-              <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-4 sm:p-5">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-amber-200 dark:border-amber-800 p-4 sm:p-5 transition-colors">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">
+                    <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-0.5">
                       練習記録が途切れている選手
                     </h3>
-                    <p className="text-xs sm:text-sm text-gray-600">
-                      最終記録日から一定期間、記録がない選手の一覧です
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      最終記録日から{NO_DATA_DAYS_THRESHOLD}日以上未入力
                     </p>
                   </div>
                   <button
                     onClick={handleDismissNoDataForToday}
-                    className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded-lg hover:bg-blue-50"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                   >
-                    今日分は既読にする
+                    既読にする
                   </button>
                 </div>
-
-                <ul className="space-y-1 sm:space-y-1.5 text-sm sm:text-base">
+                <ul className="space-y-1">
                   {noDataAthletes.map(({ athlete, daysSinceLast }) => (
-                    <li
-                      key={athlete.id}
-                      className="flex items-baseline justify-between border-t border-gray-100 pt-1.5 first:border-t-0 first:pt-0"
-                    >
-                      <div className="font-medium text-gray-900 truncate mr-2">
+                    <li key={athlete.id} className="flex items-baseline justify-between border-t border-gray-100 dark:border-gray-700 pt-1.5 first:border-t-0 first:pt-0">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white truncate mr-2">
                         {athlete.name || athlete.email}
                       </div>
-                      <div className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">
-                        最終日 {athlete.last_training_date || '-'}（{daysSinceLast}日間）
+                      <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        {daysSinceLast}日間未入力
                       </div>
                     </li>
                   ))}
@@ -1120,173 +751,100 @@ useEffect(() => {
               </div>
             )}
 
+            {/* Tab Navigation */}
             {selectedTeam && (
-              <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
-                    <span className="hidden sm:inline">{selectedTeam.name} - </span>
-                    <span className="sm:hidden">チーム</span>概要
-                  </h2>
-                  <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 ml-2" />
-                </div>
-
-                {teamACWRLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
-                  </div>
-                ) : !latestTeamACWR ? (
-                  <div className="py-6 text-center text-sm text-gray-500">
-                    まだACWRを計算できる十分なトレーニングデータがありません。
-                    <br />
-                    （選手のRPEと練習時間を入力すると表示されます）
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-6">
-                    <div className="bg-purple-50 rounded-lg p-4 sm:p-6 text-center">
-                      <div className="text-xl sm:text-2xl font-bold text-purple-600 mb-1">
-                        {latestTeamACWR.averageACWR}
-                      </div>
-                      <div className="text-xs sm:text-sm text-purple-700">チーム平均ACWR</div>
-                    </div>
-
-                    <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
-                      <div className="text-xl sm:text-2xl font-bold text-blue-600 mb-1">
-                        {latestTeamACWR.athleteCount}
-                      </div>
-                      <div className="text-xs sm:text-sm text-blue-700">データ有効選手数</div>
-                    </div>
-
-                    <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
-                      <div className="text-xl sm:text-2xl font-bold text-gray-600 mb-1">
-                        {safeAthletes.length}
-                      </div>
-                      <div className="text-xs sm:text-sm text-gray-700">総選手数</div>
-                    </div>
-
-                    <div className="bg-red-50 rounded-lg p-4 sm:p-6 text-center">
-                      <div className="text-xl sm:text-2xl font-bold text-red-600 mb-1">
-                        {teamAlerts.filter((al) => al.priority === 'high').length}
-                      </div>
-                      <div className="text-xs sm:text-sm text-red-700">高リスク選手</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {selectedTeam && (
-              <div className="bg-white rounded-xl shadow-sm">
-                <div className="border-b border-gray-200">
-                  <nav className="hidden sm:flex px-4 sm:px-6 overflow-x-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm transition-colors">
+                <div className="border-b border-gray-200 dark:border-gray-700">
+                  {/* Desktop tabs */}
+                  <nav className="hidden sm:flex px-4 sm:px-6 items-center">
                     <button
                       onClick={() => setActiveTab('athletes')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                      className={`py-3.5 px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
                         activeTab === 'athletes'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
                       }`}
                       data-tutorial="athletes-tab"
                     >
-                      <div className="flex items-center">
-                        <Activity className="w-4 h-4 mr-2" />
+                      <div className="flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
                         選手一覧
                       </div>
                     </button>
 
                     <button
-                      onClick={() => setActiveTab('team-average')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'team-average'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      onClick={() => setActiveTab('team-trends')}
+                      className={`py-3.5 px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                        activeTab === 'team-trends'
+                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
                       }`}
                       data-tutorial="team-average-tab"
                     >
-                      <div className="flex items-center">
-                        <BarChart3 className="w-4 h-4 mr-2" />
-                        チーム平均ACWR
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4" />
+                        チーム傾向
                       </div>
                     </button>
 
-                    <button
-                      onClick={() => setActiveTab('rankings')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'rankings'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Trophy className="w-4 h-4 mr-2" />
-                        ランキング
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab('reports')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'reports'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <FileText className="w-4 h-4 mr-2" />
-                        レポート
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('settings')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'settings'
-                          ? 'border-green-500 text-green-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        設定（フェーズ）
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab('performance')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'performance'
-                          ? 'border-purple-500 text-purple-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Activity className="w-4 h-4 mr-2" />
-                        パフォーマンス分析
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab('team-analysis')}
-                      className={`py-3 sm:py-4 px-3 border-b-2 font-medium text-sm ml-6 whitespace-nowrap ${
-                        activeTab === 'team-analysis'
-                          ? 'border-indigo-500 text-indigo-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Target className="w-4 h-4 mr-2" />
-                        チーム分析
-                      </div>
-                    </button>
-
+                    {/* More tabs dropdown */}
+                    <div className="ml-auto relative">
+                      <button
+                        onClick={() => setShowMoreTabs(v => !v)}
+                        className={`py-3.5 px-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                          ['rankings', 'reports', 'settings', 'performance', 'team-analysis'].includes(activeTab)
+                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>その他</span>
+                          <svg className={`w-3.5 h-3.5 transition-transform ${showMoreTabs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </button>
+                      {showMoreTabs && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowMoreTabs(false)} />
+                          <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
+                            {[
+                              { key: 'rankings' as const, icon: Trophy, label: 'ランキング' },
+                              { key: 'reports' as const, icon: FileText, label: 'レポート' },
+                              { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）' },
+                              { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析' },
+                              { key: 'team-analysis' as const, icon: Target, label: 'チーム分析' },
+                            ].map(({ key, icon: Icon, label }) => (
+                              <button
+                                key={key}
+                                onClick={() => { setActiveTab(key); setShowMoreTabs(false); }}
+                                className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 transition-colors ${
+                                  activeTab === key
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium'
+                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                <Icon className="w-4 h-4" />
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </nav>
 
+                  {/* Mobile tab selector */}
                   <div className="sm:hidden px-4 py-3">
                     <select
                       value={activeTab}
                       onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                        bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     >
                       <option value="athletes">選手一覧</option>
-                      <option value="team-average">チーム平均ACWR</option>
+                      <option value="team-trends">チーム傾向</option>
                       <option value="rankings">ランキング</option>
                       <option value="settings">設定（フェーズ）</option>
                       <option value="reports">レポート</option>
@@ -1296,231 +854,56 @@ useEffect(() => {
                   </div>
                 </div>
 
+                {/* Tab Content */}
                 <div className="p-4 sm:p-6">
                   {activeTab === 'athletes' && (
-                    <div>
-                      {/* チームスナップショット */}
-                      {!athletesLoading && !athletesError && safeAthletes.length > 0 && (() => {
-                        const total = safeAthletes.length;
-                        const highRisk = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'high').length;
-                        const cautionRisk = safeAthletes.filter(a => athleteRiskMap[a.id]?.riskLevel === 'caution').length;
-                        const sharingOn = safeAthletes.filter(a => weekCardMap[a.id]?.is_sharing_active).length;
-                        const acwrValues = safeAthletes
-                          .map(a => athleteACWRMap[a.id]?.currentACWR)
-                          .filter((v): v is number => v != null && v > 0);
-                        const avgACWR = acwrValues.length > 0
-                          ? (acwrValues.reduce((s, v) => s + v, 0) / acwrValues.length).toFixed(2)
-                          : null;
-                        return (
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
-                              <div className="text-2xl font-bold text-gray-900 dark:text-white">{total}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">選手数</div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
-                              <div className={`text-2xl font-bold ${highRisk > 0 ? 'text-red-600 dark:text-red-400' : cautionRisk > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
-                                {highRisk > 0 ? highRisk : cautionRisk}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {highRisk > 0 ? '要注意' : cautionRisk > 0 ? '注意' : '問題なし'}
-                              </div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
-                              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{sharingOn}/{total}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">共有ON</div>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-center">
-                              <div className={`text-2xl font-bold ${avgACWR ? (parseFloat(avgACWR) > 1.3 || parseFloat(avgACWR) < 0.8 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400') : 'text-gray-400'}`}>
-                                {avgACWR ?? '—'}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">平均ACWR</div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-2">
-                        <Lock className="w-4 h-4" />
-                        共有OFF（🔒）の選手は、詳細モーダルを開けません
-                        {acwrLoading && <span className="ml-2 text-xs text-gray-500">（ACWR取得中…）</span>}
-                      </div>
-
-                      {athletesLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                        </div>
-                      ) : athletesError ? (
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-                          <div className="font-semibold mb-1">選手一覧の取得に失敗しました</div>
-                          <div className="mb-3">{athletesError}</div>
-                          <button
-                            className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50"
-                            onClick={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
-                          >
-                            再取得
-                          </button>
-                        </div>
-                      ) : safeAthletes.length === 0 ? (
-                        <div className="bg-white border rounded-xl p-6 text-center text-gray-600">
-                          <div className="font-semibold text-gray-900 mb-1">選手がまだいません</div>
-                          <div className="text-sm">
-                            チームに選手が所属しているか（team_id / view 条件）を確認してください。
-                          </div>
-                        </div>
-                      ) : (
-                        <AthleteList
-                          athletes={sortedAthletes}
-                          onAthleteSelect={handleAthleteSelect}
-                          athleteACWRMap={athleteACWRMap}
-                          weekCardMap={weekCardMap}
-                          athleteRiskMap={athleteRiskMap}
-                        />
-                      )}
-                    </div>
+                    <CoachAthletesTab
+                      athletes={sortedAthletes}
+                      athletesLoading={athletesLoading}
+                      athletesError={athletesError}
+                      acwrLoading={acwrLoading}
+                      athleteACWRMap={athleteACWRMap}
+                      weekCardMap={weekCardMap}
+                      athleteRiskMap={athleteRiskMap}
+                      onAthleteSelect={handleAthleteSelect}
+                      onRetry={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
+                    />
                   )}
 
-                  {activeTab === 'team-average' && (
-                    <div className="space-y-4">
-                      {teamACWRLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                        </div>
-                      ) : (
-                        <ChartErrorBoundary name="TeamACWRChart">
-                          <TeamACWRChart
-                            data={safeTeamACWRData}
-                            teamName={selectedTeam?.name ?? ''}
-                            showAvgRPE={showAvgRPE}
-                            showAvgLoad={showAvgLoad}
-                          />
-                        </ChartErrorBoundary>
-                      )}
-
-                      {/* ✅ 週サイクル表示（7日分） */}
-                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm sm:text-base font-semibold text-gray-900">
-                              週サイクル表示（7日）
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              指定日を含む週（月〜日）を「成長×理解」の動き＋負荷で可視化します
-                            </div>
-                          </div>
-
-                          <input
-                            type="date"
-                            value={cycleBaseDate}
-                            onChange={(e) => setCycleBaseDate(e.target.value)}
-                            className="px-3 py-2 rounded-lg border border-gray-300"
-                            title="この日付を含む週（月〜日）を表示"
-                          />
-                        </div>
-
-                        <div className="mt-3">
-                          {cycleLoading ? (
-                            <div className="flex items-center justify-center py-10">
-                              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                            </div>
-                          ) : cycleError ? (
-                            <div className="text-sm text-red-600">{cycleError}</div>
-                          ) : (
-                            <ChartErrorBoundary name="WeeklyGrowthCycleView">
-                              <WeeklyGrowthCycleView
-                                teamDaily={teamDaily}
-                                weekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
-                              />
-                            </ChartErrorBoundary>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* ✅ 今週の4象限サマリー */}
-                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-                        {weeklyQuadrantLoading ? (
-                          <div className="flex items-center justify-center py-10">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                          </div>
-                        ) : weeklyQuadrantError ? (
-                          <div className="text-sm text-red-600">{weeklyQuadrantError}</div>
-                        ) : (
-                          <Suspense
-                            fallback={
-                              <div className="flex items-center justify-center py-10">
-                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                              </div>
-                            }
-                          >
-                            <ChartErrorBoundary name="GrowthUnderstandingQuadrantSummary">
-                              <GrowthUnderstandingQuadrantSummaryLazy data={weeklyQuadrantData} />
-                            </ChartErrorBoundary>
-                          </Suspense>
-                        )}
-                      </div>
-
-                      {/* ✅ 今日のマトリクス */}
-                      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-                        {matrixLoading ? (
-                          <div className="flex items-center justify-center py-10">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                          </div>
-                        ) : matrixError ? (
-                          <div className="text-sm text-red-600">{matrixError}</div>
-                        ) : (
-                          <Suspense
-                            fallback={
-                              <div className="flex items-center justify-center py-10">
-                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-                              </div>
-                            }
-                          >
-                            <ChartErrorBoundary name="GrowthUnderstandingMatrix">
-                              {/* ✅ Lazy を使う（ここ重要：GrowthUnderstandingMatrix is not defined を潰す） */}
-                              <GrowthUnderstandingMatrixLazy points={matrixPoints} teamAvg={matrixTeamAvg} />
-                            </ChartErrorBoundary>
-                          </Suspense>
-                        )}
-                      </div>
-                    </div>
+                  {activeTab === 'team-trends' && (
+                    <CoachTeamTrendsTab
+                      teamId={selectedTeam!.id}
+                      teamName={selectedTeam?.name ?? ''}
+                      teamACWRData={safeTeamACWRData}
+                      teamACWRLoading={teamACWRLoading}
+                      showAvgRPE={showAvgRPE}
+                      showAvgLoad={showAvgLoad}
+                      cycleBaseDate={cycleBaseDate}
+                      onCycleBaseDateChange={setCycleBaseDate}
+                      cycleLoading={cycleLoading}
+                      cycleError={cycleError}
+                      teamDaily={teamDaily}
+                      cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
+                    />
                   )}
+
                   {activeTab === 'rankings' && (
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center h-64">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                        </div>
-                      }
-                    >
-                      <ChartErrorBoundary name="CoachRankingsView">
+                    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>}>
                       <CoachRankingsViewLazy
-                       team={selectedTeam!}
+                        team={selectedTeam!}
                         onOpenAthlete={(userId, testTypeId, metric, athleteName) => {
-                          setPerfModal({
-                            open: true,
-                            athleteUserId: userId,
-                            athleteName: athleteName || '名前未設定',
-                            testTypeId,
-                            metricKey: metric,
-                          });
+                          setPerfModal({ open: true, athleteUserId: userId, athleteName: athleteName || '名前未設定', testTypeId, metricKey: metric });
                         }}
                       />
-                      </ChartErrorBoundary>
                     </Suspense>
                   )}
+
                   {activeTab === 'settings' && selectedTeam && (
-                    <div className='space-y-4'>
-                      <TeamSeasonPhaseSettings teamId={selectedTeam.id} teamName={selectedTeam.name}  />
-                    </div>
+                    <TeamSeasonPhaseSettings teamId={selectedTeam.id} teamName={selectedTeam.name} />
                   )}
 
                   {activeTab === 'reports' && (
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center h-64">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                        </div>
-                      }
-                    >
+                    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>}>
                       <ReportView team={selectedTeam!} />
                     </Suspense>
                   )}
@@ -1534,17 +917,20 @@ useEffect(() => {
                   )}
 
                   {activeTab === 'team-analysis' && selectedTeam && (
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center h-64">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-                        </div>
-                      }
-                    >
-                      <ChartErrorBoundary name="TeamAnalysisView">
-                        <TeamAnalysisViewLazy teamId={selectedTeam.id} />
-                      </ChartErrorBoundary>
-                    </Suspense>
+                    <CoachTeamTrendsTab
+                      teamId={selectedTeam.id}
+                      teamName={selectedTeam.name}
+                      teamACWRData={safeTeamACWRData}
+                      teamACWRLoading={teamACWRLoading}
+                      showAvgRPE={showAvgRPE}
+                      showAvgLoad={showAvgLoad}
+                      cycleBaseDate={cycleBaseDate}
+                      onCycleBaseDateChange={setCycleBaseDate}
+                      cycleLoading={cycleLoading}
+                      cycleError={cycleError}
+                      teamDaily={teamDaily}
+                      cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
+                    />
                   )}
                 </div>
               </div>
@@ -1553,6 +939,7 @@ useEffect(() => {
         )}
       </main>
 
+      {/* Modals */}
       {selectedAthlete && (
         <AthleteDetailModal
           athlete={selectedAthlete}
@@ -1563,13 +950,7 @@ useEffect(() => {
       )}
 
       {showExportPanel && selectedTeam && (
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
-            </div>
-          }
-        >
+        <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" /></div>}>
           <TeamExportPanel team={selectedTeam} onClose={() => setShowExportPanel(false)} />
         </Suspense>
       )}
@@ -1583,8 +964,6 @@ useEffect(() => {
         testTypeId={perfModal.testTypeId}
         metricKey={perfModal.metricKey}
       />
-
-
 
       <TutorialController
         steps={getTutorialSteps('staff')}
