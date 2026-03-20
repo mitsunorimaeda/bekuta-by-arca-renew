@@ -9,7 +9,7 @@ importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox
 // Workbox の設定
 workbox.setConfig({ debug: false });
 
-const { registerRoute, NavigationRoute } = workbox.routing;
+const { registerRoute, NavigationRoute, setCatchHandler } = workbox.routing;
 const { NetworkFirst, StaleWhileRevalidate, CacheFirst, NetworkOnly } = workbox.strategies;
 const { ExpirationPlugin } = workbox.expiration;
 const { CacheableResponsePlugin } = workbox.cacheableResponse;
@@ -17,30 +17,36 @@ const { CacheableResponsePlugin } = workbox.cacheableResponse;
 // =============================================
 // 1. アプリシェルのプリキャッシュ（install時）
 // =============================================
-const SHELL_CACHE = 'bekuta-shell-v1';
-const SHELL_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/pwa-192x192.png',
-  '/pwa-512x512.png',
+const APP_SHELL_CACHE = 'bekuta-app-shell-v1';
+const KNOWN_CACHES = [
+  APP_SHELL_CACHE,
+  'bekuta-navigations',
+  'bekuta-static',
+  'bekuta-images',
+  'bekuta-fonts',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_URLS))
+    caches.open(APP_SHELL_CACHE).then((cache) =>
+      cache.addAll([
+        '/index.html',
+        '/manifest.json',
+        '/pwa-192x192.png',
+        '/pwa-512x512.png',
+      ])
+    )
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  // 古いキャッシュを削除
+  // 既知のキャッシュとworkbox内部キャッシュのみ保持、古いキャッシュは削除
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== SHELL_CACHE)
-          .filter((key) => !key.startsWith('workbox-'))
+          .filter((key) => !KNOWN_CACHES.includes(key) && !key.startsWith('workbox-'))
           .map((key) => caches.delete(key))
       )
     )
@@ -64,7 +70,7 @@ registerRoute(
   new NetworkOnly()
 );
 
-// ナビゲーション（HTML）→ NetworkFirst（3秒タイムアウト → キャッシュ済みindex.html）
+// ナビゲーション（HTML）→ NetworkFirst（3秒タイムアウト）
 const navigationHandler = new NetworkFirst({
   cacheName: 'bekuta-navigations',
   networkTimeoutSeconds: 3,
@@ -120,7 +126,20 @@ registerRoute(
 );
 
 // =============================================
-// 3. プッシュ通知（既存機能を保持）
+// 3. オフラインフォールバック
+//    NavigationRoute のキャッシュにない場合、
+//    プリキャッシュした index.html を返す
+// =============================================
+setCatchHandler(async ({ request }) => {
+  if (request.destination === 'document') {
+    const cached = await caches.match('/index.html', { cacheName: APP_SHELL_CACHE });
+    if (cached) return cached;
+  }
+  return Response.error();
+});
+
+// =============================================
+// 4. プッシュ通知（既存機能を保持）
 // =============================================
 self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
