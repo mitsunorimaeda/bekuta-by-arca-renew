@@ -33,12 +33,20 @@ export function useMenstrualDailyLog(userId: string) {
     }
   }, [userId]);
 
-  /** 直近90日分を初期ロード */
-  useEffect(() => {
+  const refetch = useCallback(() => {
     const end = new Date().toISOString().slice(0, 10);
     const start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     fetchLogs(start, end);
   }, [fetchLogs]);
+
+  /** 初期ロード + 他コンポーネントからの保存通知でリフレッシュ */
+  useEffect(() => {
+    refetch();
+    // 他のコンポーネント（モーダル等）でdaily logが保存された時にrefetch
+    const handleUpdate = () => refetch();
+    window.addEventListener('menstrual-daily-log-updated', handleUpdate);
+    return () => window.removeEventListener('menstrual-daily-log-updated', handleUpdate);
+  }, [refetch]);
 
   /** 日別ログをupsert（同日は上書き） */
   const upsertDailyLog = useCallback(async (params: {
@@ -94,6 +102,8 @@ export function useMenstrualDailyLog(userId: string) {
           b.log_date.localeCompare(a.log_date)
         );
       });
+      // 他のhookインスタンスに通知（モーダル↔ページ間の同期）
+      window.dispatchEvent(new Event('menstrual-daily-log-updated'));
     }
 
     return data;
@@ -110,5 +120,6 @@ export function useMenstrualDailyLog(userId: string) {
     upsertDailyLog,
     getDailyLog,
     fetchLogs,
+    refetch,
   };
 }

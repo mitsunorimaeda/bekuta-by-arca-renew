@@ -142,14 +142,26 @@ export function CycleQuickLog({ onPeriodStart, onPeriodEnd, onDailyLog, hasOpenC
         )}
       </div>
 
-      {/* 詳細入力トグル */}
-      <button
+      {/* 症状記録カード */}
+      <div
         onClick={() => setShowDetails(!showDetails)}
-        className="w-full flex items-center justify-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 py-1"
+        className="flex items-center justify-between bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3.5 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
       >
-        <span>今日の症状・出血量を記録</span>
-        {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-      </button>
+        <div>
+          <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
+            🩺 今日の体調・症状を記録
+          </p>
+          <p className="text-xs text-purple-500 dark:text-purple-500 mt-0.5">
+            {selectedSymptoms.length > 0
+              ? `${selectedSymptoms.length}件選択中`
+              : '記録を続けるとPMS傾向がわかります'}
+          </p>
+        </div>
+        {showDetails
+          ? <ChevronUp className="w-5 h-5 text-purple-400" />
+          : <ChevronDown className="w-5 h-5 text-purple-400" />
+        }
+      </div>
 
       {/* 詳細入力パネル */}
       {showDetails && (

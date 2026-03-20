@@ -127,16 +127,27 @@ export function CycleSection({ selectedDate, onSave, error }: Props) {
         </div>
       )}
 
-      {/* Step 3: 症状（オプション） */}
+      {/* Step 3: 症状 */}
       {periodStatus !== null && (
         <div>
-          <button
-            type="button"
+          <div
             onClick={() => setShowSymptoms(!showSymptoms)}
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            className="flex items-center justify-between bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
           >
-            {showSymptoms ? '症状を閉じる' : '症状を記録する（任意）'}
-          </button>
+            <div>
+              <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
+                🩺 今の体調・症状は？
+              </p>
+              <p className="text-xs text-purple-500 dark:text-purple-500 mt-0.5">
+                {symptoms.length > 0
+                  ? `${symptoms.length}件選択中`
+                  : '記録するとPMS傾向がわかるようになります'}
+              </p>
+            </div>
+            <span className="text-purple-400">
+              {showSymptoms ? '▲' : '▼'}
+            </span>
+          </div>
 
           {showSymptoms && (
             <div className="mt-3 space-y-3">
