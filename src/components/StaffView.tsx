@@ -36,6 +36,7 @@ import {
   Target,
   Calendar,
   Snowflake,
+  Bell,
 } from 'lucide-react';
 
 // Lazy-loaded components
@@ -50,6 +51,9 @@ const CoachRankingsViewLazy =
     const m = await import('./CoachRankingsView');
     return { default: m.default };
   }) as React.LazyExoticComponent<React.ComponentType<CoachRankingsViewProps>>;
+const NotificationDashboard = lazy(() =>
+  import('./NotificationDashboard').then((m) => ({ default: m.NotificationDashboard }))
+);
 
 // -------------------------
 // Types
@@ -205,7 +209,7 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
   // Rankings -> Performance Modal
@@ -794,7 +798,7 @@ export function StaffView({
                       <button
                         onClick={() => setShowMoreTabs(v => !v)}
                         className={`py-3.5 px-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis'].includes(activeTab)
+                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis', 'notifications'].includes(activeTab)
                             ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                         }`}
@@ -817,6 +821,7 @@ export function StaffView({
                               { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）' },
                               { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析' },
                               { key: 'team-analysis' as const, icon: Target, label: 'チーム分析' },
+                              { key: 'notifications' as const, icon: Bell, label: '通知管理' },
                             ].map(({ key, icon: Icon, label }) => (
                               <button
                                 key={key}
@@ -854,6 +859,7 @@ export function StaffView({
                       <option value="reports">レポート</option>
                       <option value="performance">パフォーマンス分析</option>
                       <option value="team-analysis">チーム分析</option>
+                      <option value="notifications">通知管理</option>
                     </select>
                   </div>
                 </div>
@@ -942,6 +948,17 @@ export function StaffView({
                       teamDaily={teamDaily}
                       cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
                     />
+                  )}
+
+                  {activeTab === 'notifications' && selectedTeam && (
+                    <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+                      <NotificationDashboard
+                        teamId={selectedTeam.id}
+                        teamName={selectedTeam.name}
+                        athletes={safeAthletes.map((a) => ({ id: a.id, name: a.name ?? '' }))}
+                        userId={user.id}
+                      />
+                    </Suspense>
                   )}
                 </div>
               </div>

@@ -75,7 +75,7 @@ export function AthleteSettingsView({ user, onOpenProfileEdit }: Props) {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 transition-colors">
-        <EmailNotificationSettings userId={user.id} userEmail={user.email ?? ''} />
+        <EmailNotificationSettings userId={user.id} />
       </div>
     </div>
   );
