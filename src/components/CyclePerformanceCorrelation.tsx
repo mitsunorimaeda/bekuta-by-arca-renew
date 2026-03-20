@@ -80,8 +80,8 @@ export function CyclePerformanceCorrelation({ userId }: CyclePerformanceCorrelat
       );
     }
 
-    const follicular = correlationData.find((d) => d.phase === 'Follicular');
-    const luteal = correlationData.find((d) => d.phase === 'Luteal');
+    const follicular = correlationData.find((d) => d.phase === '卵胞期');
+    const luteal = correlationData.find((d) => d.phase === '黄体期');
 
     if (follicular && luteal && Number(follicular.avgRPE) < Number(luteal.avgRPE)) {
       insights.push(

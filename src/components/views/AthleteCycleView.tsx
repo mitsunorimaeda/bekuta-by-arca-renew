@@ -1,21 +1,33 @@
 import React, { useState } from "react";
 import { Droplets } from "lucide-react";
 
-import { MenstrualCycleForm } from "../MenstrualCycleForm";
-import { BasalBodyTemperatureForm } from "../BasalBodyTemperatureForm";
-import { MenstrualCycleChart } from "../MenstrualCycleChart";
+import { useMenstrualCycleData } from "../../hooks/useMenstrualCycleData";
+import { CyclePhaseCard } from "../CyclePhaseCard";
+import { CycleQuickLog } from "../CycleQuickLog";
 import { MenstrualCycleCalendar } from "../MenstrualCycleCalendar";
+import { CycleHistory } from "../CycleHistory";
+import { MenstrualCycleChart } from "../MenstrualCycleChart";
 import { CyclePerformanceCorrelation } from "../CyclePerformanceCorrelation";
+import { BasalBodyTemperatureForm } from "../BasalBodyTemperatureForm";
 
 type Props = {
   userId: string;
-  gender: "female" | "male" | null; // AthleteViewから normalizedGenderBinary を渡す
+  gender: "female" | "male" | null;
 };
 
-export function AthleteCycleView({ userId, gender }: Props) {
-  const [cycleViewMode, setCycleViewMode] = useState<"calendar" | "chart">("calendar");
+type SubTab = "history" | "chart" | "correlation";
 
-  // ここで一発ガード（AthleteView側で何回もifしない）
+export function AthleteCycleView({ userId, gender }: Props) {
+  const [subTab, setSubTab] = useState<SubTab>("history");
+  const {
+    cycles,
+    loading,
+    quickLogPeriodStart,
+    quickLogPeriodEnd,
+    getCurrentPhaseInfo,
+    getPrediction,
+  } = useMenstrualCycleData(userId);
+
   if (gender !== "female") {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
@@ -30,46 +42,68 @@ export function AthleteCycleView({ userId, gender }: Props) {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  const phaseInfo = getCurrentPhaseInfo();
+  const prediction = getPrediction();
+  const hasOpenCycle = cycles.some(c => !c.cycle_end_date);
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MenstrualCycleForm userId={userId} />
-        <BasalBodyTemperatureForm userId={userId} />
+    <div className="space-y-4">
+      {/* フェーズカード */}
+      <CyclePhaseCard phaseInfo={phaseInfo} prediction={prediction} />
+
+      {/* クイックログ */}
+      <CycleQuickLog
+        onPeriodStart={quickLogPeriodStart}
+        onPeriodEnd={quickLogPeriodEnd}
+        hasOpenCycle={hasOpenCycle}
+      />
+
+      {/* カレンダー */}
+      <MenstrualCycleCalendar userId={userId} />
+
+      {/* サブタブ */}
+      <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+        {([
+          { key: "history" as const, label: "履歴" },
+          { key: "chart" as const, label: "グラフ" },
+          { key: "correlation" as const, label: "相関分析" },
+        ]).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setSubTab(tab.key)}
+            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+              subTab === tab.key
+                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">周期の表示形式</h3>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setCycleViewMode("calendar")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              cycleViewMode === "calendar"
-                ? "bg-pink-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            カレンダー
-          </button>
-          <button
-            onClick={() => setCycleViewMode("chart")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              cycleViewMode === "chart"
-                ? "bg-pink-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            グラフ
-          </button>
+      {/* サブタブコンテンツ */}
+      {subTab === "history" && <CycleHistory cycles={cycles} />}
+      {subTab === "chart" && (
+        <div className="space-y-4">
+          <MenstrualCycleChart userId={userId} days={90} />
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">
+              基礎体温を記録（任意）
+            </p>
+            <BasalBodyTemperatureForm userId={userId} />
+          </div>
         </div>
-      </div>
-
-      {cycleViewMode === "calendar" ? (
-        <MenstrualCycleCalendar userId={userId} />
-      ) : (
-        <MenstrualCycleChart userId={userId} days={90} />
       )}
-
-      <CyclePerformanceCorrelation userId={userId} />
+      {subTab === "correlation" && <CyclePerformanceCorrelation userId={userId} />}
     </div>
   );
 }

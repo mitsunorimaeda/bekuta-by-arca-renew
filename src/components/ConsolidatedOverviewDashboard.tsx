@@ -12,6 +12,13 @@ import {
 } from 'lucide-react';
 import { ACWRData } from '../lib/acwr';
 import type { Database } from '../lib/database.types';
+import {
+  getCurrentPhase,
+  predictNextCycle,
+  getPhaseColor as getCyclePhaseColor,
+  getPhaseLabel,
+  type CyclePhase,
+} from '../lib/cyclePhaseUtils';
 
 type MenstrualCycle = Database['public']['Tables']['menstrual_cycles']['Row'];
 
@@ -275,127 +282,37 @@ export function ConsolidatedOverviewDashboard({
   const sleepAvg = getSleepAverage();
 
   // =========================
-  // ✅ 月経周期
+  // ✅ 月経周期（cyclePhaseUtils に委譲）
   // =========================
-  const getCurrentCyclePhase = () => {
+  const currentPhaseResult = useMemo(() => {
     if (!menstrualCycles || menstrualCycles.length === 0) return null;
+    return getCurrentPhase(menstrualCycles);
+  }, [menstrualCycles]);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayT = today.getTime();
-
-    for (const cycle of menstrualCycles) {
-      const startT = toMs(cycle.cycle_start_date);
-      if (!Number.isFinite(startT)) continue;
-
-      const endT = cycle.cycle_end_date ? toMs(cycle.cycle_end_date) : null;
-
-      if (todayT >= startT && (!endT || todayT <= endT)) {
-        const daysSinceStart = Math.floor((todayT - startT) / (1000 * 60 * 60 * 24));
-
-        if (cycle.period_duration_days && daysSinceStart < cycle.period_duration_days) {
-          return { phase: 'menstrual', cycle, daysSinceStart };
-        }
-
-        if (cycle.cycle_length_days) {
-          const follicularEnd = Math.floor(cycle.cycle_length_days / 2);
-          if (daysSinceStart < follicularEnd) {
-            return { phase: 'follicular', cycle, daysSinceStart };
-          }
-          const lutealStart = follicularEnd + 2;
-          if (daysSinceStart < lutealStart) {
-            return { phase: 'ovulatory', cycle, daysSinceStart };
-          }
-          if (daysSinceStart < cycle.cycle_length_days) {
-            return { phase: 'luteal', cycle, daysSinceStart };
-          }
-        }
-      }
-    }
-    return null;
-  };
-
-  const getPredictedNextPeriod = () => {
+  const prediction = useMemo(() => {
     if (!menstrualCycles || menstrualCycles.length === 0) return null;
+    return predictNextCycle(menstrualCycles);
+  }, [menstrualCycles]);
 
-    const sortedCycles = [...menstrualCycles].sort(
-      (a, b) => toMs(b.cycle_start_date) - toMs(a.cycle_start_date)
-    );
+  // 表示用のヘルパー
+  const currentPhase = currentPhaseResult
+    ? { phase: currentPhaseResult.phaseInfo.phase, daysSinceStart: currentPhaseResult.phaseInfo.dayInCycle - 1 }
+    : null;
 
-    const latestCycle = sortedCycles[0];
-    if (!latestCycle?.cycle_length_days) return null;
+  const predictedNextPeriod = prediction
+    ? new Date(prediction.predictedStartDate + 'T00:00:00')
+    : null;
 
-    const lastStartT = toMs(latestCycle.cycle_start_date);
-    if (!Number.isFinite(lastStartT)) return null;
-
-    const predictedDate = new Date(lastStartT);
-    predictedDate.setDate(predictedDate.getDate() + latestCycle.cycle_length_days);
-
-    return predictedDate;
+  const getDisplayPhaseColor = (phase: string) => {
+    const colors = getCyclePhaseColor(phase as CyclePhase);
+    return colors.text;
   };
 
-  const getPhaseDisplayName = (phase: string) => {
-    switch (phase) {
-      case 'menstrual':
-        return '月経期';
-      case 'follicular':
-        return '卵胞期';
-      case 'ovulatory':
-        return '排卵期';
-      case 'luteal':
-        return '黄体期';
-      default:
-        return '不明';
-    }
+  const getDisplayPhaseBg = (phase: string) => {
+    const colors = getCyclePhaseColor(phase as CyclePhase);
+    return colors.bg;
   };
 
-  const getPhaseColor = (phase: string) => {
-    switch (phase) {
-      case 'menstrual':
-        return 'text-red-600 dark:text-red-400';
-      case 'follicular':
-        return 'text-green-600 dark:text-green-400';
-      case 'ovulatory':
-        return 'text-yellow-600 dark:text-yellow-400';
-      case 'luteal':
-        return 'text-blue-600 dark:text-blue-400';
-      default:
-        return 'text-gray-600 dark:text-gray-400';
-    }
-  };
-
-  const getPhaseBg = (phase: string) => {
-    switch (phase) {
-      case 'menstrual':
-        return 'bg-red-100 dark:bg-red-900/30';
-      case 'follicular':
-        return 'bg-green-100 dark:bg-green-900/30';
-      case 'ovulatory':
-        return 'bg-yellow-100 dark:bg-yellow-900/30';
-      case 'luteal':
-        return 'bg-blue-100 dark:bg-blue-900/30';
-      default:
-        return 'bg-gray-100 dark:bg-gray-700';
-    }
-  };
-
-  const getPhaseAdvice = (phase: string) => {
-    switch (phase) {
-      case 'menstrual':
-        return '低～中強度トレーニングを推奨';
-      case 'follicular':
-        return '高強度トレーニングに最適';
-      case 'ovulatory':
-        return 'ピークパフォーマンス期';
-      case 'luteal':
-        return '回復重視のトレーニングを';
-      default:
-        return '';
-    }
-  };
-
-  const currentPhase = getCurrentCyclePhase();
-  const predictedNextPeriod = getPredictedNextPeriod();
   const showCycleCard = userGender === 'female';
 
   // DEVだけ：0固定の原因を即確認できるログ（不要なら消してOK）
@@ -708,12 +625,12 @@ export function ConsolidatedOverviewDashboard({
               <div className="flex items-center space-x-3">
                 <div
                   className={`${
-                    currentPhase ? getPhaseBg(currentPhase.phase) : 'bg-pink-100 dark:bg-pink-900/30'
+                    currentPhase ? getDisplayPhaseBg(currentPhase.phase) : 'bg-pink-100 dark:bg-pink-900/30'
                   } p-3 rounded-lg`}
                 >
                   <Droplets
                     className={`w-6 h-6 ${
-                      currentPhase ? getPhaseColor(currentPhase.phase) : 'text-pink-600 dark:text-pink-400'
+                      currentPhase ? getDisplayPhaseColor(currentPhase.phase) : 'text-pink-600 dark:text-pink-400'
                     }`}
                   />
                 </div>
@@ -725,12 +642,12 @@ export function ConsolidatedOverviewDashboard({
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </div>
 
-            {currentPhase ? (
+            {currentPhase && currentPhaseResult ? (
               <>
                 <div className="mb-4">
                   <div className="flex items-baseline space-x-2">
-                    <span className={`text-2xl font-bold ${getPhaseColor(currentPhase.phase)}`}>
-                      {getPhaseDisplayName(currentPhase.phase)}
+                    <span className={`text-2xl font-bold ${getDisplayPhaseColor(currentPhase.phase)}`}>
+                      {currentPhaseResult.phaseInfo.phaseEmoji} {getPhaseLabel(currentPhase.phase as CyclePhase)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
@@ -738,12 +655,12 @@ export function ConsolidatedOverviewDashboard({
                   </p>
                 </div>
 
-                <div className={`${getPhaseBg(currentPhase.phase)} rounded-lg p-3 mb-3`}>
+                <div className={`${getDisplayPhaseBg(currentPhase.phase)} rounded-lg p-3 mb-3`}>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                     トレーニング推奨
                   </p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {getPhaseAdvice(currentPhase.phase)}
+                    {currentPhaseResult.phaseInfo.trainingAdvice}
                   </p>
                 </div>
 

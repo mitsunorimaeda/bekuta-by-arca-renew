@@ -1,10 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
+import {
+  getCyclePhaseForDate,
+  getCurrentPhase,
+  predictNextCycle,
+  type CyclePhaseInfo,
+  type CyclePrediction,
+} from '../lib/cyclePhaseUtils';
 
 type MenstrualCycle = Database['public']['Tables']['menstrual_cycles']['Row'];
 type MenstrualCycleInsert = Database['public']['Tables']['menstrual_cycles']['Insert'];
 type MenstrualCycleUpdate = Database['public']['Tables']['menstrual_cycles']['Update'];
+
+export type { MenstrualCycle, MenstrualCycleInsert, MenstrualCycleUpdate };
 
 export function useMenstrualCycleData(userId: string) {
   const [cycles, setCycles] = useState<MenstrualCycle[]>([]);
@@ -33,27 +42,31 @@ export function useMenstrualCycleData(userId: string) {
     }
   };
 
+  /** 組織IDを取得する内部ヘルパー */
+  const getOrganizationId = async (): Promise<string | null> => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) throw new Error('User not authenticated');
+
+    const { data: userProfile } = await supabase
+      .from('users')
+      .select('team_id')
+      .eq('user_id', userData.user.id)
+      .maybeSingle();
+
+    if (userProfile?.team_id) {
+      const { data: team } = await supabase
+        .from('teams')
+        .select('organization_id')
+        .eq('id', userProfile.team_id)
+        .maybeSingle();
+      return team?.organization_id || null;
+    }
+    return null;
+  };
+
   const addCycle = async (cycle: Omit<MenstrualCycleInsert, 'user_id'>) => {
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error('User not authenticated');
-
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('team_id')
-        .eq('user_id', userData.user.id)
-        .maybeSingle();
-
-      let organizationId = null;
-      if (userProfile?.team_id) {
-        const { data: team } = await supabase
-          .from('teams')
-          .select('organization_id')
-          .eq('id', userProfile.team_id)
-          .maybeSingle();
-
-        organizationId = team?.organization_id || null;
-      }
+      const organizationId = await getOrganizationId();
 
       const { data, error: insertError } = await supabase
         .from('menstrual_cycles')
@@ -113,42 +126,85 @@ export function useMenstrualCycleData(userId: string) {
     }
   };
 
+  // ── クイックログ ──
+
+  /** 1タップで生理開始を記録。過去の平均から cycle_length_days を自動入力 */
+  const quickLogPeriodStart = useCallback(async (date?: string) => {
+    const startDate = date || new Date().toISOString().slice(0, 10);
+
+    // 直前の周期を終了させる（cycle_end_dateが未設定の場合）
+    const openCycle = cycles.find(c => !c.cycle_end_date);
+    if (openCycle) {
+      const endDate = new Date(startDate + 'T00:00:00');
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = endDate.toISOString().slice(0, 10);
+
+      const cycleLengthDays = Math.floor(
+        (new Date(startDate + 'T00:00:00').getTime() - new Date(openCycle.cycle_start_date + 'T00:00:00').getTime())
+        / (1000 * 60 * 60 * 24)
+      );
+
+      await updateCycle(openCycle.id, {
+        cycle_end_date: endDateStr,
+        cycle_length_days: cycleLengthDays > 0 ? cycleLengthDays : null,
+      });
+    }
+
+    // 過去データから平均を計算
+    const prediction = predictNextCycle(cycles);
+
+    return addCycle({
+      cycle_start_date: startDate,
+      cycle_length_days: prediction?.averageCycleLength || null,
+      period_duration_days: prediction?.averagePeriodDuration || null,
+    });
+  }, [cycles]);
+
+  /** 1タップで生理終了を記録 */
+  const quickLogPeriodEnd = useCallback(async (date?: string) => {
+    const endDate = date || new Date().toISOString().slice(0, 10);
+
+    // 最新の未終了周期を探す
+    const openCycle = cycles.find(c => !c.cycle_end_date);
+    if (!openCycle) {
+      throw new Error('終了させる生理記録がありません');
+    }
+
+    const durationDays = Math.floor(
+      (new Date(endDate + 'T00:00:00').getTime() - new Date(openCycle.cycle_start_date + 'T00:00:00').getTime())
+      / (1000 * 60 * 60 * 24)
+    ) + 1;
+
+    return updateCycle(openCycle.id, {
+      period_duration_days: durationDays > 0 ? durationDays : null,
+    });
+  }, [cycles]);
+
+  // ── フェーズ計算（cyclePhaseUtils に委譲） ──
+
   const getCyclePhase = (cycle: MenstrualCycle, targetDate: Date): string | null => {
-    const startDate = new Date(cycle.cycle_start_date);
-    const daysSinceStart = Math.floor((targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysSinceStart < 0) return null;
-
-    if (cycle.period_duration_days && daysSinceStart < cycle.period_duration_days) {
-      return 'menstrual';
-    }
-
-    if (cycle.cycle_length_days) {
-      const follicularEnd = Math.floor(cycle.cycle_length_days / 2);
-      if (daysSinceStart < follicularEnd) {
-        return 'follicular';
-      }
-      const lutealStart = follicularEnd + 2;
-      if (daysSinceStart < lutealStart) {
-        return 'ovulatory';
-      }
-      if (daysSinceStart < cycle.cycle_length_days) {
-        return 'luteal';
-      }
-    }
-
-    return null;
+    const info = getCyclePhaseForDate(cycle, targetDate);
+    return info?.phase || null;
   };
 
   const getCurrentCyclePhase = (): { cycle: MenstrualCycle; phase: string } | null => {
-    const today = new Date();
-    for (const cycle of cycles) {
-      const phase = getCyclePhase(cycle, today);
-      if (phase) {
-        return { cycle, phase };
-      }
-    }
-    return null;
+    const result = getCurrentPhase(cycles);
+    if (!result) return null;
+    // cycles配列から一致するMenstrualCycleを見つけて返す
+    const matchedCycle = cycles.find(
+      c => c.cycle_start_date === result.cycle.cycle_start_date
+    );
+    if (!matchedCycle) return null;
+    return { cycle: matchedCycle, phase: result.phaseInfo.phase };
+  };
+
+  const getCurrentPhaseInfo = (): CyclePhaseInfo | null => {
+    const result = getCurrentPhase(cycles);
+    return result?.phaseInfo || null;
+  };
+
+  const getPrediction = (): CyclePrediction | null => {
+    return predictNextCycle(cycles);
   };
 
   return {
@@ -158,8 +214,12 @@ export function useMenstrualCycleData(userId: string) {
     addCycle,
     updateCycle,
     deleteCycle,
+    quickLogPeriodStart,
+    quickLogPeriodEnd,
     getCyclePhase,
     getCurrentCyclePhase,
+    getCurrentPhaseInfo,
+    getPrediction,
     refetch: fetchCycles,
   };
 }

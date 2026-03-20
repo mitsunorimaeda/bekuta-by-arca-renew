@@ -1,9 +1,11 @@
 // src/components/AthleteDetailModal.tsx
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { X, Activity, Scale, BarChart2, User as UserIcon } from 'lucide-react';
+import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets } from 'lucide-react';
 import { User } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
+import { useMenstrualCycleData } from '../hooks/useMenstrualCycleData';
+import { getPhaseColor as getCyclePhaseColorUtil } from '../lib/cyclePhaseUtils';
 import { useWeightData } from '../hooks/useWeightData';
 import {
   ResponsiveContainer,
@@ -97,6 +99,11 @@ function toNum(v: any): number | null {
 export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
+
+  // 女性選手のみ月経周期データを取得
+  const isFemale = athlete.gender === 'female' || athlete.gender === '女性';
+  const cycleHook = useMenstrualCycleData(athlete.id);
+  const cyclePhaseInfo = isFemale ? cycleHook.getCurrentPhaseInfo() : null;
 
   // ✅ undefined でも落ちないように正規化
   const records = Array.isArray(td?.records) ? td.records : [];
@@ -508,6 +515,29 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard }: Athlete
                   </div>
                 </div>
               </div>
+
+              {/* 月経周期フェーズ（女性のみ） */}
+              {isFemale && weekCard?.is_sharing_active && cyclePhaseInfo && (() => {
+                const colors = getCyclePhaseColorUtil(cyclePhaseInfo.phase);
+                return (
+                  <div className={`${colors.bg} border ${colors.border} rounded-xl p-4 flex items-center gap-3`}>
+                    <Droplets className={`w-5 h-5 ${colors.text}`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold ${colors.text}`}>
+                          {cyclePhaseInfo.phaseEmoji} {cyclePhaseInfo.phaseLabel}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          ({cyclePhaseInfo.dayInCycle}日目/{cyclePhaseInfo.totalCycleDays}日周期)
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-700 dark:text-gray-300 mt-0.5">
+                        {cyclePhaseInfo.trainingAdvice}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

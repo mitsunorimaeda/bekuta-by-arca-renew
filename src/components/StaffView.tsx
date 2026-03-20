@@ -15,6 +15,7 @@ import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import { useOrganizations } from '../hooks/useOrganizations';
 import { calcRiskForAthlete, sortAthletesByRisk, AthleteRisk } from '../lib/riskUtils';
+import { useTeamCyclePhases } from '../hooks/useTeamCyclePhases';
 
 import { useWeeklyGrowthCycle } from '../hooks/useWeeklyGrowthCycle';
 import { WeeklyGrowthCycleView } from './WeeklyGrowthCycleView';
@@ -888,6 +889,13 @@ useEffect(() => {
     return map;
   }, [noDataAthletes]);
 
+  // 女性選手の月経周期フェーズ（リスク評価に使用）
+  const femaleAthleteIds = useMemo(
+    () => safeAthletes.filter(a => a.gender === 'female' || a.gender === '女性').map(a => a.id),
+    [safeAthletes]
+  );
+  const { phaseMap: cyclePhaseMap } = useTeamCyclePhases(femaleAthleteIds);
+
   const athleteRiskMap = useMemo(() => {
     const map: Record<string, AthleteRisk> = {};
     for (const a of safeAthletes) {
@@ -897,10 +905,11 @@ useEffect(() => {
         acwrInfo: athleteACWRMap?.[a.id] ?? null,
         weekCard: weekCardMap?.[a.id] ?? null,
         noData: noDataMap?.[a.id] ?? null,
+        cyclePhase: cyclePhaseMap[a.id]?.phase ?? null,
       });
     }
     return map;
-  }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap]);
+  }, [safeAthletes, athleteACWRMap, weekCardMap, noDataMap, cyclePhaseMap]);
 
   const sortedAthletes = useMemo(() => {
     return sortAthletesByRisk({

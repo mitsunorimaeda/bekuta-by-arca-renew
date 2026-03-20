@@ -1,5 +1,7 @@
 // src/lib/riskUtils.ts
 
+import type { CyclePhase } from './cyclePhaseUtils';
+
 // ===============================
 // 型定義
 // ===============================
@@ -54,8 +56,9 @@ export function calcRiskForAthlete(params: {
   acwrInfo?: AthleteACWRInfo | null;
   weekCard?: WeekCard | null;
   noData?: NoDataInfo | null;
+  cyclePhase?: CyclePhase | null;
 }): AthleteRisk {
-  const { id, name, acwrInfo, weekCard, noData } = params;
+  const { id, name, acwrInfo, weekCard, noData, cyclePhase } = params;
 
   const sharingOn = !!weekCard?.is_sharing_active;
 
@@ -113,6 +116,16 @@ export function calcRiskForAthlete(params: {
   if (sharingOn && typeof sleep === 'number' && sleep <= 5.5) {
     isCaution = true;
     reasons.push('睡眠↓');
+  }
+
+  // 月経周期フェーズによる追加リスク
+  if (sharingOn && cyclePhase === 'luteal' && typeof acwr === 'number' && acwr >= 1.2) {
+    isCaution = true;
+    reasons.push('黄体期+高負荷');
+  }
+  if (sharingOn && cyclePhase === 'menstrual' && typeof sleep === 'number' && sleep <= 6.0) {
+    isCaution = true;
+    reasons.push('月経期+睡眠↓');
   }
 
   if (isCaution) {
