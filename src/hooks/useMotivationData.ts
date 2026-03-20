@@ -79,28 +79,34 @@ export function useMotivationData(userId: string) {
         notes: data.notes || null
       };
 
-      // 🔁 INSERT → UPSERT に変更
-      //  ユニーク制約 motivation_records_user_id_date_key
-      //  = user_id + date に合わせて onConflict を指定
-      const { data: newRecord, error: upsertError } = await supabase
-        .from('motivation_records')
-        .upsert(insertData, {
-          onConflict: 'user_id,date'
-        })
-        .select()
-        .single();
-
-      if (upsertError) throw upsertError;
-
-      // ローカル state も「同じ user_id + date のものは置き換え」にする
-      setRecords(prev => {
-        const filtered = prev.filter(
-          r => !(r.user_id === newRecord.user_id && r.date === newRecord.date)
-        );
-        return [newRecord, ...filtered].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
+      const { offlineMutation } = await import('../lib/offlineSupabase');
+      const result = await offlineMutation({
+        table: 'motivation_records',
+        operation: 'upsert',
+        payload: insertData,
+        onConflict: 'user_id,date',
       });
+
+      if (result.queued) return { queued: true };
+
+      // オンライン成功時はデータ再取得
+      const { data: newRecord, error: fetchError } = await supabase
+        .from('motivation_records')
+        .select('*')
+        .eq('user_id', insertData.user_id)
+        .eq('date', insertData.date)
+        .maybeSingle();
+
+      if (!fetchError && newRecord) {
+        setRecords(prev => {
+          const filtered = prev.filter(
+            r => !(r.user_id === newRecord.user_id && r.date === newRecord.date)
+          );
+          return [newRecord, ...filtered].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+        });
+      }
     } catch (err) {
       console.error('Error adding motivation record:', err);
       throw err;

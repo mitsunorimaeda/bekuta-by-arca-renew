@@ -132,18 +132,29 @@ export function useWeightData(userId: string) {
           notes: data.notes || null,
         };
 
-        const { data: newRecord, error: insertError } = await supabase
-          .from('weight_records')
-          .insert(insertData)
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-
-        setRecords((prev) => {
-          const merged = [newRecord as WeightRecord, ...prev];
-          return merged.sort(sortByDateDesc);
+        const { offlineMutation } = await import('../lib/offlineSupabase');
+        const result = await offlineMutation({
+          table: 'weight_records',
+          operation: 'insert',
+          payload: insertData,
         });
+
+        if (result.queued) return { queued: true };
+
+        // オンライン成功時はデータ再取得
+        const { data: newRecord, error: fetchError } = await supabase
+          .from('weight_records')
+          .select('*')
+          .eq('user_id', insertData.user_id)
+          .eq('date', insertData.date)
+          .maybeSingle();
+
+        if (!fetchError && newRecord) {
+          setRecords((prev) => {
+            const merged = [newRecord as WeightRecord, ...prev];
+            return merged.sort(sortByDateDesc);
+          });
+        }
       } catch (err) {
         console.error('Error adding weight record:', err);
         throw err;

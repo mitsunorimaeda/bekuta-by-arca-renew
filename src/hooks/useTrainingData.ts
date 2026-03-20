@@ -241,21 +241,27 @@ export function useTrainingData(userId: string) {
 
   const addTrainingRecord = useCallback(
     async (payload: Omit<TrainingRecordRow, "id" | "user_id"> & { rpe: number; duration_min: number; date: string }) => {
-      const { error } = await supabase.from("training_records").insert({
-        user_id: userId,
-        date: payload.date,
-        rpe: payload.rpe,
-        duration_min: payload.duration_min,
-        arrow_score: (payload as any).arrow_score ?? null,
-        signal_score: (payload as any).signal_score ?? null,
+      const { offlineMutation } = await import('../lib/offlineSupabase');
+      const result = await offlineMutation({
+        table: 'training_records',
+        operation: 'insert',
+        payload: {
+          user_id: userId,
+          date: payload.date,
+          rpe: payload.rpe,
+          duration_min: payload.duration_min,
+          arrow_score: (payload as any).arrow_score ?? null,
+          signal_score: (payload as any).signal_score ?? null,
+        },
       });
 
-      if (error) throw error;
+      if (result.queued) return { queued: true };
 
       // 再ロード（ACWRも再計算/再取得）
       const training = await fetchTrainingRecords();
       const daily = await fetchAcwrDaily();
       setAcwrData(daily.length > 0 ? daily : buildAcwrFromTrainingRecords(training ?? []));
+      return { queued: false };
     },
     [userId, fetchTrainingRecords, fetchAcwrDaily]
   );

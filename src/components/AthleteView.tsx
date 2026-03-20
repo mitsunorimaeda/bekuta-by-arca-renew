@@ -6,6 +6,7 @@ import { TrainingForm } from './TrainingForm';
 import { AlertSummary } from './AlertSummary';
 import { supabase } from '../lib/supabase';
 import { WeightForm } from './WeightForm';
+import { OfflineIndicator } from './OfflineIndicator';
 
 import { BMIDisplay } from './BMIDisplay';
 import { ProfileEditForm } from './ProfileEditForm';
@@ -909,13 +910,14 @@ export function AthleteView({
 
   const handleTrainingSubmitForCheckIn = useCallback(
     async (data: { rpe: number; duration_min: number; date: string; arrow_score?: number; signal_score?: number }) => {
-      await addTrainingRecord({
+      const result = await addTrainingRecord({
         rpe: data.rpe,
         duration_min: data.duration_min,
         date: data.date,
         arrow_score: data.arrow_score ?? 50,
         signal_score: data.signal_score ?? 50,
       } as any);
+      return result;
     },
     [addTrainingRecord]
   );
@@ -2219,7 +2221,8 @@ export function AthleteView({
                   okLabel="OK"
                   closeLabel="閉じる"
                 />
-              )}    
+              )}
+              {!readOnly && <OfflineIndicator />}
               </div>
   );
 }

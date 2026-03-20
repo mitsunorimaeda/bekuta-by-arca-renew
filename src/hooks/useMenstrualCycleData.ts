@@ -68,18 +68,31 @@ export function useMenstrualCycleData(userId: string) {
     try {
       const organizationId = await getOrganizationId();
 
-      const { data, error: insertError } = await supabase
-        .from('menstrual_cycles')
-        .insert({
-          ...cycle,
-          user_id: userId,
-          organization_id: organizationId,
-        })
-        .select()
-        .single();
+      const insertPayload = {
+        ...cycle,
+        user_id: userId,
+        organization_id: organizationId,
+      };
 
-      if (insertError) throw insertError;
-      if (data) {
+      const { offlineMutation } = await import('../lib/offlineSupabase');
+      const result = await offlineMutation({
+        table: 'menstrual_cycles',
+        operation: 'insert',
+        payload: insertPayload,
+      });
+
+      if (result.queued) return { queued: true } as any;
+
+      // オンライン成功時はデータ再取得
+      const { data, error: fetchError } = await supabase
+        .from('menstrual_cycles')
+        .select('*')
+        .eq('user_id', userId)
+        .order('cycle_start_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!fetchError && data) {
         setCycles((prev) => [data, ...prev]);
       }
       return data;

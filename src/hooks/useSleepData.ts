@@ -80,17 +80,28 @@ export function useSleepData(userId: string) {
         notes: data.notes || null
       };
 
-      const { data: newRecord, error: insertError } = await supabase
+      const { offlineMutation } = await import('../lib/offlineSupabase');
+      const result = await offlineMutation({
+        table: 'sleep_records',
+        operation: 'insert',
+        payload: insertData,
+      });
+
+      if (result.queued) return { queued: true };
+
+      // オンライン成功時はデータ再取得
+      const { data: newRecord, error: fetchError } = await supabase
         .from('sleep_records')
-        .insert(insertData)
-        .select()
-        .single();
+        .select('*')
+        .eq('user_id', insertData.user_id)
+        .eq('date', insertData.date)
+        .maybeSingle();
 
-      if (insertError) throw insertError;
-
-      setRecords(prev => [newRecord, ...prev].sort((a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      ));
+      if (!fetchError && newRecord) {
+        setRecords(prev => [newRecord, ...prev].sort((a, b) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        ));
+      }
     } catch (err) {
       console.error('Error adding sleep record:', err);
       throw err;

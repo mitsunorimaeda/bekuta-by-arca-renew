@@ -181,6 +181,7 @@ export function UnifiedDailyCheckIn({
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
+  const [offlineMessage, setOfflineMessage] = useState<string>('');
   const [isSliding, setIsSliding] = useState(false);
 
   // Duplicate detection states
@@ -199,6 +200,7 @@ export function UnifiedDailyCheckIn({
   const handleSectionComplete = async (section: 'training' | 'weight' | 'conditioning' | 'cycle') => {
     setSubmitting(true);
     setError('');
+    setOfflineMessage('');
 
     try {
       if (section === 'training') {
@@ -219,14 +221,18 @@ export function UnifiedDailyCheckIn({
           return;
         }
     
-        await onTrainingSubmit({
+        const trainResult = await onTrainingSubmit({
           rpe,
           duration_min: duration,
           date: selectedDate,
           arrow_score: arrowScore ?? 50,
           signal_score: signalScore ?? 50,
         });
-    
+
+        if (trainResult?.queued) {
+          setOfflineMessage('オフラインで保存しました。接続時に自動送信されます。');
+        }
+
         setCompletedSections((prev) => new Set(prev).add('training'));
         setActiveSection('weight');
         return;
@@ -249,12 +255,16 @@ export function UnifiedDailyCheckIn({
             return;
           }
     
-          await onWeightSubmit({
+          const weightResult = await onWeightSubmit({
             weight_kg: Number(weight),
             date: selectedDate,
             notes: weightNotes || undefined,
           });
-    
+
+          if (weightResult?.queued) {
+            setOfflineMessage('オフラインで保存しました。接続時に自動送信されます。');
+          }
+
           setCompletedSections((prev) => new Set(prev).add('weight'));
         }
     
@@ -293,21 +303,25 @@ export function UnifiedDailyCheckIn({
         }
     
         // ✅ 既存なし → 保存
-        await onSleepSubmit({
+        const sleepResult = await onSleepSubmit({
           sleep_hours: sleepHours,
           sleep_quality: sleepQuality,
           date: selectedDate,
           notes: sleepNotes || undefined,
         });
-    
-        await onMotivationSubmit({
+
+        const motivResult = await onMotivationSubmit({
           motivation_level: motivationLevel,
           energy_level: energyLevel,
           stress_level: stressLevel,
           date: selectedDate,
           notes: conditioningNotes || undefined,
         });
-    
+
+        if (sleepResult?.queued || motivResult?.queued) {
+          setOfflineMessage('オフラインで保存しました。接続時に自動送信されます。');
+        }
+
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
     
         // ✅ 女性ならcycleへ
@@ -906,6 +920,12 @@ export function UnifiedDailyCheckIn({
             {error && activeSection !== 'cycle' && (
               <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            {offlineMessage && !error && (
+              <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                <p className="text-sm text-amber-700 dark:text-amber-400">{offlineMessage}</p>
               </div>
             )}
 

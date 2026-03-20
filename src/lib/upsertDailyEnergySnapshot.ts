@@ -33,20 +33,19 @@ export async function upsertDailyEnergySnapshot(params: {
 
   const tdee = Math.round(bmr * activityFactor);
 
-  // ✅ 1日1行で upsert（onConflictは user_id,date）
-  const { error } = await supabase
-    .from("daily_energy_snapshots")
-    .upsert(
-      {
-        user_id: userId,
-        date,
-        bmr,
-        srpe,
-        activity_factor: activityFactor,
-        tdee,
-      },
-      { onConflict: "user_id,date" }
-    );
-
-  if (error) throw error;
+  // ✅ 1日1行で upsert（onConflictは user_id,date）— オフライン対応
+  const { offlineMutation } = await import('./offlineSupabase');
+  await offlineMutation({
+    table: 'daily_energy_snapshots',
+    operation: 'upsert',
+    payload: {
+      user_id: userId,
+      date,
+      bmr,
+      srpe,
+      activity_factor: activityFactor,
+      tdee,
+    },
+    onConflict: 'user_id,date',
+  });
 }
