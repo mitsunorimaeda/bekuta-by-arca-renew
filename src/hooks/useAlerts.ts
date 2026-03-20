@@ -16,6 +16,61 @@ import { useRealtimeHub } from "./useRealtimeHub";
 const ENABLE_REALTIME_ALERT_EMAILS = false;
 type UserRole = AppRole;
 
+// --------------------------------------------------
+// localStorage によるアラート既読/非表示の永続化
+// キー: `${user_id}-${type}-${date}` （アラートの安定キー）
+// --------------------------------------------------
+const STORAGE_KEY = 'bekuta_alert_state';
+const STATE_TTL_DAYS = 14; // 14日で古いエントリを自動削除
+
+type PersistedAlertState = {
+  read: Record<string, number>;      // stableKey → timestamp
+  dismissed: Record<string, number>; // stableKey → timestamp
+};
+
+function getAlertStableKey(alert: { user_id: string; type: string; created_at: string }): string {
+  return `${alert.user_id}-${alert.type}-${alert.created_at.split("T")[0]}`;
+}
+
+function loadPersistedState(): PersistedAlertState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { read: {}, dismissed: {} };
+    return JSON.parse(raw) as PersistedAlertState;
+  } catch {
+    return { read: {}, dismissed: {} };
+  }
+}
+
+function savePersistedState(state: PersistedAlertState): void {
+  try {
+    // 古いエントリを掃除
+    const cutoff = Date.now() - STATE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    for (const key of Object.keys(state.read)) {
+      if (state.read[key] < cutoff) delete state.read[key];
+    }
+    for (const key of Object.keys(state.dismissed)) {
+      if (state.dismissed[key] < cutoff) delete state.dismissed[key];
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage full or unavailable — silently ignore
+  }
+}
+
+/** 生成されたアラートに永続化された既読/非表示状態を適用 */
+function applyPersistedState(alerts: Alert[]): Alert[] {
+  const state = loadPersistedState();
+  return alerts.map((a) => {
+    const key = getAlertStableKey(a);
+    return {
+      ...a,
+      is_read: a.is_read || !!state.read[key],
+      is_dismissed: a.is_dismissed || !!state.dismissed[key],
+    };
+  });
+}
+
 export function useAlerts(userId: string, userRole: UserRole) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -162,11 +217,11 @@ export function useAlerts(userId: string, userRole: UserRole) {
 
       setAlerts((prev) => {
         const existingAlertKeys = new Set(
-          prev.map((a) => `${a.user_id}-${a.type}-${a.created_at.split("T")[0]}`)
+          prev.map((a) => getAlertStableKey(a))
         );
 
         const uniqueNewAlerts = newAlerts.filter(
-          (a) => !existingAlertKeys.has(`${a.user_id}-${a.type}-${a.created_at.split("T")[0]}`)
+          (a) => !existingAlertKeys.has(getAlertStableKey(a))
         );
 
         if (uniqueNewAlerts.length > 0) {
@@ -177,10 +232,11 @@ export function useAlerts(userId: string, userRole: UserRole) {
           }
 
           const combined = [...prev, ...uniqueNewAlerts];
-          return sortAlertsByPriority(filterActiveAlerts(combined));
+          // 永続化された既読/非表示状態を適用
+          return sortAlertsByPriority(filterActiveAlerts(applyPersistedState(combined)));
         }
 
-        return filterActiveAlerts(prev);
+        return filterActiveAlerts(applyPersistedState(prev));
       });
     } catch (error) {
       console.error("Error checking and generating alerts:", error);
@@ -274,17 +330,38 @@ export function useAlerts(userId: string, userRole: UserRole) {
   }, [alerts]);
 
   const markAsRead = useCallback(async (alertId: string) => {
-    setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a)));
+    setAlerts((prev) => {
+      const target = prev.find((a) => a.id === alertId);
+      if (target) {
+        const state = loadPersistedState();
+        state.read[getAlertStableKey(target)] = Date.now();
+        savePersistedState(state);
+      }
+      return prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a));
+    });
   }, []);
 
   const dismissAlert = useCallback(async (alertId: string) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a))
-    );
+    setAlerts((prev) => {
+      const target = prev.find((a) => a.id === alertId);
+      if (target) {
+        const state = loadPersistedState();
+        state.dismissed[getAlertStableKey(target)] = Date.now();
+        savePersistedState(state);
+      }
+      return prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a));
+    });
   }, []);
 
   const markAllAsRead = useCallback(async () => {
-    setAlerts((prev) => prev.map((a) => ({ ...a, is_read: true })));
+    setAlerts((prev) => {
+      const state = loadPersistedState();
+      for (const a of prev) {
+        state.read[getAlertStableKey(a)] = Date.now();
+      }
+      savePersistedState(state);
+      return prev.map((a) => ({ ...a, is_read: true }));
+    });
   }, []);
 
   const clearDismissedAlerts = useCallback(() => {

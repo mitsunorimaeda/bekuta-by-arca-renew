@@ -6,7 +6,7 @@ import { Alert } from '../lib/alerts';
 import { AthleteList } from './AthleteList';
 import { AthleteDetailModal } from './AthleteDetailModal';
 import { TeamACWRChart } from './TeamACWRChart';
-import { AlertPanel } from './AlertPanel';
+
 import { TutorialController } from './TutorialController';
 import { ChartErrorBoundary } from './ChartErrorBoundary';
 
@@ -31,7 +31,6 @@ import {
   Users,
   BarChart3,
   TrendingUp,
-  AlertTriangle,
   Activity,
   HelpCircle,
   FileText,
@@ -290,7 +289,6 @@ export function StaffView({
     metricKey: 'primary_value',
   });
 
-  const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
 
   const [showAvgRPE, setShowAvgRPE] = useState(true);
@@ -370,9 +368,6 @@ const teamAlerts = useMemo(() => {
   });
 }, [safeAlerts, selectedTeam?.id]);
 
-const highPriorityTeamAlerts = useMemo(() => {
-  return teamAlerts.filter((al: any) => al?.priority === 'high');
-}, [teamAlerts]);
 // ✅ 追加（ここまで）
 
 // ✅ ここ：ids は毎回 new Array にならないよう useMemo 固定（無限fetch対策）
@@ -741,13 +736,6 @@ useEffect(() => {
   };
 
   // =========================
-  // Alert handlers
-  // =========================
-  const markAsRead = async (alertId: string) => console.log('Mark as read:', alertId);
-  const dismissAlert = async (alertId: string) => console.log('Dismiss alert:', alertId);
-  const markAllAsRead = async () => console.log('Mark all as read');
-
-  // =========================
   // Derived UI values
   // =========================
   const latestTeamACWR =
@@ -961,58 +949,37 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-3">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900">コーチダッシュボード</h1>
-
-            <div className="flex items-center space-x-1">
-              {highPriorityTeamAlerts.length > 0 && (
-                <button
-                  onClick={() => setShowAlertPanel(true)}
-                  className="p-2 text-gray-600 hover:text-red-600 transition-colors relative"
-                  title="アラート"
-                >
-                  <AlertTriangle className="w-5 h-5" />
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                    {highPriorityTeamAlerts.length}
-                  </span>
-                </button>
-              )}
-
+      {/* チーム選択バー（GlobalHeaderの下に表示） */}
+      {teams.length > 0 && (
+        <div className="bg-white border-b border-gray-200 sticky top-16 z-30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+            <div className="flex items-center gap-3">
+              <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <select
+                value={selectedTeam?.id || ''}
+                onChange={(e) => {
+                  const team = teams.find((t) => t.id === e.target.value);
+                  if (team) setSelectedTeam(team);
+                }}
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
               <button
                 onClick={startTutorial}
-                className="p-2 text-gray-600 hover:text-green-600 transition-colors"
+                className="p-2 text-gray-500 hover:text-green-600 transition-colors"
                 title="チュートリアル"
               >
-                <HelpCircle className="w-5 h-5" />
+                <HelpCircle className="w-4 h-4" />
               </button>
             </div>
           </div>
-
-          {teams.length > 0 && (
-            <div className="pb-3 border-t border-gray-100">
-              <div className="flex items-center gap-3 pt-3">
-                <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <select
-                  value={selectedTeam?.id || ''}
-                  onChange={(e) => {
-                    const team = teams.find((t) => t.id === e.target.value);
-                    if (team) setSelectedTeam(team);
-                  }}
-                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                >
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
         </div>
-      </header>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {teams.length === 0 ? (
@@ -1592,17 +1559,6 @@ useEffect(() => {
           onClose={() => setSelectedAthlete(null)}
           risk={athleteRiskMap[selectedAthlete.id]}
           weekCard={weekCardMap[selectedAthlete.id]}
-        />
-      )}
-
-      {showAlertPanel && (
-        <AlertPanel
-          alerts={teamAlerts}
-          onMarkAsRead={markAsRead}
-          onDismiss={dismissAlert}
-          onMarkAllAsRead={markAllAsRead}
-          onClose={() => setShowAlertPanel(false)}
-          userRole={user.role}
         />
       )}
 
