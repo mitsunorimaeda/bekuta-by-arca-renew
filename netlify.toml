@@ -18,6 +18,12 @@
   to = "/assets/:splat"
   status = 200
 
+# ✅ asset-manifest.json をSPA fallbackの対象外にする（SW precache用）
+[[redirects]]
+  from = "/asset-manifest.json"
+  to = "/asset-manifest.json"
+  status = 200
+
 # SPA ルーティング
 [[redirects]]
   from = "/*"
