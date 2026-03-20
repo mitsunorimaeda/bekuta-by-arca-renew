@@ -51,10 +51,10 @@ export function WeeklyGrowthCycleView(props: { teamDaily: DailyCyclePoint[]; wee
   }, [teamDaily]);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 space-y-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5 space-y-4 transition-colors">
       <div>
-        <div className="text-sm sm:text-base font-semibold text-gray-900">週サイクル（{weekLabel}）</div>
-        <div className="text-xs text-gray-500">
+        <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">週サイクル（{weekLabel}）</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">
           上：日別平均のマトリクス（点サイズ＝負荷 load） / 下：週の推移（load・成長・理解）
         </div>
       </div>
@@ -111,20 +111,21 @@ export function WeeklyGrowthCycleView(props: { teamDaily: DailyCyclePoint[]; wee
       {/* 下：週の推移（サイクル感） */}
       <div style={{ width: '100%', height: 260 }}>
         <ResponsiveContainer>
-          <LineChart data={timeline} margin={{ top: 10, right: 14, bottom: 10, left: 10 }}>
-            <CartesianGrid />
+          <LineChart data={timeline} margin={{ top: 10, right: 50, bottom: 10, left: 10 }}>
+            <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" />
-            <YAxis />
+            <YAxis yAxisId="left" label={{ value: '負荷', angle: -90, position: 'insideLeft', offset: -5, style: { fontSize: 11, fill: '#3b82f6' } }} />
+            <YAxis yAxisId="right" orientation="right" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} label={{ value: '成長・理解', angle: 90, position: 'insideRight', offset: -5, style: { fontSize: 11, fill: '#10b981' } }} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="load" name="負荷(load)" />
-            <Line type="monotone" dataKey="growth" name="成長(平均)" />
-            <Line type="monotone" dataKey="understanding" name="理解(平均)" />
+            <Line yAxisId="left" type="monotone" dataKey="load" name="負荷(load)" stroke="#3b82f6" strokeWidth={2} />
+            <Line yAxisId="right" type="monotone" dataKey="growth" name="成長(平均)" stroke="#10b981" strokeWidth={2} />
+            <Line yAxisId="right" type="monotone" dataKey="understanding" name="理解(平均)" stroke="#f59e0b" strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-gray-500 dark:text-gray-400">
         ※「成長/理解」は 0–100 の平均値。n=0 の日は点が薄く、loadは0になります。
       </div>
     </div>
