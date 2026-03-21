@@ -2,42 +2,37 @@ import type { AppRole } from './roles';
 import { TutorialStep } from '../components/TutorialController';
 
 export const athleteTutorialSteps: TutorialStep[] = [
-  // Step 1: ようこそ（説明）
   {
     id: 'athlete-welcome',
     title: 'Bekuta へようこそ！',
-    description: 'まずは練習記録を入力してみましょう。右下の＋ボタンから始められます。',
+    description: 'Bekutaはトレーニング、体重、睡眠、モチベーションを一元管理するアプリです。まずは使い方を簡単にご紹介します。',
     position: 'center',
   },
-  // Step 2: FABをタップ（インタラクティブ）
   {
-    id: 'athlete-tap-fab',
-    title: 'ステップ1：＋ボタンをタップ',
-    description: '右下の青い＋ボタンをタップして、記録画面を開いてください',
+    id: 'athlete-checkin',
+    title: '毎日の記録は＋ボタンから',
+    description: '右下の青い＋ボタンをタップすると、練習記録・体重・睡眠・モチベーションをまとめて入力できます。RPE（きつさ）と練習時間を入力するだけでOK！',
     targetSelector: '[data-tutorial="fab-button"]',
     position: 'top',
-    waitForSelector: '[data-tutorial="fab-button"]',
-    waitForEvent: 'click',
-    allowInteraction: true,
-    autoAdvanceDelay: 800,
   },
-  // Step 3: RPEと時間を入力して保存（説明 → 自由入力 → 保存ボタンで遷移）
   {
-    id: 'athlete-fill-and-save',
-    title: 'ステップ2：RPEと時間を入力して保存',
-    description: 'RPE（きつさ）のスライダーを動かして、練習時間を設定したら、下の保存ボタンをタップしてください',
-    targetSelector: '[data-tutorial="checkin-submit"]',
+    id: 'athlete-acwr',
+    title: 'ACWRで怪我リスクを管理',
+    description: '記録を続けると、急性・慢性ワークロード比（ACWR）が計算されます。0.8〜1.3が理想的で、急激な負荷増加による怪我を防ぎます。',
+    targetSelector: '[data-tutorial="acwr-chart"]',
     position: 'top',
-    waitForSelector: '[data-tutorial="checkin-submit"]',
-    waitForEvent: 'click',
-    allowInteraction: true,
-    autoAdvanceDelay: 1500,
   },
-  // Step 4: 完了
+  {
+    id: 'athlete-gamification',
+    title: '楽しく続けよう',
+    description: '毎日記録するとストリークが伸び、ポイントを獲得してレベルアップ！バッジを集めてチームメンバーと競い合いましょう。',
+    targetSelector: '[data-tutorial="gamification-tab"]',
+    position: 'bottom',
+  },
   {
     id: 'athlete-complete',
-    title: '初回チェックイン完了！🎉',
-    description: '素晴らしい！毎日＋ボタンから記録を続けると、ACWRで怪我リスクを可視化できます。体重・睡眠・モチベーションも同じ画面から記録できます。',
+    title: 'さあ、始めましょう！',
+    description: 'まずは＋ボタンから今日の練習を記録してみてください。毎日続けることで、データに基づいたコンディション管理ができるようになります。',
     position: 'center',
   },
 ];
