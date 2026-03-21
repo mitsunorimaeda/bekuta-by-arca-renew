@@ -50,10 +50,11 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
     setWeight(String(lastRecord.weight_kg ?? ''));
   }, [lastRecord, weight]);
 
-  // ✅ 日付が変わったら既存チェックして、既存があればフォームに反映
+  // ✅ 日付が変わったら既存チェックして、既存があればフォームに反映（オフライン時はスキップ）
   useEffect(() => {
     const run = async () => {
       setError('');
+      if (!navigator.onLine) return; // オフライン時はスキップ
       try {
         const existing = await onCheckExisting(selectedDate);
         setExistingRecord(existing);
@@ -61,13 +62,15 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
         if (existing) {
           setWeight(String(existing.weight_kg ?? ''));
           setNotes((existing as any).notes ?? '');
-          // ✅ 日付切り替え時に「既にある」ことも気づけると安心
           showToast('success', 'この日の体重記録は既にあります（編集できます）');
         } else {
           setNotes('');
-          // setWeight(''); // ← 毎回空にしたい場合は有効化
         }
-      } catch (err) {
+      } catch (err: any) {
+        const msg = String(err?.message ?? '');
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          return; // ネットワークエラー時は静かにスキップ
+        }
         console.error('Error checking existing weight record:', err);
         setExistingRecord(null);
         setError('既存データの確認に失敗しました');
@@ -91,15 +94,23 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
       return;
     }
 
-    // ✅ 既存チェック（try/catch）
+    // ✅ 既存チェック（オフライン時はスキップ）
     let existing: WeightRecord | null = null;
-    try {
-      existing = await onCheckExisting(selectedDate);
-    } catch (err) {
-      console.error('Error checking existing weight record:', err);
-      setError('既存データの確認に失敗しました');
-      showToast('error', '既存データの確認に失敗しました');
-      return;
+    if (navigator.onLine) {
+      try {
+        existing = await onCheckExisting(selectedDate);
+      } catch (err: any) {
+        const msg = String(err?.message ?? '');
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          // ネットワークエラー → スキップして保存に進む
+          existing = null;
+        } else {
+          console.error('Error checking existing weight record:', err);
+          setError('既存データの確認に失敗しました');
+          showToast('error', '既存データの確認に失敗しました');
+          return;
+        }
+      }
     }
 
     if (existing) {

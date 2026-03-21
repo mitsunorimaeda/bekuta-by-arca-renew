@@ -114,13 +114,23 @@ export function SleepForm({
 
     setSaving(true);
     try {
-      // 既存レコードチェック
-      const existing = await onCheckExisting(date);
+      // 既存レコードチェック（オフライン時はスキップ）
+      let existing = null;
+      if (navigator.onLine) {
+        try {
+          existing = await onCheckExisting(date);
+        } catch (checkErr: any) {
+          const msg = String(checkErr?.message ?? '');
+          if (!msg.includes('Failed to fetch') && !msg.includes('NetworkError') && !msg.includes('Load failed')) {
+            throw checkErr;
+          }
+        }
+      }
       if (existing) {
         setExistingRecord(existing);
         setPendingData(data);
         setShowDuplicateModal(true);
-        return; // ✅ ここでは saving を finally で戻す
+        return;
       }
 
       await onSubmit(data);

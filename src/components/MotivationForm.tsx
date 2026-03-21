@@ -112,14 +112,21 @@ export function MotivationForm({
 
     setSaving(true);
     try {
-      // ✅ 既存チェック（あればモーダルへ）
-      if (onCheckExisting) {
-        const existing = await onCheckExisting(date);
-        if (existing) {
-          setExistingRecord(existing);
-          setPendingData(payload);
-          setShowDuplicateModal(true);
-          return; // ✅ ここで送信止める（finallyで saving解除）
+      // ✅ 既存チェック（オフライン時はスキップ）
+      if (onCheckExisting && navigator.onLine) {
+        try {
+          const existing = await onCheckExisting(date);
+          if (existing) {
+            setExistingRecord(existing);
+            setPendingData(payload);
+            setShowDuplicateModal(true);
+            return;
+          }
+        } catch (checkErr: any) {
+          const msg = String(checkErr?.message ?? '');
+          if (!msg.includes('Failed to fetch') && !msg.includes('NetworkError') && !msg.includes('Load failed')) {
+            throw checkErr;
+          }
         }
       }
 

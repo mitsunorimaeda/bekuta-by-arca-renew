@@ -126,26 +126,31 @@ export function TrainingForm({
       return;
     }
 
-    // 既存記録チェック
-    try {
-      const existing = await onCheckExisting(selectedDate);
-      if (existing) {
-        setExistingRecord(existing);
-        setPendingData({
-          rpe,
-          duration_min: duration,
-          date: selectedDate,
-          arrow_score: arrowScore,
-          signal_score: signalScore,
-        });
-        setShowDuplicateModal(true);
-        return;
+    // 既存記録チェック（オフライン時はスキップ）
+    if (navigator.onLine) {
+      try {
+        const existing = await onCheckExisting(selectedDate);
+        if (existing) {
+          setExistingRecord(existing);
+          setPendingData({
+            rpe,
+            duration_min: duration,
+            date: selectedDate,
+            arrow_score: arrowScore,
+            signal_score: signalScore,
+          });
+          setShowDuplicateModal(true);
+          return;
+        }
+      } catch (err: any) {
+        const msg = String(err?.message ?? '');
+        if (!msg.includes('Failed to fetch') && !msg.includes('NetworkError') && !msg.includes('Load failed')) {
+          console.error('Error checking existing training record:', err);
+          setError('既存データの確認に失敗しました');
+          showToast('error', '既存データの確認に失敗しました');
+          return;
+        }
       }
-    } catch (err) {
-      console.error('Error checking existing training record:', err);
-      setError('既存データの確認に失敗しました');
-      showToast('error', '既存データの確認に失敗しました');
-      return;
     }
 
     setSubmitting(true);
