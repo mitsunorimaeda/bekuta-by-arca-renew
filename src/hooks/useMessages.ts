@@ -276,7 +276,7 @@ export function useMessages(userId: string) {
             user_id: receiverId,
             title: '新しいメッセージ',
             body: trimmedContent.length > 100 ? trimmedContent.slice(0, 97) + '...' : trimmedContent,
-            url: '/',
+            url: '/?tab=messages',
           },
         }).catch(() => {});
 

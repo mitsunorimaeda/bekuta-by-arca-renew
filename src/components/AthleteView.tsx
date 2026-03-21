@@ -409,7 +409,34 @@ export function AthleteView({
     | 'rehab'
     | 'profile';
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('unified');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'messages') return 'messages';
+    return 'unified';
+  });
+
+  // =========================
+  // ✅ 未読メッセージ数（軽量ポーリング）
+  // =========================
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  useEffect(() => {
+    if (readOnly || !user.id) return;
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .eq('is_read', false);
+        if (!error && !cancelled) setUnreadMessageCount(count ?? 0);
+      } catch { /* ignore */ }
+    };
+    fetchUnread();
+    const timer = setInterval(fetchUnread, 60000); // 60秒ごと
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [user.id, readOnly]);
 
     // =========================
   // ✅ unified の重いセクションを “アイドル後” に表示（LCP改善）
@@ -1045,6 +1072,11 @@ export function AthleteView({
                 title="メッセージ"
               >
                 <MessageCircle className="w-5 h-5" />
+                {unreadMessageCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                  </span>
+                )}
               </button>
 
               <button
