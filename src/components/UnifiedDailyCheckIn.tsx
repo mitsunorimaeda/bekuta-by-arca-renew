@@ -205,10 +205,24 @@ export function UnifiedDailyCheckIn({
     setError('');
     setOfflineMessage('');
 
+    // オフライン時は重複チェックをスキップするヘルパー
+    const safeCheckExisting = async <T,>(checker: (date: string) => Promise<T | null>, date: string): Promise<T | null> => {
+      if (!navigator.onLine) return null; // オフライン時はスキップ
+      try {
+        return await checker(date);
+      } catch (err: any) {
+        const msg = String(err?.message ?? '');
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          return null; // ネットワークエラー時もスキップ
+        }
+        throw err;
+      }
+    };
+
     try {
       if (section === 'training') {
-        const existing = await onTrainingCheckExisting(selectedDate);
-    
+        const existing = await safeCheckExisting(onTrainingCheckExisting, selectedDate);
+
         if (existing) {
           setDuplicateType('training');
           setExistingRecord(existing);
@@ -244,7 +258,7 @@ export function UnifiedDailyCheckIn({
     
       if (section === 'weight') {
         if (weight) {
-          const existing = await onWeightCheckExisting(selectedDate);
+          const existing = await safeCheckExisting(onWeightCheckExisting, selectedDate);
     
           if (existing) {
             setDuplicateType('weight');
@@ -279,8 +293,8 @@ export function UnifiedDailyCheckIn({
     
       if (section === 'conditioning') {
         const [existingSleep, existingMotivation] = await Promise.all([
-          onSleepCheckExisting(selectedDate),
-          onMotivationCheckExisting(selectedDate),
+          safeCheckExisting(onSleepCheckExisting, selectedDate),
+          safeCheckExisting(onMotivationCheckExisting, selectedDate),
         ]);
     
         // ✅ どっちか既存があれば「1回だけ」上書き確認
