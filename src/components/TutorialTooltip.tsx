@@ -106,7 +106,7 @@ export function TutorialTooltip({
     <div
       ref={tooltipRef}
       style={tooltipStyle}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border-2 border-blue-500 dark:border-blue-400 w-[90vw] max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300"
+      className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border-2 border-blue-500 dark:border-blue-400 w-[90vw] max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300 pointer-events-auto"
       role="dialog"
       aria-labelledby="tutorial-title"
       aria-describedby="tutorial-description"

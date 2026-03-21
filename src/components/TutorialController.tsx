@@ -222,28 +222,21 @@ export function TutorialController({
         allowInteraction={currentStep.allowInteraction || isWaitingStep}
       />
 
-      {/* ✅ クリックがOverlayへ抜けないようにガード（z:10001） */}
+      {/* ✅ ツールチップ（z:10001） */}
       <div className="fixed inset-0 z-[10001] pointer-events-none">
-        <div
-          className="pointer-events-auto"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <TutorialTooltip
-            targetElement={targetElement}
-            position={currentStep.position || 'bottom'}
-            title={currentStep.title}
-            description={currentStep.description}
-            currentStep={currentStepIndex + 1}
-            totalSteps={steps.length}
-            onNext={isWaitingStep ? undefined : handleNext}
-            onPrev={currentStepIndex > 0 ? handlePrev : undefined}
-            onSkip={handleSkip}
-            showPrev={currentStepIndex > 0}
-            isWaiting={isWaitingStep}
-          />
-        </div>
+        <TutorialTooltip
+          targetElement={targetElement}
+          position={currentStep.position || 'bottom'}
+          title={currentStep.title}
+          description={currentStep.description}
+          currentStep={currentStepIndex + 1}
+          totalSteps={steps.length}
+          onNext={isWaitingStep ? undefined : handleNext}
+          onPrev={currentStepIndex > 0 ? handlePrev : undefined}
+          onSkip={handleSkip}
+          showPrev={currentStepIndex > 0}
+          isWaiting={isWaitingStep}
+        />
       </div>
 
       {showProgress && (
