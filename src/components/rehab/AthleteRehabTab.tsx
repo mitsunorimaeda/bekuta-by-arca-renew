@@ -33,9 +33,10 @@ interface AthleteRehabTabProps {
   athleteId: string;
   onOpenAssign: (athleteId: string, injuryId?: string) => void;
   onOpenEvaluation?: (injuryId: string, bodyPartKey: string, currentPhase: number) => void;
+  onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
 }
 
-export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluation }: AthleteRehabTabProps) {
+export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluation, onOpenPrescription }: AthleteRehabTabProps) {
   const [injuries, setInjuries] = useState<Injury[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [recentLogs, setRecentLogs] = useState<DailyLog[]>([]);
@@ -160,16 +161,22 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
 
                   {/* この怪我の処方 */}
                   {prescription && (
-                    <div className="mt-3 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex items-center justify-between">
+                    <div
+                      onClick={() => onOpenPrescription?.(prescription.id, athleteId)}
+                      className="mt-3 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors group"
+                    >
                       <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{prescription.title}</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{prescription.title}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           Phase {prescription.current_phase} 進行中
                         </div>
                       </div>
-                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded font-medium">
-                        Phase {prescription.current_phase}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded font-medium">
+                          Phase {prescription.current_phase}
+                        </span>
+                        <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+                      </div>
                     </div>
                   )}
                 </div>

@@ -69,6 +69,7 @@ const MessagingPanel = lazy(() =>
 const RehabTemplateList = lazy(() => import('./rehab/RehabTemplateList'));
 const RehabProgramEditor = lazy(() => import('./rehab/RehabProgramEditor'));
 const RehabPrescriptionAssign = lazy(() => import('./rehab/RehabPrescriptionAssign'));
+const RehabPrescriptionView = lazy(() => import('./rehab/RehabPrescriptionView'));
 
 // -------------------------
 // Types
@@ -234,6 +235,7 @@ export function StaffView({
   const [fullscreenView, setFullscreenView] = useState<
     | { type: 'editor'; templateId?: string }
     | { type: 'assign'; athleteId: string; injuryId?: string; fromPrescriptionId?: string }
+    | { type: 'view-prescription'; prescriptionId: string; athleteId: string }
     | null
   >(null);
 
@@ -758,6 +760,14 @@ export function StaffView({
               showToast={showToast}
             />
           )}
+          {fullscreenView.type === 'view-prescription' && (
+            <RehabPrescriptionView
+              prescriptionId={fullscreenView.prescriptionId}
+              athleteId={fullscreenView.athleteId}
+              onBack={() => setFullscreenView(null)}
+              onEdit={(presId, athId) => setFullscreenView({ type: 'assign', athleteId: athId, fromPrescriptionId: presId })}
+            />
+          )}
         </Suspense>
       </div>
     );
@@ -1132,6 +1142,10 @@ export function StaffView({
           onOpenRehabAssign={canAccessRehab(user.staff_type) ? (athleteId, injuryId) => {
             setSelectedAthlete(null);
             setFullscreenView({ type: 'assign', athleteId, injuryId });
+          } : undefined}
+          onOpenPrescription={canAccessRehab(user.staff_type) ? (prescriptionId, athleteId) => {
+            setSelectedAthlete(null);
+            setFullscreenView({ type: 'view-prescription', prescriptionId, athleteId });
           } : undefined}
         />
       )}

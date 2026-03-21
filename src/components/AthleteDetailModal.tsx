@@ -30,6 +30,7 @@ interface AthleteDetailModalProps {
   onFrozenChange?: () => void;
   onOpenMessage?: (athleteId: string) => void;
   onOpenRehabAssign?: (athleteId: string, injuryId?: string) => void;
+  onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
 }
 
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
@@ -102,7 +103,7 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage, onOpenRehabAssign }: AthleteDetailModalProps) {
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage, onOpenRehabAssign, onOpenPrescription }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
 
@@ -784,6 +785,10 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
               <AthleteRehabTabLazy
                 athleteId={athlete.id}
                 onOpenAssign={(athleteId, injuryId) => onOpenRehabAssign(athleteId, injuryId)}
+                onOpenPrescription={onOpenPrescription ? (presId, athId) => {
+                  onClose();
+                  onOpenPrescription(presId, athId);
+                } : undefined}
               />
             </Suspense>
           )}
