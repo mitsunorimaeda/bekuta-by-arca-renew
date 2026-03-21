@@ -65,17 +65,8 @@ export default defineConfig({
     sourcemap: true,
 
     rollupOptions: {
-      output: {
-        manualChunks(id) {
-          // recharts + その依存関係をまとめて1チャンクに
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor')) {
-            return 'chart-vendor';
-          }
-          if (id.includes('node_modules/@supabase')) {
-            return 'supabase-vendor';
-          }
-        },
-      },
+      // manualChunks を削除 — Vite/Rollup の自動分割に任せる
+      // 手動分割は recharts + React 間で循環参照を起こすため
     },
   },
 
