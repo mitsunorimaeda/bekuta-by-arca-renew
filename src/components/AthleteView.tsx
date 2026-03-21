@@ -70,6 +70,7 @@ import {
   Flame,
   Sword, // ★ 追加
   ChevronRight, // ★ 追加
+  ChevronDown,
   User,
   MessageCircle,
 } from 'lucide-react';
@@ -1328,56 +1329,40 @@ export function AthleteView({
                 <span className="text-sm font-medium">設定</span>
               </button>
 
-              {onNavigateToHelp && (
-                <button type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToHelp();
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <HelpCircle className="w-4 h-4" />
-                  <span className="text-sm font-medium">ヘルプ・マニュアル</span>
-                </button>
-              )}
-
-              {onNavigateToPrivacy && (
-                <button type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToPrivacy();
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <Shield className="w-4 h-4" />
-                  <span className="text-sm font-medium">プライバシーポリシー</span>
-                </button>
-              )}
-
-              {onNavigateToTerms && (
-                <button type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToTerms();
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span className="text-sm font-medium">利用規約</span>
-                </button>
-              )}
-
-              {onNavigateToCommercial && (
-                <button type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNavigateToCommercial();
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <Building2 className="w-4 h-4" />
-                  <span className="text-sm font-medium">特定商取引法に基づく表記</span>
-                </button>
+              {/* 法的情報（折りたたみ） */}
+              {(onNavigateToHelp || onNavigateToPrivacy || onNavigateToTerms || onNavigateToCommercial) && (
+                <details className="group">
+                  <summary className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer list-none text-xs">
+                    <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                    <span>ヘルプ・法的情報</span>
+                  </summary>
+                  <div className="pl-4 space-y-0.5">
+                    {onNavigateToHelp && (
+                      <button type="button" onClick={() => { setMenuOpen(false); onNavigateToHelp(); }}
+                        className="w-full flex items-center space-x-2 px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs">
+                        <HelpCircle className="w-3 h-3" /><span>ヘルプ</span>
+                      </button>
+                    )}
+                    {onNavigateToPrivacy && (
+                      <button type="button" onClick={() => { setMenuOpen(false); onNavigateToPrivacy(); }}
+                        className="w-full flex items-center space-x-2 px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs">
+                        <Shield className="w-3 h-3" /><span>プライバシーポリシー</span>
+                      </button>
+                    )}
+                    {onNavigateToTerms && (
+                      <button type="button" onClick={() => { setMenuOpen(false); onNavigateToTerms(); }}
+                        className="w-full flex items-center space-x-2 px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs">
+                        <FileText className="w-3 h-3" /><span>利用規約</span>
+                      </button>
+                    )}
+                    {onNavigateToCommercial && (
+                      <button type="button" onClick={() => { setMenuOpen(false); onNavigateToCommercial(); }}
+                        className="w-full flex items-center space-x-2 px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs">
+                        <Building2 className="w-3 h-3" /><span>特定商取引法に基づく表記</span>
+                      </button>
+                    )}
+                  </div>
+                </details>
               )}
 
               {onLogout && (
