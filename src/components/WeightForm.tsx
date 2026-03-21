@@ -3,7 +3,8 @@ import { Scale, Calendar, AlertCircle, FileText } from 'lucide-react';
 import { WeightRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
-import { Toast } from './ui/Toast'; // ✅ パスは環境に合わせて調整
+import { Toast } from './ui/Toast';
+import { weightSchema, validate } from '../lib/validation';
 
 interface WeightFormProps {
   onSubmit: (data: { weight_kg: number; date: string; notes?: string }) => Promise<void>;
@@ -88,9 +89,20 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
     setError('');
 
     const weightNum = parseFloat(weight);
-    if (isNaN(weightNum) || weightNum <= 0 || weightNum >= 500) {
-      setError('体重は0〜500kgの範囲で入力してください。');
-      showToast('error', '入力内容を確認してください（体重の範囲）');
+    if (isNaN(weightNum)) {
+      setError('体重を正しく入力してください');
+      showToast('error', '体重を正しく入力してください');
+      return;
+    }
+
+    const v = validate(weightSchema, {
+      weight_kg: weightNum,
+      date: selectedDate,
+      notes: notes || '',
+    });
+    if (!v.success) {
+      setError(v.firstError || '入力内容を確認してください');
+      showToast('error', v.firstError || '入力内容を確認してください');
       return;
     }
 

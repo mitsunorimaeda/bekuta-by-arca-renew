@@ -7,7 +7,8 @@ import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { VectorArrowPicker } from '../components/VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
 import type { TrainingRecordForm } from '../lib/normalizeRecords';
-import { Toast } from './ui/Toast'; // ✅ パスは構成に合わせて調整
+import { Toast } from './ui/Toast';
+import { trainingSchema, validate } from '../lib/validation';
 
 interface TrainingFormProps {
   userId: string;
@@ -114,15 +115,17 @@ export function TrainingForm({
     if (submitting || loading) return; // ✅ 二重送信ガード
     setError('');
 
-    // 入力バリデーション（休養日のルール）
-    if (rpe === 0 && duration > 0) {
-      setError('RPE 0（休養日）の場合は、時間も 0 分にしてください。');
-      showToast('error', '入力内容を確認してください（休養日のルール）');
-      return;
-    }
-    if (rpe > 0 && duration === 0) {
-      setError('RPE が 1 以上のときは、練習時間も 1 分以上を入力してください。');
-      showToast('error', '入力内容を確認してください（時間が 0 分）');
+    // Zodバリデーション
+    const v = validate(trainingSchema, {
+      rpe,
+      duration_min: duration,
+      date: selectedDate,
+      arrow_score: arrowScore ?? null,
+      signal_score: signalScore ?? null,
+    });
+    if (!v.success) {
+      setError(v.firstError || '入力内容を確認してください');
+      showToast('error', v.firstError || '入力内容を確認してください');
       return;
     }
 

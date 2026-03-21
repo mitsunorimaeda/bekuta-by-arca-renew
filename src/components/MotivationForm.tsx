@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Heart, Zap, AlertCircle, Loader2 } from 'lucide-react';
 import { getTodayJSTString } from '../lib/date';
 import { DuplicateRecordModal, ExistingMotivationRecord } from "./DuplicateRecordModal";
-import { Toast } from './ui/Toast'; // ✅ パスは構成に合わせて調整
+import { Toast } from './ui/Toast';
+import { motivationSchema, validate } from '../lib/validation';
 
 interface LastRecordInfo {
   date: string;
@@ -101,6 +102,18 @@ export function MotivationForm({
     setError('');
 
     if (isBusy) return; // ✅ 二重押し防止
+
+    // Zodバリデーション
+    const v = validate(motivationSchema, {
+      motivation_level: motivationLevel,
+      energy_level: energyLevel,
+      stress_level: stressLevel,
+      notes: notes || '',
+    });
+    if (!v.success) {
+      setError(v.firstError || '入力内容を確認してください');
+      return;
+    }
 
     const payload = {
       motivation_level: motivationLevel,

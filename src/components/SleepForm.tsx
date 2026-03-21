@@ -4,7 +4,8 @@ import { SleepRecord } from '../lib/supabase';
 import { GenericDuplicateModal } from './GenericDuplicateModal';
 import { getTodayJSTString } from '../lib/date';
 import type { SleepRecordForm } from '../lib/normalizeRecords';
-import { Toast } from './ui/Toast'; // ✅ パスはあなたの構成に合わせて調整（例: ../components/ui/Toast）
+import { Toast } from './ui/Toast';
+import { sleepSchema, validate as zodValidate } from '../lib/validation';
 
 interface SleepFormProps {
   onSubmit: (data: {
@@ -89,8 +90,19 @@ export function SleepForm({
 
   const validate = () => {
     const hours = parseFloat(sleepHours);
-    if (isNaN(hours) || hours < 0 || hours > 24) {
-      setError('睡眠時間は0〜24時間の範囲で入力してください');
+    if (isNaN(hours)) {
+      setError('睡眠時間を正しく入力してください');
+      return null;
+    }
+    const v = zodValidate(sleepSchema, {
+      sleep_hours: hours,
+      sleep_quality: sleepQuality,
+      bedtime: '',
+      waketime: '',
+      notes: notes || '',
+    });
+    if (!v.success) {
+      setError(v.firstError || '入力内容を確認してください');
       return null;
     }
     return hours;

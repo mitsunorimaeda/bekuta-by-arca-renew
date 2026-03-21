@@ -158,6 +158,28 @@ export function PerformanceRecordForm({
       }
     }
 
+    // 数値フィールドのバリデーション
+    const allFields = Array.isArray(selectedTestType.fields) ? selectedTestType.fields : [];
+    for (const field of allFields) {
+      const val = formValues[field.name];
+      if (val === undefined || val === '' || val === null) continue;
+      if (field.type === 'number' || !field.type) {
+        const num = Number(val);
+        if (isNaN(num)) {
+          setError(`${field.label}は数値で入力してください`);
+          return;
+        }
+        if (num < 0) {
+          setError(`${field.label}は0以上で入力してください`);
+          return;
+        }
+        if (num > 99999) {
+          setError(`${field.label}の値が大きすぎます`);
+          return;
+        }
+      }
+    }
+
     const primaryValue = computePrimaryValue(formValues);
     if (primaryValue === null) {
       setError('計算できない値が入力されています');
