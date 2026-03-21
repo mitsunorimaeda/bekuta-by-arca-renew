@@ -384,7 +384,7 @@ export function TrainingForm({
         </div>
 
         {/* RPE */}
-        <div>
+        <div data-tutorial="rpe-section">
           <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Zap className="w-4 h-4 mr-2" />
             RPE（運動強度）
@@ -405,7 +405,7 @@ export function TrainingForm({
         </div>
 
         {/* 時間（分） */}
-        <div>
+        <div data-tutorial="duration-section">
           <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Clock className="w-4 h-4 mr-2" />
             練習時間（分）
