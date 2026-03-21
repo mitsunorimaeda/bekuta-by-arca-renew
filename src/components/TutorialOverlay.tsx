@@ -6,6 +6,7 @@ interface TutorialOverlayProps {
   padding?: number;
   zIndex?: number; // Overlayのz
   onClick?: () => void;
+  allowInteraction?: boolean; // ✅ ハイライト領域のクリックを透過
 }
 
 export function TutorialOverlay({
@@ -13,6 +14,7 @@ export function TutorialOverlay({
   padding = 8,
   zIndex = 10000,
   onClick,
+  allowInteraction = false,
 }: TutorialOverlayProps) {
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -52,7 +54,7 @@ export function TutorialOverlay({
     <div
       ref={overlayRef}
       className="fixed inset-0 transition-all duration-300"
-      style={{ zIndex }}
+      style={{ zIndex, pointerEvents: allowInteraction ? 'none' : 'auto' }}
       onClick={handleOverlayClick}
       aria-hidden="true"
     >
@@ -99,6 +101,22 @@ export function TutorialOverlay({
           />
         )}
       </svg>
+
+      {/* ✅ インタラクティブステップ: ハイライト領域のクリックを透過 */}
+      {allowInteraction && highlightRect && (
+        <div
+          style={{
+            position: 'fixed',
+            left: highlightRect.left - padding,
+            top: highlightRect.top - padding,
+            width: highlightRect.width + padding * 2,
+            height: highlightRect.height + padding * 2,
+            zIndex: zIndex + 2,
+            pointerEvents: 'none', // この領域はクリック透過（下のUI要素が操作可能）
+            borderRadius: 8,
+          }}
+        />
+      )}
     </div>
   );
 }

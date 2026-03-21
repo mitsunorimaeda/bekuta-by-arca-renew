@@ -17,6 +17,7 @@ interface TutorialTooltipProps {
   showPrev?: boolean;
   nextLabel?: string;
   zIndex?: number;
+  isWaiting?: boolean; // ✅ ユーザー操作を待っている状態
 }
 
 export function TutorialTooltip({
@@ -33,6 +34,7 @@ export function TutorialTooltip({
   showPrev = true,
   nextLabel = '次へ',
   zIndex = 9999,
+  isWaiting = false,
 }: TutorialTooltipProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -162,7 +164,11 @@ export function TutorialTooltip({
             )}
           </div>
 
-          {onNext && (
+          {isWaiting ? (
+            <span className="px-5 py-2 sm:px-7 sm:py-2.5 text-sm sm:text-base font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-md animate-pulse">
+              👆 タップしてみよう
+            </span>
+          ) : onNext && (
             <button
               onClick={onNext}
               className="px-5 py-2 sm:px-7 sm:py-2.5 text-sm sm:text-base font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors shadow-sm"

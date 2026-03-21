@@ -1,5 +1,5 @@
 // src/components/TutorialController.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TutorialOverlay } from './TutorialOverlay';
 import { TutorialTooltip, TooltipPosition } from './TutorialTooltip';
 import { TutorialProgress } from './TutorialProgress';
@@ -13,6 +13,11 @@ export interface TutorialStep {
   action?: () => void | Promise<void>;
   beforeStep?: () => void | Promise<void>;
   afterStep?: () => void | Promise<void>;
+  // ✅ インタラクティブ拡張
+  waitForSelector?: string;       // ユーザーがこの要素を操作したら次へ
+  waitForEvent?: 'click' | 'input' | 'change'; // 待つイベント種別（デフォルト: click）
+  allowInteraction?: boolean;     // ハイライト要素のクリックを透過するか
+  autoAdvanceDelay?: number;      // イベント検知後のディレイ（ms）
 }
 
 interface TutorialControllerProps {
@@ -42,6 +47,10 @@ export function TutorialController({
   const setCurrentStepIndex = onStepChange ?? setInternalStepIndex;
 
   const currentStep = steps[currentStepIndex];
+  const isWaitingStep = !!currentStep?.waitForSelector;
+
+  // handleNextをrefで保持（イベントリスナーから安全に呼ぶため）
+  const handleNextRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!isActive || !currentStep) {
@@ -58,7 +67,6 @@ export function TutorialController({
         const element = document.querySelector(currentStep.targetSelector) as HTMLElement | null;
         if (element) {
           setTargetElement(element);
-          // 画面がガタつく場合は 'auto' にしてもOK
           try {
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           } catch {
@@ -93,6 +101,51 @@ export function TutorialController({
     };
   }, [isActive, currentStep, currentStepIndex]);
 
+  // ✅ wait-for-action: ユーザーの操作を待って自動遷移
+  useEffect(() => {
+    if (!isActive || !currentStep?.waitForSelector) return;
+
+    let cancelled = false;
+    let cleanupFn: (() => void) | null = null;
+
+    const setupListener = () => {
+      if (cancelled) return;
+      const waitEl = document.querySelector(currentStep.waitForSelector!) as HTMLElement | null;
+      if (!waitEl) {
+        // 要素がまだ無い場合は少し待ってリトライ
+        const retryTimer = setTimeout(setupListener, 300);
+        cleanupFn = () => clearTimeout(retryTimer);
+        return;
+      }
+
+      const eventType = currentStep.waitForEvent || 'click';
+      const delay = currentStep.autoAdvanceDelay || 500;
+
+      const handler = () => {
+        if (cancelled) return;
+        setTimeout(() => {
+          if (!cancelled) {
+            handleNextRef.current();
+          }
+        }, delay);
+      };
+
+      waitEl.addEventListener(eventType, handler, { once: true });
+      cleanupFn = () => waitEl.removeEventListener(eventType, handler);
+    };
+
+    // MutationObserverで要素が出現するのを監視
+    setupListener();
+    const observer = new MutationObserver(setupListener);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      if (cleanupFn) cleanupFn();
+    };
+  }, [isActive, currentStep, currentStepIndex]);
+
   const handleNext = useCallback(async () => {
     if (isExecutingAction) return;
     if (!currentStep) return;
@@ -122,6 +175,9 @@ export function TutorialController({
     }
   }, [currentStepIndex, steps.length, currentStep, onComplete, setCurrentStepIndex, isExecutingAction]);
 
+  // refを更新
+  handleNextRef.current = handleNext;
+
   const handlePrev = useCallback(() => {
     if (currentStepIndex > 0 && !isExecutingAction) {
       setCurrentStepIndex(currentStepIndex - 1);
@@ -140,18 +196,18 @@ export function TutorialController({
 
       if (e.key === 'Escape') {
         handleSkip();
-      } else if (e.key === 'Enter') {
+      } else if (e.key === 'Enter' && !isWaitingStep) {
         handleNext();
       } else if (e.key === 'ArrowLeft' && currentStepIndex > 0) {
         handlePrev();
-      } else if (e.key === 'ArrowRight' && currentStepIndex < steps.length - 1) {
+      } else if (e.key === 'ArrowRight' && currentStepIndex < steps.length - 1 && !isWaitingStep) {
         handleNext();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActive, currentStepIndex, steps.length, handleNext, handlePrev, handleSkip]);
+  }, [isActive, currentStepIndex, steps.length, handleNext, handlePrev, handleSkip, isWaitingStep]);
 
   if (!isActive || !currentStep) {
     return null;
@@ -160,14 +216,17 @@ export function TutorialController({
   return (
     <>
       {/* ✅ Overlayは「背面」(z:10000) */}
-      <TutorialOverlay targetElement={targetElement} onClick={handleSkip} />
+      <TutorialOverlay
+        targetElement={targetElement}
+        onClick={handleSkip}
+        allowInteraction={currentStep.allowInteraction || isWaitingStep}
+      />
 
       {/* ✅ クリックがOverlayへ抜けないようにガード（z:10001） */}
       <div className="fixed inset-0 z-[10001] pointer-events-none">
         <div
           className="pointer-events-auto"
           onClick={(e) => {
-            // Tooltip内クリックが Overlay に伝播するのを防ぐ
             e.stopPropagation();
           }}
         >
@@ -178,10 +237,11 @@ export function TutorialController({
             description={currentStep.description}
             currentStep={currentStepIndex + 1}
             totalSteps={steps.length}
-            onNext={handleNext}
+            onNext={isWaitingStep ? undefined : handleNext}
             onPrev={currentStepIndex > 0 ? handlePrev : undefined}
             onSkip={handleSkip}
             showPrev={currentStepIndex > 0}
+            isWaiting={isWaitingStep}
           />
         </div>
       </div>

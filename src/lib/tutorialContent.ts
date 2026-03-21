@@ -2,14 +2,68 @@ import type { AppRole } from './roles';
 import { TutorialStep } from '../components/TutorialController';
 
 export const athleteTutorialSteps: TutorialStep[] = [
-  { id: 'athlete-welcome', title: 'Bekuta へようこそ', description: '総合コンディショニングアプリBekutaへようこそ。トレーニング、体重、睡眠、モチベーション、パフォーマンスを一元管理し、データでコンディションを可視化します。', position: 'center' },
-  { id: 'athlete-unified-checkin', title: '統合デイリーチェックイン', description: '1つの画面で「トレーニング」「体重」「睡眠」「モチベーション」を記録。毎日のルーティンをシンプルに、続けやすく設計しています。', targetSelector: '[data-tutorial="daily-checkin"]', position: 'bottom' },
-  { id: 'athlete-performance', title: 'パフォーマンス記録', description: 'ベンチプレス、スクワットなどの筋力、持久力、スプリントなどのパフォーマンス測定を記録。成長を可視化し、ベスト更新を祝います。', targetSelector: '[data-tutorial="performance-tab"]', position: 'bottom' },
-  { id: 'athlete-acwr-chart', title: 'トレーニング負荷の可視化', description: '急性・慢性ワークロード比（ACWR）で怪我リスクを科学的に管理。0.8〜1.3が理想的で、急激な負荷増加を防ぎます。', targetSelector: '[data-tutorial="acwr-chart"]', position: 'top' },
-  { id: 'athlete-multi-metric', title: '総合コンディションタイムライン', description: 'トレーニング、体重、睡眠、モチベーションを同時表示。相関関係を見つけ、コンディションの全体像を把握しましょう。', targetSelector: '[data-tutorial="multi-metric-timeline"]', position: 'top' },
-  { id: 'athlete-alerts', title: 'インテリジェントアラート', description: '複数の指標を統合分析し、怪我リスク、オーバートレーニング、回復不足を早期に発見。アクション提案で対応もサポートします。', targetSelector: '[data-tutorial="alert-badge"]', position: 'bottom' },
-  { id: 'athlete-gamification', title: 'ゲーミフィケーション', description: '楽しくモチベーションを維持！記録を続けてストリークを伸ばし、ポイントを獲得してレベルアップ。バッジを集めて達成感を味わいましょう。', targetSelector: '[data-tutorial="gamification-tab"]', position: 'bottom' },
-  { id: 'athlete-complete', title: 'チュートリアル完了！', description: 'Bekutaで総合的なコンディション管理を始めましょう。毎日データを記録し、科学的な根拠に基づいたトレーニングでパフォーマンスを最大化します。', position: 'center' },
+  // Step 1: ようこそ（説明）
+  {
+    id: 'athlete-welcome',
+    title: 'Bekuta へようこそ！',
+    description: 'まずは一緒に練習記録を入力してみましょう。1分で完了します！',
+    position: 'center',
+  },
+  // Step 2: FABをタップ（インタラクティブ）
+  {
+    id: 'athlete-tap-fab',
+    title: 'ステップ1：記録を開始',
+    description: '右下の＋ボタンをタップしてください',
+    targetSelector: '[data-tutorial="fab-button"]',
+    position: 'top',
+    waitForSelector: '[data-tutorial="fab-button"]',
+    waitForEvent: 'click',
+    allowInteraction: true,
+    autoAdvanceDelay: 800,
+  },
+  // Step 3: RPEスライダーを操作（インタラクティブ）
+  {
+    id: 'athlete-set-rpe',
+    title: 'ステップ2：練習のきつさ（RPE）',
+    description: 'スライダーを動かして今日の練習のきつさを選んでください。0=休養、5=きつい、10=限界',
+    targetSelector: '[data-tutorial="rpe-slider"]',
+    position: 'bottom',
+    waitForSelector: '[data-tutorial="rpe-slider"]',
+    waitForEvent: 'input',
+    allowInteraction: true,
+    autoAdvanceDelay: 1500,
+  },
+  // Step 4: 練習時間を入力（インタラクティブ）
+  {
+    id: 'athlete-set-duration',
+    title: 'ステップ3：練習時間',
+    description: '練習時間（分）を入力してください。例：90分',
+    targetSelector: '[data-tutorial="duration-input"]',
+    position: 'bottom',
+    waitForSelector: '[data-tutorial="duration-input"]',
+    waitForEvent: 'input',
+    allowInteraction: true,
+    autoAdvanceDelay: 1500,
+  },
+  // Step 5: 保存ボタン（インタラクティブ）
+  {
+    id: 'athlete-submit',
+    title: 'ステップ4：保存！',
+    description: '入力できたら「記録する」ボタンをタップ！',
+    targetSelector: '[data-tutorial="training-submit"]',
+    position: 'top',
+    waitForSelector: '[data-tutorial="training-submit"]',
+    waitForEvent: 'click',
+    allowInteraction: true,
+    autoAdvanceDelay: 1500,
+  },
+  // Step 6: 完了
+  {
+    id: 'athlete-complete',
+    title: '初回チェックイン完了！🎉',
+    description: '素晴らしい！これで練習記録の入力方法がわかりましたね。毎日記録を続けると、ACWRで怪我リスクを可視化できます。体重・睡眠・モチベーションも同じ＋ボタンから記録できます。',
+    position: 'center',
+  },
 ];
 
 export const staffTutorialSteps: TutorialStep[] = [

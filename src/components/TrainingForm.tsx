@@ -397,6 +397,7 @@ export function TrainingForm({
             value={rpe}
             onChange={handleRpeChange}
             disabled={submitting || loading}
+            data-tutorial="rpe-slider"
             className="w-full"
           />
 
@@ -416,6 +417,7 @@ export function TrainingForm({
             value={duration}
             onChange={handleDurationChange}
             disabled={submitting || loading}
+            data-tutorial="duration-input"
             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-60"
             style={{ fontSize: '16px' }}
           />
@@ -466,6 +468,7 @@ export function TrainingForm({
         <button
           type="submit"
           disabled={loading || submitting}
+          data-tutorial="training-submit"
           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
         >
           <Plus className="w-4 h-4 mr-2" />

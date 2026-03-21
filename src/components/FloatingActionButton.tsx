@@ -29,6 +29,7 @@ export function FloatingActionButton({ onClick, onCameraClick }: Props) {
       <button
         type="button"
         onClick={onClick}
+        data-tutorial="fab-button"
         className="h-14 w-14 rounded-full shadow-lg
                    bg-blue-600 text-white
                    flex items-center justify-center
