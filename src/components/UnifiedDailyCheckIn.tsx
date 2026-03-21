@@ -349,8 +349,9 @@ export function UnifiedDailyCheckIn({
         return;
       }    
 
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '不明なエラー';
+    } catch (err: any) {
+      const errorMessage = err?.message || (typeof err === 'string' ? err : '不明なエラー');
+      console.error('[UnifiedDailyCheckIn] save error:', err);
       setError(
         `${
           section === 'training'
@@ -412,8 +413,10 @@ export function UnifiedDailyCheckIn({
       setExistingRecord(null);
       setPendingData(null);
       setDuplicateType(null);
-    } catch (err) {
-      setError('記録の更新に失敗しました');
+    } catch (err: any) {
+      const errorMessage = err?.message || (typeof err === 'string' ? err : '不明なエラー');
+      console.error('[UnifiedDailyCheckIn] overwrite error:', err);
+      setError(`記録の更新に失敗しました: ${errorMessage}`);
     } finally {
       setSubmitting(false);
     }

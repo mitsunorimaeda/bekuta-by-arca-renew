@@ -49,10 +49,10 @@ export async function offlineMutation(params: MutationParams): Promise<MutationR
         ? (supabase as any).from(table).upsert(payload, { onConflict })
         : (supabase as any).from(table).upsert(payload);
       const { error } = await query;
-      if (error) throw error;
+      if (error) throw new Error(`[${table}] ${error.message} (code: ${error.code})`);
     } else {
       const { error } = await (supabase as any).from(table).insert(payload);
-      if (error) throw error;
+      if (error) throw new Error(`[${table}] ${error.message} (code: ${error.code})`);
     }
 
     return { queued: false };
