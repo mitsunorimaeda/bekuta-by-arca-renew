@@ -71,6 +71,7 @@ import {
   Sword, // ★ 追加
   ChevronRight, // ★ 追加
   User,
+  MessageCircle,
 } from 'lucide-react';
 
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -1030,6 +1031,17 @@ export function AthleteView({
                 <HelpCircle className="w-5 h-5" />
               </button>
 
+              {/* メッセージアイコン */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('messages'); setMenuOpen(false); }}
+                className="relative p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+                aria-label="メッセージ"
+                title="メッセージ"
+              >
+                <MessageCircle className="w-5 h-5" />
+              </button>
+
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
@@ -1084,7 +1096,7 @@ export function AthleteView({
           <div className="absolute inset-0 bg-black bg-opacity-50"></div>
 
           <div
-            className="absolute top-20 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-72 max-h-[calc(100vh-6rem)] overflow-y-auto"
+            className="absolute top-16 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-72 max-h-[calc(100vh-5rem)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2">
@@ -1284,6 +1296,22 @@ export function AthleteView({
               {/* ── その他セクション ── */}
               <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
               <p className="px-3 pt-1 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">その他</p>
+
+              {/* メッセージ */}
+              <button type="button"
+                onClick={() => {
+                  setActiveTab('messages');
+                  setMenuOpen(false);
+                }}
+                className={`w-full flex items-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                  activeTab === 'messages'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span className="text-sm font-medium">メッセージ</span>
+              </button>
 
               <button type="button"
                 onClick={() => {
