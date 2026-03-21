@@ -44,6 +44,8 @@ export function useMessages(userId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [hiddenThreadIds, setHiddenThreadIds] = useState<Set<string>>(new Set());
+  const [showHidden, setShowHidden] = useState(false);
 
   const { state, registerPollJob } = useRealtimeHub();
 
@@ -74,6 +76,34 @@ export function useMessages(userId: string) {
     } catch (_) {}
     channelRef.current = null;
   }, []);
+
+  // -----------------------------
+  // Fetch hidden thread IDs
+  // -----------------------------
+  const fetchHiddenThreads = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const { data } = await supabase
+        .from('user_hidden_threads')
+        .select('thread_id')
+        .eq('user_id', userId);
+      setHiddenThreadIds(new Set((data ?? []).map((d) => d.thread_id)));
+    } catch { /* ignore */ }
+  }, [userId]);
+
+  // -----------------------------
+  // Hide / unhide thread
+  // -----------------------------
+  const hideThread = useCallback(async (threadId: string) => {
+    await supabase.from('user_hidden_threads').insert({ user_id: userId, thread_id: threadId });
+    setHiddenThreadIds((prev) => new Set([...prev, threadId]));
+    if (activeThreadId === threadId) setActiveThreadId(null);
+  }, [userId, activeThreadId, setActiveThreadId]);
+
+  const unhideThread = useCallback(async (threadId: string) => {
+    await supabase.from('user_hidden_threads').delete().eq('user_id', userId).eq('thread_id', threadId);
+    setHiddenThreadIds((prev) => { const next = new Set(prev); next.delete(threadId); return next; });
+  }, [userId]);
 
   // -----------------------------
   // Fetch threads
@@ -349,7 +379,7 @@ export function useMessages(userId: string) {
       }
 
       setLoading(true);
-      await fetchThreads();
+      await Promise.all([fetchThreads(), fetchHiddenThreads()]);
       if (!cancelled) setLoading(false);
     };
 
@@ -487,8 +517,21 @@ export function useMessages(userId: string) {
     return threads.reduce((sum, thread) => sum + (thread.unread_count || 0), 0);
   }, [threads]);
 
+  // -----------------------------
+  // Visible threads（非表示フィルタ済み）
+  // -----------------------------
+  const visibleThreads = useMemo(() => {
+    if (showHidden) return threads;
+    return threads.filter((t) => !hiddenThreadIds.has(t.id));
+  }, [threads, hiddenThreadIds, showHidden]);
+
+  const hiddenCount = useMemo(() => {
+    return threads.filter((t) => hiddenThreadIds.has(t.id)).length;
+  }, [threads, hiddenThreadIds]);
+
   return {
-    threads,
+    threads: visibleThreads,
+    allThreads: threads,
     messages,
     loading,
     error,
@@ -501,5 +544,11 @@ export function useMessages(userId: string) {
     markThreadAsRead,
     fetchMessages,
     refreshThreads: fetchThreads,
+    hideThread,
+    unhideThread,
+    hiddenThreadIds,
+    hiddenCount,
+    showHidden,
+    setShowHidden,
   };
 }
