@@ -134,48 +134,58 @@ export function TutorialController({
     let cancelled = false;
     let cleanupFn: (() => void) | null = null;
 
-    let listenerAttached = false;
+    const baseEvent = currentStep.waitForEvent || 'click';
+    const delay = currentStep.autoAdvanceDelay || 500;
+    let fired = false;
 
-    const setupListener = () => {
-      if (cancelled || listenerAttached) return;
-      const waitEl = document.querySelector(currentStep.waitForSelector!) as HTMLElement | null;
-      if (!waitEl) {
-        const retryTimer = setTimeout(setupListener, 300);
-        cleanupFn = () => clearTimeout(retryTimer);
-        return;
-      }
-
-      listenerAttached = true;
-      const baseEvent = currentStep.waitForEvent || 'click';
-      const delay = currentStep.autoAdvanceDelay || 500;
-
-      // input/changeの両方をリッスン（モバイルのrange対応）
-      const events = baseEvent === 'input'
-        ? ['input', 'change', 'touchend']
-        : [baseEvent];
-
-      let fired = false;
-      const handler = () => {
+    if (baseEvent === 'input') {
+      // input/range対応: 値の変化をポーリングで監視（モバイル互換）
+      let initialValue: string | null = null;
+      const pollInterval = setInterval(() => {
         if (cancelled || fired) return;
-        fired = true;
-        setTimeout(() => {
-          if (!cancelled) {
-            handleNextRef.current();
-          }
-        }, delay);
+        const el = document.querySelector(currentStep.waitForSelector!) as HTMLInputElement | null;
+        if (!el) return;
+        if (initialValue === null) {
+          initialValue = el.value;
+          return;
+        }
+        if (el.value !== initialValue) {
+          fired = true;
+          clearInterval(pollInterval);
+          setTimeout(() => {
+            if (!cancelled) handleNextRef.current();
+          }, delay);
+        }
+      }, 200);
+      cleanupFn = () => clearInterval(pollInterval);
+    } else {
+      // click等: イベントリスナー方式
+      let listenerAttached = false;
+      const setupListener = () => {
+        if (cancelled || listenerAttached) return;
+        const waitEl = document.querySelector(currentStep.waitForSelector!) as HTMLElement | null;
+        if (!waitEl) {
+          const retryTimer = setTimeout(setupListener, 300);
+          cleanupFn = () => clearTimeout(retryTimer);
+          return;
+        }
+        listenerAttached = true;
+        const handler = () => {
+          if (cancelled || fired) return;
+          fired = true;
+          setTimeout(() => {
+            if (!cancelled) handleNextRef.current();
+          }, delay);
+        };
+        waitEl.addEventListener(baseEvent, handler, { once: true });
+        cleanupFn = () => waitEl.removeEventListener(baseEvent, handler);
       };
-
-      const cleanups: (() => void)[] = [];
-      for (const evt of events) {
-        waitEl.addEventListener(evt, handler, { once: true });
-        cleanups.push(() => waitEl.removeEventListener(evt, handler));
-      }
-      cleanupFn = () => cleanups.forEach((c) => c());
-    };
-
-    setupListener();
-    const observer = new MutationObserver(setupListener);
-    observer.observe(document.body, { childList: true, subtree: true });
+      setupListener();
+      const observer = new MutationObserver(setupListener);
+      observer.observe(document.body, { childList: true, subtree: true });
+      const prevCleanup = cleanupFn;
+      cleanupFn = () => { observer.disconnect(); prevCleanup?.(); };
+    }
 
     return () => {
       cancelled = true;
