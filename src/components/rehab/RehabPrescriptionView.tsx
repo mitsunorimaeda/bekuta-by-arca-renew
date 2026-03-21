@@ -40,17 +40,26 @@ export default function RehabPrescriptionView({ prescriptionId, athleteId, onBac
     try {
       setLoading(true);
 
-      // 処方 + アイテム
+      // 処方
       const { data: presData } = await supabase
         .schema('rehab')
         .from('prescriptions')
-        .select('*, prescription_items (*)')
+        .select('*')
         .eq('id', prescriptionId)
         .single();
 
+      // アイテムを別クエリで取得（cross-schema join回避）
+      const { data: itemsData } = await supabase
+        .schema('rehab')
+        .from('prescription_items')
+        .select('*')
+        .eq('prescription_id', prescriptionId)
+        .order('phase', { ascending: true })
+        .order('item_index', { ascending: true });
+
       if (presData) {
         setPrescription(presData);
-        setItems(presData.prescription_items || []);
+        setItems(itemsData || []);
         setActivePhase(presData.current_phase || 1);
 
         // 怪我情報
