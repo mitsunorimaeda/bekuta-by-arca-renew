@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ✅ Tutorial: ターゲット要素のハイライトアニメーション */
+.tutorial-highlight-target {
+  position: relative;
+  z-index: 10003 !important;
+  outline: 3px solid #3B82F6 !important;
+  outline-offset: 4px;
+  border-radius: 8px;
+  animation: tutorial-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2) !important;
+}
+
+@keyframes tutorial-pulse {
+  0%, 100% {
+    outline-color: #3B82F6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    outline-color: #60A5FA;
+    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.15), 0 0 30px rgba(59, 130, 246, 0.3);
+  }
+}
+
 /* Safari-specific fixes */
 @layer base {
   * {

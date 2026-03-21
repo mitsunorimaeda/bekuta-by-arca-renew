@@ -101,6 +101,32 @@ export function TutorialController({
     };
   }, [isActive, currentStep, currentStepIndex]);
 
+  // ✅ ターゲット要素にハイライトアニメーションを直接付与
+  useEffect(() => {
+    if (!isActive || !currentStep) return;
+    const selector = currentStep.waitForSelector || currentStep.targetSelector;
+    if (!selector) return;
+
+    let el: HTMLElement | null = null;
+    const HIGHLIGHT_CLASS = 'tutorial-highlight-target';
+
+    const applyHighlight = () => {
+      el = document.querySelector(selector) as HTMLElement | null;
+      if (el && !el.classList.contains(HIGHLIGHT_CLASS)) {
+        el.classList.add(HIGHLIGHT_CLASS);
+      }
+    };
+
+    applyHighlight();
+    const observer = new MutationObserver(applyHighlight);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      if (el) el.classList.remove(HIGHLIGHT_CLASS);
+    };
+  }, [isActive, currentStep, currentStepIndex]);
+
   // ✅ wait-for-action: ユーザーの操作を待って自動遷移
   useEffect(() => {
     if (!isActive || !currentStep?.waitForSelector) return;
