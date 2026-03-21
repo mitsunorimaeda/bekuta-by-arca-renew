@@ -1,5 +1,6 @@
 // logEvent.ts
 import { supabase } from './supabase';
+import { trackEvent } from './posthog';
 
 type LogEventArgs = {
   userId?: string | null; // ← optional にする
@@ -12,9 +13,12 @@ export async function logEvent({
   eventType,
   payload = {},
 }: LogEventArgs) {
-  // ✅ ガード：userId が無いなら送らない
+  // ✅ PostHog にも送信（userId不要でも送れる）
+  trackEvent(eventType, { ...payload, user_id: userId });
+
+  // ✅ ガード：userId が無いなら Supabase には送らない
   if (!userId) {
-    console.warn('[logEvent] skipped: missing userId', {
+    console.warn('[logEvent] skipped supabase: missing userId', {
       eventType,
       payload,
     });

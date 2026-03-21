@@ -1,5 +1,6 @@
 // src/lib/pushClient.ts
 import { supabase } from "./supabase";
+import { trackEvent } from "./posthog";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -70,6 +71,7 @@ export async function enablePushForCurrentUser(publicVapidKey: string) {
 
   if (error) throw error;
 
+  trackEvent('push_enabled', { user_id: user.id });
   return sub;
 }
 

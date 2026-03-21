@@ -1,6 +1,7 @@
 // src/components/NotificationDashboard.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { trackEvent } from '../lib/posthog';
 import {
   Bell,
   Send,
@@ -169,6 +170,14 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId }: No
       setSendResult({
         type: failed === targetAthletes.length ? 'error' : 'success',
         text: `${delivered}人に送信完了${failed > 0 ? `（${failed}人失敗）` : ''}`,
+      });
+
+      // ✅ PostHog: 一斉通知送信トラッキング
+      trackEvent('broadcast_sent', {
+        recipient_type: recipientType,
+        recipients_count: targetAthletes.length,
+        delivered_count: delivered,
+        failed_count: failed,
       });
 
       // Reset form

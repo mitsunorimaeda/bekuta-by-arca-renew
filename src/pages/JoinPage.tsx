@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { trackEvent } from '../lib/posthog';
 
 interface TokenInfo {
   valid: boolean;
@@ -113,9 +114,11 @@ export function JoinPage({ onLoginSuccess }: Props) {
 
       if (data.requiresApproval) {
         // スタッフ: 承認待ち画面を表示
+        trackEvent('user_registered', { role: 'staff', requires_approval: true });
         setDone({ requiresApproval: true });
       } else {
         // 選手: そのままログイン
+        trackEvent('user_registered', { role: 'athlete', requires_approval: false });
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) {
           setSubmitError('登録は完了しましたが、自動ログインに失敗しました。ログインページからログインしてください。');

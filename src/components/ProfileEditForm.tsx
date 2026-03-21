@@ -4,6 +4,7 @@ import { User as UserIcon, Calendar, Ruler, Users, Save, AlertCircle, Phone } fr
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
 import { getYearsAgoString } from '../lib/date';
+import { trackEvent } from '../lib/posthog';
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 type UserUpdate = Database['public']['Tables']['users']['Update'];
@@ -108,6 +109,23 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
       if (updateError) throw updateError;
 
       setSuccess(true);
+
+      // ✅ プロフィール完成度チェック
+      const fields = [trimmedName, gender, parsedHeight, dateOfBirth, normalizedPhone];
+      const filledCount = fields.filter(Boolean).length;
+      trackEvent('profile_updated', {
+        fields_filled: filledCount,
+        total_fields: fields.length,
+        is_complete: filledCount === fields.length,
+        has_gender: !!gender,
+        has_height: !!parsedHeight,
+        has_dob: !!dateOfBirth,
+        has_phone: !!normalizedPhone,
+      });
+      if (filledCount === fields.length) {
+        trackEvent('profile_completed');
+      }
+
       setTimeout(() => {
         onUpdate();
         onClose();

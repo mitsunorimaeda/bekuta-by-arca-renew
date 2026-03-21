@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { User as AuthUser, Session } from "@supabase/supabase-js";
 import { supabase, User } from "../lib/supabase";
+import { identifyUser, resetUser, setGroup } from "../lib/posthog";
 
 type AuthLoadingState = "booting" | "ready";
 
@@ -81,6 +82,21 @@ export function useAuth() {
 
       if (data) {
         setUserProfile(data as User);
+
+        // ✅ PostHog にユーザー識別情報を送信
+        const profile = data as User;
+        identifyUser(uid, {
+          role: profile.role ?? undefined,
+          team_name: (profile as any).team_name ?? undefined,
+          name: profile.name ?? undefined,
+        });
+        // チーム単位の分析
+        if ((profile as any).team_id) {
+          setGroup('team', (profile as any).team_id, {
+            name: (profile as any).team_name,
+          });
+        }
+
         return;
       }
 
@@ -210,6 +226,8 @@ export function useAuth() {
     } catch (e) {
       console.error("[useAuth] signOut error:", e);
     } finally {
+      // ✅ PostHog リセット
+      resetUser();
       setUser(null);
       setUserProfile(null);
       setRequiresPasswordChange(false);

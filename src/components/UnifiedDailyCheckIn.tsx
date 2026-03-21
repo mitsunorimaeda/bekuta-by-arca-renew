@@ -13,6 +13,9 @@ import type { FlowIntensity } from '../lib/cycleConstants';
 import { VectorArrowPicker } from './VectorArrowPicker';
 import { SignalPicker } from './SignalPicker';
 
+// ✅ PostHog Analytics
+import { trackEvent } from '../lib/posthog';
+
 // ✅ last◯◯Record の型は normalizeRecords に寄せる
 import type {
   TrainingRecordCheckIn,
@@ -234,6 +237,7 @@ export function UnifiedDailyCheckIn({
         }
 
         setCompletedSections((prev) => new Set(prev).add('training'));
+        trackEvent('checkin_section_completed', { section: 'training', rpe, duration_min: duration });
         setActiveSection('weight');
         return;
       }
@@ -266,8 +270,9 @@ export function UnifiedDailyCheckIn({
           }
 
           setCompletedSections((prev) => new Set(prev).add('weight'));
+          trackEvent('checkin_section_completed', { section: 'weight', weight_kg: Number(weight) });
         }
-    
+
         setActiveSection('conditioning');
         return;
       }
@@ -323,11 +328,13 @@ export function UnifiedDailyCheckIn({
         }
 
         setCompletedSections((prev) => new Set(prev).add('conditioning'));
-    
+        trackEvent('checkin_section_completed', { section: 'conditioning', sleep_hours: sleepHours, motivation_level: motivationLevel });
+
         // ✅ 女性ならcycleへ
         if (cycleEnabled) {
           setActiveSection('cycle');
         } else {
+          trackEvent('checkin_completed', { sections: ['training', 'weight', 'conditioning'] });
           setTimeout(() => onClose(), 500);
         }
         return;
@@ -336,6 +343,8 @@ export function UnifiedDailyCheckIn({
       if (section === 'cycle') {
         // CycleSection が内部で保存済み → 完了だけマーク
         setCompletedSections((prev) => new Set(prev).add('cycle'));
+        trackEvent('checkin_section_completed', { section: 'cycle' });
+        trackEvent('checkin_completed', { sections: ['training', 'weight', 'conditioning', 'cycle'] });
         setTimeout(() => onClose(), 500);
         return;
       }    

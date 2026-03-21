@@ -9,6 +9,9 @@ import { RealtimeHubProvider } from "./hooks/useRealtimeHub";
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
 
+// ✅ PostHog Analytics
+import { initPostHog } from "./lib/posthog";
+
 Sentry.init({
   dsn: "https://ef38d8a37ebc8c6e3960fbe47f15123b@o4510731847008256.ingest.us.sentry.io/4510731981881344",
 
@@ -104,6 +107,9 @@ if (import.meta.env.PROD) {
     }
   });
 }
+
+// ✅ PostHog 初期化
+initPostHog();
 
 // ✅ Service Worker 登録（オフライン対応 + プッシュ通知）
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn, AlertCircle, Info, Eye, EyeOff } from 'lucide-react';
+import { trackEvent } from '../lib/posthog';
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -35,7 +36,9 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
     try {
       await onLogin(email.trim(), password);
+      trackEvent('login_success');
     } catch (err: any) {
+      trackEvent('login_failed', { error: err.message });
       console.error('❌ Login error:', err);
       console.error('Error message:', err.message);
       console.error('Error details:', err);

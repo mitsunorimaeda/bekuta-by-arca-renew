@@ -26,6 +26,9 @@ import { CoachAthletesTab } from './CoachAthletesTab';
 import { CoachTeamTrendsTab } from './CoachTeamTrendsTab';
 import { FrozenAthletesTab } from './FrozenAthletesTab';
 
+// ✅ PostHog Analytics
+import { trackEvent } from '../lib/posthog';
+
 import {
   Users,
   BarChart3,
@@ -236,6 +239,11 @@ export function StaffView({
   const selectedTeamIdRef = useRef<string | null>(null);
   const acwrRequestSeqRef = useRef(0);
   const athletesIdsKeyRef = useRef<string>('');
+
+  // ✅ PostHog: コーチダッシュボード閲覧トラッキング
+  useEffect(() => {
+    trackEvent('coach_dashboard_viewed', { team_id: selectedTeam?.id });
+  }, []);
 
   useEffect(() => {
     selectedTeamIdRef.current = selectedTeam?.id ?? null;
@@ -632,6 +640,7 @@ export function StaffView({
       return;
     }
     setSelectedAthlete(athlete);
+    trackEvent('athlete_detail_opened', { athlete_id: athlete.id, athlete_name: athlete.name });
   };
 
   // Risk counts for hero card
