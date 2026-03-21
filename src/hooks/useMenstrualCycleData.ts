@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { offlineMutation } from '../lib/offlineSupabase';
 import type { Database } from '../lib/database.types';
 import {
   getCyclePhaseForDate,
@@ -77,7 +78,6 @@ export function useMenstrualCycleData(userId: string) {
         organization_id: organizationId,
       };
 
-      const { offlineMutation } = await import('../lib/offlineSupabase');
       const result = await offlineMutation({
         table: 'menstrual_cycles',
         operation: 'insert',

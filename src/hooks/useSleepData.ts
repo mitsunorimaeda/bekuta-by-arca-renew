@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { offlineMutation } from '../lib/offlineSupabase';
 import { Database } from '../lib/database.types';
 
 type SleepRecord = Database['public']['Tables']['sleep_records']['Row'];
@@ -79,7 +80,6 @@ export function useSleepData(userId: string) {
         notes: data.notes || null
       };
 
-      const { offlineMutation } = await import('../lib/offlineSupabase');
       const result = await offlineMutation({
         table: 'sleep_records',
         operation: 'insert',

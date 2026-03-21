@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { offlineMutation } from "./offlineSupabase";
 
 export async function upsertDailyEnergySnapshot(params: {
   userId: string;
@@ -34,7 +35,6 @@ export async function upsertDailyEnergySnapshot(params: {
   const tdee = Math.round(bmr * activityFactor);
 
   // ✅ 1日1行で upsert（onConflictは user_id,date）— オフライン対応
-  const { offlineMutation } = await import('./offlineSupabase');
   await offlineMutation({
     table: 'daily_energy_snapshots',
     operation: 'upsert',

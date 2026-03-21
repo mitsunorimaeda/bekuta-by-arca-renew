@@ -1,6 +1,7 @@
 // src/hooks/useTrainingData.ts
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { offlineMutation } from "../lib/offlineSupabase";
 
 type TrainingRecordRow = {
   id: string;
@@ -241,7 +242,6 @@ export function useTrainingData(userId: string) {
 
   const addTrainingRecord = useCallback(
     async (payload: Omit<TrainingRecordRow, "id" | "user_id"> & { rpe: number; duration_min: number; date: string }) => {
-      const { offlineMutation } = await import('../lib/offlineSupabase');
       const result = await offlineMutation({
         table: 'training_records',
         operation: 'insert',

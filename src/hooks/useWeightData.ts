@@ -1,6 +1,7 @@
 // src/hooks/useWeightData.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { offlineMutation } from '../lib/offlineSupabase';
 import { Database } from '../lib/database.types';
 
 type WeightRecord = Database['public']['Tables']['weight_records']['Row'];
@@ -131,7 +132,6 @@ export function useWeightData(userId: string) {
           notes: data.notes || null,
         };
 
-        const { offlineMutation } = await import('../lib/offlineSupabase');
         const result = await offlineMutation({
           table: 'weight_records',
           operation: 'insert',
