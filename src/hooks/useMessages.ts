@@ -65,6 +65,10 @@ export function useMessages(userId: string) {
   const inflightThreadsRef = useRef(false);
   const inflightMessagesRef = useRef<Record<string, boolean>>({});
 
+  // hiddenThreadIdsをrefで保持（fetchThreads内で参照するため）
+  const hiddenThreadIdsRef = useRef(hiddenThreadIds);
+  hiddenThreadIdsRef.current = hiddenThreadIds;
+
   const cleanupChannel = useCallback(() => {
     const ch = channelRef.current;
     if (!ch) return;
@@ -167,6 +171,24 @@ export function useMessages(userId: string) {
       );
 
       setThreads(threadsWithDetails);
+
+      // 非表示スレッドに未読があれば自動的に再表示
+      const hiddenWithUnread = threadsWithDetails.filter(
+        (t) => hiddenThreadIdsRef.current.has(t.id) && (t.unread_count || 0) > 0
+      );
+      if (hiddenWithUnread.length > 0) {
+        const idsToUnhide = hiddenWithUnread.map((t) => t.id);
+        await supabase
+          .from('user_hidden_threads')
+          .delete()
+          .eq('user_id', userId)
+          .in('thread_id', idsToUnhide);
+        setHiddenThreadIds((prev) => {
+          const next = new Set(prev);
+          idsToUnhide.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
       setError(null);
     } catch (err) {
       console.error("[useMessages] fetchThreads error:", err);
