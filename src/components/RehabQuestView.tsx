@@ -11,6 +11,7 @@ import { BadgeModalController } from './BadgeModalController';
 
 interface RehabQuestViewProps {
   userId: string;
+  prescriptionId?: string;  // 指定時はこの処方を直接表示
   onBackHome: () => void;
 }
 
@@ -21,19 +22,23 @@ declare global {
   }
 }
 
-export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewProps) {
+export default function RehabQuestView({ userId, prescriptionId: propPrescriptionId, onBackHome }: RehabQuestViewProps) {
   const [quest, setQuest] = useState<any>(null);
-  
+
   // ★ 変更: 単体ではなくリストも管理する
   const [injuryList, setInjuryList] = useState<any[]>([]);
   const [injury, setInjury] = useState<any>(null); // 現在表示中の怪我
-  
+
   const [loading, setLoading] = useState(true);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [latestLog, setLatestLog] = useState<any>(null);
   const [rewardMsg, setRewardMsg] = useState<{show: boolean, text: string}>({show: false, text: ''});
   const [selectedNrs, setSelectedNrs] = useState<number | null>(null);
+  const [selectedRpe, setSelectedRpe] = useState<number | null>(null);
   const [viewingPhase, setViewingPhase] = useState<number>(1);
+
+  // ウェイト入力用 state: { [itemId]: { sets: [{ weight, reps }] } }
+  const [weightInputs, setWeightInputs] = useState<Record<string, { weight: number; reps: number }[]>>({});
 
   // YouTubeプレーヤー制御用
   const playerRef = useRef<any>(null);
@@ -146,17 +151,40 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         setInjury(injuryDataList[0]); // デフォルトで最新のものを表示
       }
 
-      const { data: prescription } = await supabase
-        .schema('rehab')
-        .from('prescriptions')
-        .select(`*, items:prescription_items(*)`)
-        .eq('athlete_user_id', userId)
-        .in('status', ['active', 'conditioning'])
-        .maybeSingle();
+      // prescriptionId が指定されている場合はそれを直接取得、なければ従来通り
+      let prescription: any = null;
+      if (propPrescriptionId) {
+        const { data } = await supabase
+          .schema('rehab')
+          .from('prescriptions')
+          .select(`*, items:prescription_items(*)`)
+          .eq('id', propPrescriptionId)
+          .single();
+        prescription = data;
+      } else {
+        const { data } = await supabase
+          .schema('rehab')
+          .from('prescriptions')
+          .select(`*, items:prescription_items(*)`)
+          .eq('athlete_user_id', userId)
+          .in('status', ['active', 'conditioning'])
+          .limit(1)
+          .maybeSingle();
+        prescription = data;
+      }
 
       if (prescription) {
         setQuest(prescription);
         setViewingPhase(prescription.current_phase);
+
+        // ウェイト入力の初期化
+        const weightItems = (prescription.items || []).filter((i: any) => i.input_type === 'weight');
+        const initialWeightInputs: Record<string, { weight: number; reps: number }[]> = {};
+        weightItems.forEach((item: any) => {
+          const setCount = parseInt(item.sets) || 3;
+          initialWeightInputs[item.id] = Array.from({ length: setCount }, () => ({ weight: 0, reps: 0 }));
+        });
+        setWeightInputs(initialWeightInputs);
         const { data: log } = await supabase
           .schema('rehab')
           .from('prescription_daily_logs')
@@ -170,10 +198,16 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  const updateExerciseStatus = async (itemId: string, nextStatus: 'none' | 'done' | 'pain') => {
+  const updateExerciseStatus = async (itemId: string, nextStatus: 'none' | 'done' | 'pain', weightData?: { weight: number; reps: number }[]) => {
     const today = new Date().toISOString().split('T')[0];
     const currentResults = latestLog?.item_results || {};
-    const newResults = { ...currentResults, [itemId]: nextStatus };
+
+    // ウェイトデータがある場合はオブジェクト形式、それ以外は文字列（後方互換）
+    const newValue = weightData
+      ? { status: nextStatus, sets: weightData }
+      : nextStatus;
+
+    const newResults = { ...currentResults, [itemId]: newValue };
 
     try {
       await supabase.schema('rehab').from('prescription_daily_logs').upsert({
@@ -181,18 +215,29 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         athlete_user_id: userId,
         log_date: today,
         item_results: newResults,
-        completed_items: Object.keys(newResults).filter(k => newResults[k] !== 'none'),
-        pain_level: selectedNrs || 0
+        completed_items: Object.keys(newResults).filter(k => {
+          const val = newResults[k];
+          const status = typeof val === 'string' ? val : val?.status;
+          return status !== 'none';
+        }),
+        pain_level: selectedNrs || 0,
+        rpe: selectedRpe || null,
       }, { onConflict: 'prescription_id, log_date' });
-      
+
       setLatestLog((prev: any) => ({ ...prev, item_results: newResults }));
     } catch (e: any) { console.error(e.message); }
+  };
+
+  const getStatusFromResult = (result: any): string => {
+    if (!result) return 'none';
+    if (typeof result === 'string') return result;
+    return result.status || 'none';
   };
 
   const cycleExerciseStatus = (itemId: string) => {
     if (!quest || viewingPhase !== quest.current_phase) return;
     const currentResults = latestLog?.item_results || {};
-    const status = currentResults[itemId] || 'none';
+    const status = getStatusFromResult(currentResults[itemId]);
 
     let nextStatus: 'none' | 'done' | 'pain';
     if (status === 'none') nextStatus = 'done';
@@ -202,30 +247,52 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
     updateExerciseStatus(itemId, nextStatus);
   };
 
+  // ウェイト入力のセットデータ更新
+  const updateWeightSet = (itemId: string, setIndex: number, field: 'weight' | 'reps', value: number) => {
+    setWeightInputs(prev => {
+      const sets = [...(prev[itemId] || [])];
+      sets[setIndex] = { ...sets[setIndex], [field]: value };
+      return { ...prev, [itemId]: sets };
+    });
+  };
+
+  // ウェイト種目の完了記録
+  const completeWeightExercise = (itemId: string) => {
+    const sets = weightInputs[itemId];
+    if (!sets || sets.every(s => s.weight === 0 && s.reps === 0)) return;
+    updateExerciseStatus(itemId, 'done', sets);
+  };
+
+  const isRehab = quest?.purpose === 'rehab' || !quest?.purpose;
+  const metricValue = isRehab ? selectedNrs : selectedRpe;
+
   const finalizeRehab = async () => {
-    if (!quest || selectedNrs === null) {
-      alert("現在の痛みレベルを選択してください");
+    if (!quest || metricValue === null) {
+      alert(isRehab ? "現在の痛みレベルを選択してください" : "運動強度（RPE）を選択してください");
       return;
     }
     try {
       const today = new Date().toISOString().split('T')[0];
-      
+
       await supabase.schema('rehab').from('prescription_daily_logs').upsert({
         prescription_id: quest.id,
         athlete_user_id: userId,
         log_date: today,
-        pain_level: selectedNrs,
+        pain_level: isRehab ? metricValue : 0,
+        rpe: !isRehab ? metricValue : null,
         item_results: latestLog?.item_results || {}
       }, { onConflict: 'prescription_id, log_date' });
 
-      const { data: result } = await supabase.rpc('reward_rehab_action', {
-        p_user_id: userId,
-        p_action_type: 'nrs_log'
-      });
+      try {
+        await supabase.rpc('reward_rehab_action', {
+          p_user_id: userId,
+          p_action_type: 'nrs_log'
+        });
+      } catch (_) { /* reward RPCが無くても処理は続行 */ }
 
-      setRewardMsg({ 
-        show: true, 
-        text: "リハビリ報告完了！" 
+      setRewardMsg({
+        show: true,
+        text: isRehab ? "リハビリ報告完了！" : "トレーニング報告完了！"
       });
 
       setTimeout(() => {
@@ -341,44 +408,67 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
         <div className="space-y-3">
           {quest?.items?.filter((i:any) => i.phase === viewingPhase).length > 0 ? (
             quest.items.filter((i:any) => i.phase === viewingPhase).map((item: any) => {
-              const status = isCurrentViewActive ? (latestLog?.item_results?.[item.id] || 'none') : 'none';
+              const resultVal = latestLog?.item_results?.[item.id];
+              const status = isCurrentViewActive ? getStatusFromResult(resultVal) : 'none';
               const ytId = item.video_url ? getYoutubeId(item.video_url) : null;
+              const isWeightType = item.input_type === 'weight';
 
               return (
                 <div key={item.id} className={`group rounded-[1.8rem] border-2 transition-all duration-300 ${
-                  status === 'done' ? 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/50' : 
-                  status === 'pain' ? 'bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/50' : 
+                  status === 'done' ? 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/50' :
+                  status === 'pain' ? 'bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/50' :
                   'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 shadow-sm'
                 } ${!isCurrentViewActive && 'opacity-70'}`}>
                   <div className="p-5 flex items-center gap-4">
                     {/* 左側のステータスボタン */}
-                    <button 
-                      onClick={() => cycleExerciseStatus(item.id)}
-                      disabled={!isCurrentViewActive}
-                      className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-all ${
-                        !isCurrentViewActive ? 'bg-slate-100 dark:bg-slate-700 text-slate-300 dark:text-slate-500' :
-                        status === 'done' ? 'bg-green-500 text-white shadow-lg' : 
-                        status === 'pain' ? 'bg-orange-500 text-white shadow-lg' : 
-                        'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200'
-                      } active:scale-90`}
-                    >
-                      {status === 'done' && <CheckCircle2 size={24} />}
-                      {status === 'pain' && <AlertCircle size={24} />}
-                      {status === 'none' && (isCurrentViewActive ? <Play size={22} fill="currentColor" /> : <Eye size={22} />)}
-                      <span className="text-[8px] font-black uppercase mt-1">
-                        {status === 'done' ? 'CLEAR' : status === 'pain' ? 'PAIN' : isCurrentViewActive ? 'START' : 'VIEW'}
-                      </span>
-                    </button>
+                    {!isWeightType ? (
+                      <button
+                        onClick={() => cycleExerciseStatus(item.id)}
+                        disabled={!isCurrentViewActive}
+                        className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-all ${
+                          !isCurrentViewActive ? 'bg-slate-100 dark:bg-slate-700 text-slate-300 dark:text-slate-500' :
+                          status === 'done' ? 'bg-green-500 text-white shadow-lg' :
+                          status === 'pain' ? 'bg-orange-500 text-white shadow-lg' :
+                          'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200'
+                        } active:scale-90`}
+                      >
+                        {status === 'done' && <CheckCircle2 size={24} />}
+                        {status === 'pain' && <AlertCircle size={24} />}
+                        {status === 'none' && (isCurrentViewActive ? <Play size={22} fill="currentColor" /> : <Eye size={22} />)}
+                        <span className="text-[8px] font-black uppercase mt-1">
+                          {status === 'done' ? 'CLEAR' : status === 'pain' ? 'PAIN' : isCurrentViewActive ? 'START' : 'VIEW'}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center ${
+                        status === 'done' ? 'bg-green-500 text-white' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-500'
+                      }`}>
+                        {status === 'done' ? <CheckCircle2 size={24} /> : <Sword size={20} />}
+                        <span className="text-[7px] font-black uppercase mt-0.5">
+                          {status === 'done' ? 'DONE' : 'WEIGHT'}
+                        </span>
+                      </div>
+                    )}
 
-                    <div className="flex-1" onClick={() => cycleExerciseStatus(item.id)}>
+                    <div className="flex-1" onClick={() => !isWeightType && cycleExerciseStatus(item.id)}>
                       <h4 className={`font-black text-base ${status !== 'none' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{item.name}</h4>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {item.quantity} {item.sets && `× ${item.sets} Sets`}
-                      </p>
+                      {isWeightType ? (
+                        <p className="text-[10px] font-bold text-orange-500 uppercase tracking-tighter">
+                          {item.intensity && `${item.intensity} `}
+                          {item.rep_range && `(${item.rep_range}rep) `}
+                          {item.target_rpe && `RPE${item.target_rpe} `}
+                          {item.tempo && `T:${item.tempo} `}
+                          {item.rest_seconds && `REST${item.rest_seconds}s`}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                          {item.quantity} {item.sets && `× ${item.sets} Sets`}
+                        </p>
+                      )}
                     </div>
 
                     {ytId && (
-                      <button 
+                      <button
                         onClick={() => setActiveVideo(activeVideo === item.id ? null : item.id)}
                         className={`p-3 rounded-2xl transition-all ${activeVideo === item.id ? 'bg-red-500 text-white shadow-lg' : 'bg-red-50 dark:bg-slate-700 text-red-500'}`}
                       >
@@ -386,6 +476,46 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
                       </button>
                     )}
                   </div>
+
+                  {/* ウェイト入力エリア */}
+                  {isWeightType && isCurrentViewActive && status !== 'done' && (
+                    <div className="px-5 pb-5 space-y-2">
+                      {item.sub_exercise && (
+                        <div className="text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg">
+                          💡 REST中: {item.sub_exercise}
+                        </div>
+                      )}
+                      <div className="space-y-1.5">
+                        {(weightInputs[item.id] || []).map((set, sIdx) => (
+                          <div key={sIdx} className="flex items-center gap-2 bg-gray-50 dark:bg-slate-700 rounded-xl px-3 py-2">
+                            <span className="text-[10px] font-black text-gray-400 w-8">S{sIdx + 1}</span>
+                            <input
+                              type="number"
+                              value={set.weight || ''}
+                              onChange={(e) => updateWeightSet(item.id, sIdx, 'weight', Number(e.target.value))}
+                              placeholder="kg"
+                              className="w-16 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
+                            />
+                            <span className="text-xs text-gray-400">kg ×</span>
+                            <input
+                              type="number"
+                              value={set.reps || ''}
+                              onChange={(e) => updateWeightSet(item.id, sIdx, 'reps', Number(e.target.value))}
+                              placeholder="回"
+                              className="w-14 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
+                            />
+                            <span className="text-xs text-gray-400">回</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => completeWeightExercise(item.id)}
+                        className="w-full py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-xs font-bold transition-all active:scale-95"
+                      >
+                        <CheckCircle2 size={14} className="inline mr-1" /> 記録する
+                      </button>
+                    </div>
+                  )}
 
                   {/* 動画プレーヤーエリア */}
                   {activeVideo === item.id && ytId && (
@@ -410,18 +540,35 @@ export default function RehabQuestView({ userId, onBackHome }: RehabQuestViewPro
       {/* 4. 本日の体調報告 & リハビリ完了 */}
       {isCurrentViewActive && (
         <section className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border-2 border-blue-500/20 dark:border-blue-500/30 text-center shadow-xl">
-          <div className="bg-blue-50 dark:bg-blue-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Activity className="text-blue-600 dark:text-blue-400" size={32} />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${isRehab ? 'bg-blue-50 dark:bg-blue-500/10' : 'bg-orange-50 dark:bg-orange-500/10'}`}>
+            <Activity className={isRehab ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'} size={32} />
           </div>
           <h3 className="text-lg font-black mb-1 uppercase tracking-tight">Daily Report</h3>
-          <p className="text-slate-500 dark:text-slate-400 text-xs font-bold mb-8">リハビリ後の痛みを選択して完了</p>
+          <p className="text-slate-500 dark:text-slate-400 text-xs font-bold mb-8">
+            {isRehab ? 'リハビリ後の痛みを選択して完了' : '運動強度（RPE）を選択して完了'}
+          </p>
           <div className="grid grid-cols-6 gap-2 mb-10">
-            {[...Array(11).keys()].map(val => (
-              <button key={val} onClick={() => setSelectedNrs(val)} className={`h-12 rounded-xl font-black text-sm transition-all active:scale-90 ${selectedNrs === val ? 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-500/20 scale-110 z-10' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'}`}>{val}</button>
+            {(isRehab ? [...Array(11).keys()] : [1,2,3,4,5,6,7,8,9,10]).map(val => (
+              <button key={val} onClick={() => isRehab ? setSelectedNrs(val) : setSelectedRpe(val)}
+                className={`h-12 rounded-xl font-black text-sm transition-all active:scale-90 ${
+                  metricValue === val
+                    ? `${isRehab ? 'bg-blue-600' : 'bg-orange-600'} text-white ring-4 ${isRehab ? 'ring-blue-100 dark:ring-blue-500/20' : 'ring-orange-100 dark:ring-orange-500/20'} scale-110 z-10`
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'
+                }`}>{val}</button>
             ))}
-            <div className="flex items-center justify-center text-[10px] font-black text-slate-400 uppercase">NRS</div>
+            <div className="flex items-center justify-center text-[10px] font-black text-slate-400 uppercase">
+              {isRehab ? 'NRS' : 'RPE'}
+            </div>
           </div>
-          <button onClick={finalizeRehab} disabled={selectedNrs === null} className={`w-full py-5 rounded-[1.5rem] font-black text-sm shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${selectedNrs !== null ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-blue-500/40' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 grayscale opacity-50'}`}><Flame size={20} />本日のリハビリを完了する</button>
+          <button onClick={finalizeRehab} disabled={metricValue === null}
+            className={`w-full py-5 rounded-[1.5rem] font-black text-sm shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${
+              metricValue !== null
+                ? `bg-gradient-to-r ${isRehab ? 'from-blue-600 to-blue-500 shadow-blue-500/40' : 'from-orange-600 to-orange-500 shadow-orange-500/40'} text-white`
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 grayscale opacity-50'
+            }`}>
+            <Flame size={20} />
+            {isRehab ? '本日のリハビリを完了する' : '本日のトレーニングを完了する'}
+          </button>
         </section>
       )}
 

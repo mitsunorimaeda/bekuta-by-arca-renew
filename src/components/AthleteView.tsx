@@ -109,6 +109,7 @@ const DailyReflectionCardLazy = lazy(() =>
 
 // ✅ Rehab（いまは直importになっていたので、初回バンドルから外す）
 const RehabQuestViewLazy = lazy(() => import('./RehabQuestView'));
+const PrescriptionCardListLazy = lazy(() => import('./PrescriptionCardList'));
 
 // ✅ Charts (recharts系は重くなりがちなので基本lazy)
 const ACWRChartLazy = lazy(() => import('./ACWRChart').then((m) => ({ default: m.ACWRChart })));
@@ -248,23 +249,33 @@ export function AthleteView({
   }, [today]);
 
 
-  // ★ 修正：リハビリステータスチェック
-  // 複数あっても正しく判定できるように .maybeSingle() を廃止し、配列の長さで判定する
+  // ★ 修正：リハビリ or パフォーマンスプログラムの有無チェック
   const [isRehabilitating, setIsRehabilitating] = useState(false);
+  const [hasActivePrograms, setHasActivePrograms] = useState(false);
+  const [activeProgramCount, setActiveProgramCount] = useState(0);
+  const [selectedQuestPrescriptionId, setSelectedQuestPrescriptionId] = useState<string | null>(null);
+
   useEffect(() => {
-    async function checkInjury() {
-      const { data } = await supabase
-        .schema('rehab')
-        .from('injuries')
-        .select('id')
+    async function checkPrograms() {
+      // 怪我チェック
+      const { data: injuries } = await supabase
+        .schema('rehab').from('injuries').select('id')
         .eq('athlete_user_id', user.id)
         .in('status', ['active', 'conditioning'])
-        .limit(1); // ★ 修正: 1件だけ取得（配列が返る）
+        .limit(1);
+      setIsRehabilitating(!!(injuries && injuries.length > 0));
 
-      // データが存在し、かつ配列の中身が1つ以上あれば true
-      setIsRehabilitating(!!(data && data.length > 0));
+      // active処方チェック（リハビリ+パフォーマンス+コンディショニング全て）
+      const { data: prescriptions } = await supabase
+        .schema('rehab').from('prescriptions').select('id')
+        .eq('athlete_user_id', user.id)
+        .in('status', ['active', 'conditioning'])
+        .neq('type', 'template');
+      const count = prescriptions?.length || 0;
+      setActiveProgramCount(count);
+      setHasActivePrograms(count > 0);
     }
-    checkInjury();
+    checkPrograms();
   }, [user.id]);
 
   
@@ -528,10 +539,10 @@ export function AthleteView({
     (tab: ActiveTab) => {
       if (tab === 'ftt' && !canUseFTT) return;
       if (tab === 'nutrition' && !canUseNutrition) return;
-      if (tab === 'rehab' && !isRehabilitating) return; // ★ ガード追加
+      if (tab === 'rehab' && !isRehabilitating && !hasActivePrograms) return; // ★ ガード追加
       setActiveTab(tab);
     },
-    [canUseFTT, canUseNutrition, isRehabilitating]
+    [canUseFTT, canUseNutrition, isRehabilitating, hasActivePrograms]
   );
   
   useEffect(() => {
@@ -550,9 +561,9 @@ export function AthleteView({
     }
   }, [canUseNutrition, activeTab])
 
-  // ★ リハビリガード：activeな怪我がないのにリハビタブにいたら戻す
+  // ★ リハビリガード：怪我もプログラムもないのにリハビタブにいたら戻す
   useEffect(() => {
-    if (!isRehabilitating && activeTab === 'rehab') {
+    if (!isRehabilitating && !hasActivePrograms && activeTab === 'rehab') {
       setActiveTab('unified');
     }
   }, [isRehabilitating, activeTab]);
@@ -1156,8 +1167,8 @@ export function AthleteView({
                 <span className="text-sm font-medium">ホーム</span>
               </button>
 
-              {/* ★ 追加：修行（リハビリ） */}
-              {isRehabilitating && (
+              {/* ★ 追加：修行（リハビリ・トレーニング） */}
+              {(isRehabilitating || hasActivePrograms) && (
                 <button type="button"
                   onClick={() => {
                     setActiveTab('rehab');
@@ -1439,20 +1450,28 @@ export function AthleteView({
         />
       )}
 
-      {/* ★ 追加：リハビリ開放カード（怪我人のみ最上部） */}
-      {isRehabilitating && (
+      {/* ★ 追加：プログラム開放カード（リハビリ or パフォーマンス処方がある選手） */}
+      {(isRehabilitating || hasActivePrograms) && (
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
-          <button 
-            onClick={() => setActiveTab('rehab')}
-            className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200 dark:shadow-none flex items-center justify-between group active:scale-[0.98] transition-all"
+          <button
+            onClick={() => { setSelectedQuestPrescriptionId(null); setActiveTab('rehab'); }}
+            className={`w-full rounded-2xl p-5 text-white shadow-xl flex items-center justify-between group active:scale-[0.98] transition-all ${
+              isRehabilitating
+                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-200 dark:shadow-none'
+                : 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-blue-200 dark:shadow-none'
+            }`}
           >
             <div className="flex items-center gap-4">
               <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm group-hover:rotate-12 transition-transform">
                 <Sword size={24} className="text-white" />
               </div>
               <div className="text-left">
-                <h3 className="text-lg font-black italic tracking-tight uppercase">Special Quest Unlocked</h3>
-                <p className="text-xs text-white/80 font-bold">復帰へ向けてエクササイズしよう</p>
+                <h3 className="text-lg font-black italic tracking-tight uppercase">
+                  {isRehabilitating ? 'Special Quest Unlocked' : 'Training Program'}
+                </h3>
+                <p className="text-xs text-white/80 font-bold">
+                  {isRehabilitating ? '復帰へ向けてエクササイズしよう' : `${activeProgramCount}つのプログラムが処方されています`}
+                </p>
               </div>
             </div>
             <ChevronRight size={24} className="opacity-50 group-hover:translate-x-1 transition-transform" />
@@ -1692,9 +1711,30 @@ export function AthleteView({
 
   
         ) : activeTab === "rehab" ? (
-          /* ★ 追加：リハビリ用ビュー */
+          /* ★ 追加：リハビリ・トレーニング用ビュー */
           <Suspense fallback={<div className="flex items-center justify-center h-64 animate-pulse text-indigo-500 font-black">修行の準備中...</div>}>
-            <RehabQuestViewLazy userId={user.id} onBackHome={() => setActiveTab('unified')} />
+            {selectedQuestPrescriptionId ? (
+              /* 個別クエスト画面 */
+              <RehabQuestViewLazy
+                userId={user.id}
+                prescriptionId={selectedQuestPrescriptionId}
+                onBackHome={() => {
+                  setSelectedQuestPrescriptionId(null);
+                  // 処方が1つだけの場合はホームに戻る
+                  if (activeProgramCount <= 1) setActiveTab('unified');
+                }}
+              />
+            ) : activeProgramCount > 1 ? (
+              /* 複数処方 → カードリスト */
+              <PrescriptionCardListLazy
+                userId={user.id}
+                onBackHome={() => setActiveTab('unified')}
+                onOpenQuest={(presId) => setSelectedQuestPrescriptionId(presId)}
+              />
+            ) : (
+              /* 処方が1つだけ → 直接クエスト画面 */
+              <RehabQuestViewLazy userId={user.id} onBackHome={() => setActiveTab('unified')} />
+            )}
           </Suspense>
 
         ) : activeTab === "nutrition" ? (
