@@ -133,10 +133,14 @@ export function SleepForm({
         return;
       }
 
-      await onSubmit(data);
+      const result = await onSubmit(data);
 
       resetForm();
-      showToast('success', '記録しました ✅');
+      if ((result as any)?.queued) {
+        showToast('success', 'オフラインで保存しました。接続時に自動送信されます。');
+      } else {
+        showToast('success', '記録しました ✅');
+      }
     } catch (err: any) {
       setError('睡眠記録の追加に失敗しました');
       console.error('Error submitting sleep record:', err);

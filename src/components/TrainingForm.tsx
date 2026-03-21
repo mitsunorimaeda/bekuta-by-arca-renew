@@ -156,7 +156,7 @@ export function TrainingForm({
     setSubmitting(true);
 
     try {
-      await onSubmit({
+      const result = await onSubmit({
         rpe,
         duration_min: duration,
         date: selectedDate,
@@ -166,8 +166,11 @@ export function TrainingForm({
 
       applySuccessEffects();
 
-      // ✅ 成功Toast（これが“手応え”）
-      showToast('success', '練習記録を保存しました ✅');
+      if ((result as any)?.queued) {
+        showToast('success', 'オフラインで保存しました。接続時に自動送信されます。');
+      } else {
+        showToast('success', '練習記録を保存しました ✅');
+      }
 
       resetForm();
     } catch (error) {

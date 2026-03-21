@@ -126,13 +126,17 @@ export function WeightForm({ onSubmit, onCheckExisting, onUpdate, loading, lastR
 
     setSubmitting(true);
     try {
-      await onSubmit({
+      const result = await onSubmit({
         weight_kg: weightNum,
         date: selectedDate,
         notes: notes.trim() || undefined,
       });
 
-      showToast('success', '体重記録を保存しました ✅');
+      if (result?.queued) {
+        showToast('success', 'オフラインで保存しました。接続時に自動送信されます。');
+      } else {
+        showToast('success', '体重記録を保存しました ✅');
+      }
       resetForm();
     } catch (err) {
       console.error('Error submitting weight record:', err);
