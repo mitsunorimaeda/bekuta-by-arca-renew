@@ -42,26 +42,29 @@ export function useMenstrualCycleData(userId: string) {
     }
   };
 
-  /** 組織IDを取得する内部ヘルパー */
+  /** 組織IDを取得する内部ヘルパー（オフライン時はnull） */
   const getOrganizationId = async (): Promise<string | null> => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) throw new Error('User not authenticated');
+    if (!navigator.onLine) return null;
 
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('team_id')
-      .eq('user_id', userData.user.id)
-      .maybeSingle();
-
-    if (userProfile?.team_id) {
-      const { data: team } = await supabase
-        .from('teams')
-        .select('organization_id')
-        .eq('id', userProfile.team_id)
+    try {
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('team_id')
+        .eq('user_id', userId)
         .maybeSingle();
-      return team?.organization_id || null;
+
+      if (userProfile?.team_id) {
+        const { data: team } = await supabase
+          .from('teams')
+          .select('organization_id')
+          .eq('id', userProfile.team_id)
+          .maybeSingle();
+        return team?.organization_id || null;
+      }
+      return null;
+    } catch {
+      return null; // ネットワークエラー時もnull
     }
-    return null;
   };
 
   const addCycle = async (cycle: Omit<MenstrualCycleInsert, 'user_id'>) => {

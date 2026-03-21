@@ -65,13 +65,12 @@ export function useSleepData(userId: string) {
     notes?: string;
   }) => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        throw new Error('認証が必要です');
+      if (!userId) {
+        throw new Error('ユーザーIDがありません');
       }
 
       const insertData: SleepInsert = {
-        user_id: authData.user.id,
+        user_id: userId,
         date: data.date,
         sleep_hours: data.sleep_hours,
         sleep_quality: data.sleep_quality || null,

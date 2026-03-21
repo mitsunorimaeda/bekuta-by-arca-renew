@@ -122,11 +122,10 @@ export function useWeightData(userId: string) {
   const addWeightRecord = useCallback(
     async (data: { weight_kg: number; date: string; notes?: string }) => {
       try {
-        const { data: authData } = await supabase.auth.getUser();
-        if (!authData.user) throw new Error('認証が必要です');
+        if (!userId) throw new Error('ユーザーIDがありません');
 
         const insertData: WeightInsert = {
-          user_id: authData.user.id,
+          user_id: userId,
           weight_kg: data.weight_kg,
           date: toDateKey(data.date),
           notes: data.notes || null,
@@ -160,7 +159,7 @@ export function useWeightData(userId: string) {
         throw err;
       }
     },
-    []
+    [userId]
   );
 
   const updateWeightRecord = useCallback(
