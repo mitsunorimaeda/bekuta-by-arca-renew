@@ -6,14 +6,14 @@ export const athleteTutorialSteps: TutorialStep[] = [
   {
     id: 'athlete-welcome',
     title: 'Bekuta へようこそ！',
-    description: 'まずは一緒に練習記録を入力してみましょう。1分で完了します！',
+    description: 'まずは練習記録を入力してみましょう。右下の＋ボタンから始められます。',
     position: 'center',
   },
   // Step 2: FABをタップ（インタラクティブ）
   {
     id: 'athlete-tap-fab',
-    title: 'ステップ1：記録を開始',
-    description: '右下の＋ボタンをタップしてください',
+    title: 'ステップ1：＋ボタンをタップ',
+    description: '右下の青い＋ボタンをタップして、記録画面を開いてください',
     targetSelector: '[data-tutorial="fab-button"]',
     position: 'top',
     waitForSelector: '[data-tutorial="fab-button"]',
@@ -21,47 +21,23 @@ export const athleteTutorialSteps: TutorialStep[] = [
     allowInteraction: true,
     autoAdvanceDelay: 800,
   },
-  // Step 3: RPEスライダーを操作（インタラクティブ）
+  // Step 3: RPEと時間を入力して保存（説明 → 自由入力 → 保存ボタンで遷移）
   {
-    id: 'athlete-set-rpe',
-    title: 'ステップ2：練習のきつさ（RPE）',
-    description: 'スライダーを動かして今日の練習のきつさを選んでください。0=休養、5=きつい、10=限界',
-    targetSelector: '[data-tutorial="rpe-section"]',
-    position: 'bottom',
-    waitForSelector: '[data-tutorial="rpe-slider"]',
-    waitForEvent: 'input',
-    allowInteraction: true,
-    autoAdvanceDelay: 1500,
-  },
-  // Step 4: 練習時間を入力（インタラクティブ）
-  {
-    id: 'athlete-set-duration',
-    title: 'ステップ3：練習時間',
-    description: '練習時間（分）を入力してください。例：90分',
-    targetSelector: '[data-tutorial="duration-section"]',
-    position: 'bottom',
-    waitForSelector: '[data-tutorial="duration-input"]',
-    waitForEvent: 'input',
-    allowInteraction: true,
-    autoAdvanceDelay: 1500,
-  },
-  // Step 5: 保存ボタン（インタラクティブ）
-  {
-    id: 'athlete-submit',
-    title: 'ステップ4：保存！',
-    description: '入力できたら「記録する」ボタンをタップ！',
-    targetSelector: '[data-tutorial="training-submit"]',
+    id: 'athlete-fill-and-save',
+    title: 'ステップ2：RPEと時間を入力して保存',
+    description: 'RPE（きつさ）のスライダーを動かして、練習時間を設定したら、下の保存ボタンをタップしてください',
+    targetSelector: '[data-tutorial="checkin-submit"]',
     position: 'top',
-    waitForSelector: '[data-tutorial="training-submit"]',
+    waitForSelector: '[data-tutorial="checkin-submit"]',
     waitForEvent: 'click',
     allowInteraction: true,
     autoAdvanceDelay: 1500,
   },
-  // Step 6: 完了
+  // Step 4: 完了
   {
     id: 'athlete-complete',
     title: '初回チェックイン完了！🎉',
-    description: '素晴らしい！これで練習記録の入力方法がわかりましたね。毎日記録を続けると、ACWRで怪我リスクを可視化できます。体重・睡眠・モチベーションも同じ＋ボタンから記録できます。',
+    description: '素晴らしい！毎日＋ボタンから記録を続けると、ACWRで怪我リスクを可視化できます。体重・睡眠・モチベーションも同じ画面から記録できます。',
     position: 'center',
   },
 ];

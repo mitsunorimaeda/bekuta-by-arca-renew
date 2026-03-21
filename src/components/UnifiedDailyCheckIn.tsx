@@ -642,7 +642,7 @@ export function UnifiedDailyCheckIn({
                   </div>
                 </div>
 
-                <div>
+                <div data-tutorial="checkin-rpe-section">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     RPE (主観的運動強度)
                   </label>
@@ -655,6 +655,7 @@ export function UnifiedDailyCheckIn({
                     onPointerDown={() => setIsSliding(true)}
                     onPointerUp={() => setIsSliding(false)}
                     onPointerCancel={() => setIsSliding(false)}
+                    data-tutorial="checkin-rpe-slider"
                     className="w-full h-2 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{rpeLabels[rpe]}</p>
@@ -982,6 +983,7 @@ export function UnifiedDailyCheckIn({
                 type="button"
                 onClick={() => void handleSectionComplete(activeSection)}
                 disabled={submitting}
+                data-tutorial="checkin-submit"
                 className={`w-full py-3 rounded-xl font-semibold transition-colors ${
                   submitting
                     ? "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 cursor-not-allowed"
