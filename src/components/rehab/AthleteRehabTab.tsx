@@ -217,14 +217,21 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
           </h3>
           <div className="space-y-2">
             {prescriptions.filter(p => !p.injury_id).map(pres => (
-              <div key={pres.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex items-center justify-between">
+              <div
+                key={pres.id}
+                onClick={() => onOpenPrescription?.(pres.id, athleteId)}
+                className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors group"
+              >
                 <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">{pres.title}</div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{pres.title}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">Phase {pres.current_phase}</div>
                 </div>
-                <span className="text-xs px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded font-medium">
-                  Active
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded font-medium">
+                    Active
+                  </span>
+                  <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+                </div>
               </div>
             ))}
           </div>
