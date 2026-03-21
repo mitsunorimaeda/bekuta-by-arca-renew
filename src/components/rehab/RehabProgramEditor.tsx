@@ -6,17 +6,22 @@ import {
   Layers, Info, Trophy, Dumbbell, ArrowLeft, Clock, Youtube,
   Settings, ChevronDown, ChevronUp, MapPin
 } from 'lucide-react';
-import { BODY_PART_OPTIONS } from '../../lib/rehabConstants';
+import {
+  BODY_PART_OPTIONS,
+  PURPOSE_OPTIONS, SCOPE_OPTIONS, INPUT_TYPE_OPTIONS,
+  EXERCISE_CATEGORIES, DEFAULT_PHASES,
+  getCategoriesForPurpose, getCategoryLabel,
+  type PrescriptionPurpose, type TemplateScope, type InputType, type ExerciseCategory
+} from '../../lib/rehabConstants';
 
 // 型定義
-type QuestType = 'training' | 'care' | 'cardio' | 'mental' | 'life';
-
 type Quest = {
   id: number;
   title: string;
   quantity: string;
   sets: string;
-  type: QuestType;
+  type: ExerciseCategory;
+  input_type: InputType;
   video_url?: string;
 };
 
@@ -33,34 +38,38 @@ type ScenarioData = {
   description: string;
   duration: string;
   body_part_key: string;
+  purpose: PrescriptionPurpose;
+  scope: TemplateScope;
   phases: Phase[];
 };
 
 interface RehabProgramEditorProps {
   templateId?: string;
+  defaultPurpose?: PrescriptionPurpose;
   onBack: () => void;
   showToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-export default function RehabProgramEditor({ templateId, onBack, showToast }: RehabProgramEditorProps) {
+export default function RehabProgramEditor({ templateId, defaultPurpose, onBack, showToast }: RehabProgramEditorProps) {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [exerciseMaster, setExerciseMaster] = useState<any[]>([]);
   // スマホ用：概要エリアの開閉状態
   const [showMobileInfo, setShowMobileInfo] = useState(false);
 
+  const initialPurpose = defaultPurpose || 'rehab';
+  const initialPhases = DEFAULT_PHASES[initialPurpose];
+
   const [data, setData] = useState<ScenarioData>({
-    title: "新規リハビリシナリオ",
+    title: initialPurpose === 'rehab' ? "新規リハビリプログラム" : initialPurpose === 'performance' ? "新規パフォーマンスプログラム" : "新規コンディショニングプログラム",
     description: "",
     duration: "3ヶ月",
     body_part_key: "",
-    phases: [
-      { id: 1, title: "Phase 1: 急性期", description: "患部の安静と炎症コントロールを行う最初のステップです。", boss: "炎症の消失・自動可動域の改善", quests: [] },
-      { id: 2, title: "Phase 2: 可動域回復", description: "本格的なリハビリの開始。柔軟性と可動域を取り戻します。", boss: "全可動域の獲得", quests: [] },
-      { id: 3, title: "Phase 3: 筋力強化", description: "失われた筋力を呼び覚まし、土台を強固にします。", boss: "左右差20%以内", quests: [] },
-      { id: 4, title: "Phase 4: 動作改善", description: "ジャンプやダッシュなど、競技に必要な動きを身につけます。", boss: "ジョギング・アジリティ開始許可", quests: [] },
-      { id: 5, title: "Phase 5: 競技復帰", description: "対人練習への合流と、完全な競技復帰を目指します。", boss: "完全復帰", quests: [] },
-    ]
+    purpose: initialPurpose,
+    scope: 'team',
+    phases: initialPhases.map((p, i) => ({
+      id: i + 1, title: p.title, description: p.description, boss: "", quests: []
+    }))
   });
 
   const [focusedPhaseIdx, setFocusedPhaseIdx] = useState(0);
@@ -95,18 +104,29 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
         .schema('rehab').from('prescription_items').select('*').eq('prescription_id', id).order('item_index', { ascending: true });
       if (iError) throw iError;
 
-      const restoredPhases = data.phases.map((p, idx) => {
+      const purpose = (template.purpose as PrescriptionPurpose) || 'rehab';
+      const defaultPh = DEFAULT_PHASES[purpose];
+
+      // テンプレートに保存されたフェーズ数に合わせて復元
+      const phaseCount = template.phase_details ? Object.keys(template.phase_details).length : defaultPh.length;
+      const restoredPhases = Array.from({ length: Math.max(phaseCount, 1) }, (_, idx) => {
         const phaseNumber = idx + 1;
+        const phaseDetail = template.phase_details?.[phaseNumber];
+        const defaultPhase = defaultPh[idx];
         return {
-          ...p,
+          id: phaseNumber,
+          title: phaseDetail?.description ? `Phase ${phaseNumber}` : (defaultPhase?.title || `Phase ${phaseNumber}`),
+          description: phaseDetail?.description || defaultPhase?.description || "",
+          boss: phaseDetail?.boss || "",
           quests: items
-            .filter(item => item.phase === phaseNumber)
-            .map(item => ({
+            .filter((item: any) => item.phase === phaseNumber)
+            .map((item: any) => ({
               id: item.id,
               title: item.name,
               quantity: item.quantity,
               sets: item.sets,
-              type: (item.icon_type as QuestType) || 'training',
+              type: (item.icon_type as ExerciseCategory) || 'training',
+              input_type: (item.input_type as InputType) || 'check',
               video_url: item.video_url || ""
             }))
         };
@@ -117,6 +137,8 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
         description: template.description || "",
         duration: template.estimated_duration || "3ヶ月",
         body_part_key: template.body_part_key || "",
+        purpose: purpose,
+        scope: (template.scope as TemplateScope) || 'team',
         phases: restoredPhases
       });
     } catch (err: any) {
@@ -177,17 +199,18 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
     setData({ ...data, phases: newPhases });
   };
 
-  const addQuest = (phaseIdx: number, type: QuestType) => {
+  const addQuest = (phaseIdx: number, type: ExerciseCategory) => {
     const newPhases = [...data.phases];
-    const titles: Record<string, string> = {
-      training: "筋力TR", care: "可動域改善", mental: "コンディション入力", cardio: "有酸素", life: "栄養管理"
-    };
+    const label = getCategoryLabel(type);
+    // カテゴリに応じたデフォルト入力タイプ
+    const defaultInputType: InputType = ['strength', 'training'].includes(type) ? 'weight' : 'check';
     newPhases[phaseIdx].quests.push({
       id: Date.now(),
-      title: titles[type] || "新規メニュー",
-      quantity: "10回",
+      title: label,
+      quantity: defaultInputType === 'weight' ? '10回' : '10回',
       sets: "3セット",
       type: type,
+      input_type: defaultInputType,
       video_url: ""
     });
     setData({ ...data, phases: newPhases });
@@ -230,15 +253,19 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
 
       let finalTemplateId = templateId;
 
+      const phaseDetails = data.phases.reduce((acc, p, idx) => ({
+        ...acc, [idx + 1]: { description: p.description, boss: p.boss }
+      }), {});
+
       if (templateId) {
         await supabase.schema('rehab').from('prescriptions').update({
           title: data.title,
           description: data.description,
           estimated_duration: data.duration,
           body_part_key: data.body_part_key || null,
-          phase_details: data.phases.reduce((acc, p, idx) => ({
-            ...acc, [idx + 1]: { description: p.description, boss: p.boss }
-          }), {})
+          purpose: data.purpose,
+          scope: data.scope,
+          phase_details: phaseDetails
         }).eq('id', templateId);
         await supabase.schema('rehab').from('prescription_items').delete().eq('prescription_id', templateId);
       } else {
@@ -250,9 +277,9 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
           status: 'active',
           estimated_duration: data.duration,
           body_part_key: data.body_part_key || null,
-          phase_details: data.phases.reduce((acc, p, idx) => ({
-            ...acc, [idx + 1]: { description: p.description, boss: p.boss }
-          }), {})
+          purpose: data.purpose,
+          scope: data.scope,
+          phase_details: phaseDetails
         }).select().single();
         finalTemplateId = presData.id;
       }
@@ -270,6 +297,7 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
             phase: pIdx + 1,
             xp: 10,
             icon_type: quest.type,
+            input_type: quest.input_type || 'check',
             video_url: quest.video_url,
             item_index: itemsToInsert.length
           });
@@ -286,21 +314,56 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
     } catch (error: any) { showToast("保存エラー: " + error.message, "error"); } finally { setSubmitting(false); }
   };
 
-  const typeConfig: Record<string, any> = {
-    training: { icon: <Activity size={16} />, color: "text-red-500 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800", label: "トレーニング" },
-    care: { icon: <Heart size={16} />, color: "text-green-500 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800", label: "ケア・治療" },
-    cardio: { icon: <Zap size={16} />, color: "text-blue-500 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800", label: "有酸素" },
-    mental: { icon: <Brain size={16} />, color: "text-purple-500 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800", label: "メンタル" },
-    life: { icon: <Coffee size={16} />, color: "text-yellow-500 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800", label: "生活習慣" },
+  // purpose に応じたカテゴリを動的生成
+  const availableCategories = getCategoriesForPurpose(data.purpose);
+
+  const iconMap: Record<string, React.ReactNode> = {
+    training: <Activity size={16} />, care: <Heart size={16} />, cardio: <Zap size={16} />,
+    mental: <Brain size={16} />, life: <Coffee size={16} />, strength: <Dumbbell size={16} />,
+    agility: <Zap size={16} />, recovery: <Heart size={16} />, flexibility: <Activity size={16} />,
+    tactical: <MapIcon size={16} />
+  };
+
+  const colorMap: Record<string, string> = {
+    training: "text-red-500 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800",
+    care: "text-green-500 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800",
+    cardio: "text-blue-500 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800",
+    mental: "text-purple-500 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800",
+    life: "text-yellow-500 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800",
+    strength: "text-orange-500 bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800",
+    agility: "text-cyan-500 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/20 dark:border-cyan-800",
+    recovery: "text-emerald-500 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800",
+    flexibility: "text-pink-500 bg-pink-50 border-pink-200 dark:bg-pink-900/20 dark:border-pink-800",
+    tactical: "text-indigo-500 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800",
+  };
+
+  const getTypeConfig = (type: string) => ({
+    icon: iconMap[type] || <Activity size={16} />,
+    color: colorMap[type] || colorMap.training,
+    label: getCategoryLabel(type)
+  });
+
+  // purpose 変更時にフェーズをリセット
+  const handlePurposeChange = (newPurpose: PrescriptionPurpose) => {
+    const newPhases = DEFAULT_PHASES[newPurpose];
+    setData({
+      ...data,
+      purpose: newPurpose,
+      title: newPurpose === 'rehab' ? "新規リハビリプログラム" : newPurpose === 'performance' ? "新規パフォーマンスプログラム" : "新規コンディショニングプログラム",
+      phases: newPhases.map((p, i) => ({
+        id: i + 1, title: p.title, description: p.description, boss: "", quests: []
+      }))
+    });
+    setFocusedPhaseIdx(0);
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center font-black text-indigo-500 animate-pulse bg-gray-50 dark:bg-gray-900">読み込み中...</div>;
 
   return (
     <div className="bg-white dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-200 font-sans pb-32 lg:pb-20" onInput={() => setIsDirty(true)}>
-      {Object.keys(typeConfig).map(type => (
-        <datalist id={`list-${type}`} key={type}>
-          {exerciseMaster.filter(m => m.category === type).map((m, i) => <option key={i} value={m.name} />)}
+      {EXERCISE_CATEGORIES.map(cat => (
+        <datalist id={`list-${cat.id}`} key={cat.id}>
+          {exerciseMaster.filter(m => m.category === cat.id).map((m, i) => <option key={i} value={m.name} />)}
         </datalist>
       ))}
 
@@ -309,7 +372,22 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
         <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={onBack} className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-all"><ArrowLeft size={20} className="text-gray-400 dark:text-gray-500" /></button>
           <div className="flex-1 max-w-xl">
-            <div className="text-xs font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">プログラム作成</div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-black text-indigo-500 uppercase tracking-widest leading-none">プログラム作成</span>
+              {!templateId && (
+                <div className="flex gap-1">
+                  {PURPOSE_OPTIONS.map(opt => (
+                    <button key={opt.id} onClick={() => handlePurposeChange(opt.id)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
+                        data.purpose === opt.id
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                      }`}>{opt.label}</button>
+                  ))}
+                </div>
+              )}
+              {templateId && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400`}>{PURPOSE_OPTIONS.find(p => p.id === data.purpose)?.label}</span>}
+            </div>
             <div className="flex items-center">
               <MapIcon className="mr-2 text-indigo-600 dark:text-indigo-400 flex-shrink-0" size={18} />
               <input
@@ -456,12 +534,15 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
 
                 {/* 種類選択ボタン */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  {Object.entries(typeConfig).map(([key, config]) => (
-                    <button key={key} onClick={() => addQuest(focusedPhaseIdx, key as QuestType)} className={`flex items-center md:flex-col gap-2 p-3 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-100 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-lg transition-all active:scale-95 group`}>
-                      <div className={`p-2 rounded-xl ${config.color} flex-shrink-0`}>{config.icon}</div>
-                      <span className="text-xs font-black text-gray-700 dark:text-gray-300 truncate">{config.label}</span>
-                    </button>
-                  ))}
+                  {availableCategories.map(cat => {
+                    const config = getTypeConfig(cat.id);
+                    return (
+                      <button key={cat.id} onClick={() => addQuest(focusedPhaseIdx, cat.id)} className={`flex items-center md:flex-col gap-2 p-3 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-100 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-lg transition-all active:scale-95 group`}>
+                        <div className={`p-2 rounded-xl ${config.color} flex-shrink-0`}>{config.icon}</div>
+                        <span className="text-xs font-black text-gray-700 dark:text-gray-300 truncate">{config.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
@@ -473,7 +554,7 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
                     data.phases[focusedPhaseIdx].quests.map((quest, qIdx) => (
                       <div key={quest.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl md:rounded-2xl p-5 md:p-7 shadow-sm group relative animate-slide-up flex flex-col gap-6">
                         <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6">
-                          <div className={`w-12 h-12 md:w-14 md:h-14 flex-shrink-0 flex items-center justify-center rounded-2xl shadow-sm ${typeConfig[quest.type].color}`}>{typeConfig[quest.type].icon}</div>
+                          <div className={`w-12 h-12 md:w-14 md:h-14 flex-shrink-0 flex items-center justify-center rounded-2xl shadow-sm ${getTypeConfig(quest.type).color}`}>{getTypeConfig(quest.type).icon}</div>
 
                           <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-5 w-full">
                             <div className="md:col-span-6">
@@ -489,6 +570,19 @@ export default function RehabProgramEditor({ templateId, onBack, showToast }: Re
                                 <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">セット</label>
                                 <input type="text" value={quest.sets} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'sets', e.target.value)} className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner" />
                               </div>
+                            </div>
+
+                            <div className="md:col-span-6">
+                              <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">記録タイプ</label>
+                              <select
+                                value={quest.input_type || 'check'}
+                                onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'input_type' as keyof Quest, e.target.value)}
+                                className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner"
+                              >
+                                {INPUT_TYPE_OPTIONS.map(opt => (
+                                  <option key={opt.id} value={opt.id}>{opt.label} - {opt.description}</option>
+                                ))}
+                              </select>
                             </div>
 
                             <div className="md:col-span-12">
