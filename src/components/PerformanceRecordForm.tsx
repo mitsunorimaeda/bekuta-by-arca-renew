@@ -158,23 +158,25 @@ export function PerformanceRecordForm({
       }
     }
 
-    // 数値フィールドのバリデーション
+    // 数値フィールドのバリデーション（DBのmin/maxを使用）
     const allFields = Array.isArray(selectedTestType.fields) ? selectedTestType.fields : [];
     for (const field of allFields) {
       const val = formValues[field.name];
       if (val === undefined || val === '' || val === null) continue;
-      if (field.type === 'number' || !field.type) {
+      if (field.type === 'number' || field.type === 'numeric' || !field.type) {
         const num = Number(val);
         if (isNaN(num)) {
           setError(`${field.label}は数値で入力してください`);
           return;
         }
-        if (num < 0) {
-          setError(`${field.label}は0以上で入力してください`);
+        const minVal = field.min ?? 0;
+        const maxVal = field.max ?? 99999;
+        if (num < minVal) {
+          setError(`${field.label}は${minVal}${field.unit || ''}以上で入力してください`);
           return;
         }
-        if (num > 99999) {
-          setError(`${field.label}の値が大きすぎます`);
+        if (num > maxVal) {
+          setError(`${field.label}は${maxVal}${field.unit || ''}以下で入力してください`);
           return;
         }
       }
