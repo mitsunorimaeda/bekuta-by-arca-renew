@@ -224,20 +224,8 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  // リハビリ中選手ID（フィルタ用）
+  // rehabAthleteIds の state だけここで宣言（useEffect は safeAthletes 定義後に配置）
   const [rehabAthleteIds, setRehabAthleteIds] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (!selectedTeam?.id) return;
-    const athleteIds = safeAthletes.map(a => a.id);
-    if (athleteIds.length === 0) { setRehabAthleteIds(new Set()); return; }
-    supabase.schema('rehab').from('injuries')
-      .select('athlete_user_id')
-      .in('athlete_user_id', athleteIds)
-      .in('status', ['active', 'conditioning'])
-      .then(({ data }) => {
-        setRehabAthleteIds(new Set(data?.map(d => d.athlete_user_id) || []));
-      });
-  }, [selectedTeam?.id, safeAthletes]);
 
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
@@ -375,6 +363,20 @@ export function StaffView({
   }, [safeAlerts, selectedTeam?.id]);
 
   const teamAthleteIds = useMemo(() => safeAthletes.map((a) => a.id), [safeAthletes]);
+
+  // リハビリ中選手ID取得（safeAthletes 定義後に配置）
+  useEffect(() => {
+    if (!selectedTeam?.id) return;
+    const ids = safeAthletes.map(a => a.id);
+    if (ids.length === 0) { setRehabAthleteIds(new Set()); return; }
+    supabase.schema('rehab').from('injuries')
+      .select('athlete_user_id')
+      .in('athlete_user_id', ids)
+      .in('status', ['active', 'conditioning'])
+      .then(({ data }) => {
+        setRehabAthleteIds(new Set(data?.map(d => d.athlete_user_id) || []));
+      });
+  }, [selectedTeam?.id, safeAthletes]);
 
   // =========================
   // Weekly Growth Cycle
