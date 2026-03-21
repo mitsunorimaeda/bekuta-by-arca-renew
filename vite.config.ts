@@ -66,9 +66,14 @@ export default defineConfig({
 
     rollupOptions: {
       output: {
-        manualChunks: {
-          "chart-vendor": ["recharts"],
-          "supabase-vendor": ["@supabase/supabase-js"],
+        manualChunks(id) {
+          // recharts + その依存関係をまとめて1チャンクに
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor')) {
+            return 'chart-vendor';
+          }
+          if (id.includes('node_modules/@supabase')) {
+            return 'supabase-vendor';
+          }
         },
       },
     },
