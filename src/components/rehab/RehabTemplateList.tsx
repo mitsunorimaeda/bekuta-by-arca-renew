@@ -2,9 +2,19 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Copy, Sword, Calendar, Edit2,
-  LayoutGrid, Trash2, Plus, Archive, RotateCcw, Filter
+  LayoutGrid, Trash2, Plus, Archive, RotateCcw, Filter, Stethoscope, Activity
 } from 'lucide-react';
 import { BODY_PART_OPTIONS, getBodyPartLabel } from '../../lib/rehabConstants';
+
+interface RehabAthlete {
+  athlete_user_id: string;
+  athlete_name: string;
+  diagnosis: string;
+  body_part_key: string | null;
+  injury_status: string;
+  prescription_title: string | null;
+  current_phase: number | null;
+}
 
 interface RehabTemplateListProps {
   onOpenEditor: (templateId?: string) => void;
@@ -14,13 +24,61 @@ interface RehabTemplateListProps {
 
 export default function RehabTemplateList({ onOpenEditor, onBack, showToast }: RehabTemplateListProps) {
   const [templates, setTemplates] = useState<any[]>([]);
+  const [rehabAthletes, setRehabAthletes] = useState<RehabAthlete[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterBodyPart, setFilterBodyPart] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     fetchData();
+    fetchRehabAthletes();
   }, [filterBodyPart, showArchived]);
+
+  const fetchRehabAthletes = async () => {
+    try {
+      const { data: injuries } = await supabase
+        .schema('rehab')
+        .from('injuries')
+        .select('athlete_user_id, diagnosis, body_part_key, status')
+        .in('status', ['active', 'conditioning']);
+
+      if (!injuries || injuries.length === 0) { setRehabAthletes([]); return; }
+
+      const athleteIds = [...new Set(injuries.map(i => i.athlete_user_id))];
+
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', athleteIds);
+
+      const { data: prescriptions } = await supabase
+        .schema('rehab')
+        .from('prescriptions')
+        .select('athlete_user_id, title, current_phase, injury_id')
+        .eq('status', 'active')
+        .in('athlete_user_id', athleteIds);
+
+      const userMap: Record<string, string> = {};
+      users?.forEach(u => { userMap[u.id] = u.name; });
+
+      const presMap: Record<string, { title: string; current_phase: number }> = {};
+      prescriptions?.forEach(p => { presMap[p.athlete_user_id] = { title: p.title, current_phase: p.current_phase }; });
+
+      const result: RehabAthlete[] = injuries.map(inj => ({
+        athlete_user_id: inj.athlete_user_id,
+        athlete_name: userMap[inj.athlete_user_id] || '不明',
+        diagnosis: inj.diagnosis,
+        body_part_key: inj.body_part_key,
+        injury_status: inj.status,
+        prescription_title: presMap[inj.athlete_user_id]?.title || null,
+        current_phase: presMap[inj.athlete_user_id]?.current_phase || null,
+      }));
+
+      setRehabAthletes(result);
+    } catch (e) {
+      console.error('[RehabTemplateList] fetchRehabAthletes error', e);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -156,6 +214,47 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast }: R
             <Plus size={20} className="mr-2 stroke-[3]" /> 新規プログラム作成
           </button>
         </div>
+
+        {/* リハビリ中の選手 */}
+        {rehabAthletes.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Stethoscope size={18} className="text-orange-500" /> リハビリ中の選手 ({rehabAthletes.length})
+              </h3>
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {rehabAthletes.map((ra, idx) => (
+                <div key={idx} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gray-100 dark:bg-gray-600 rounded-lg flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-300">
+                      {ra.athlete_name[0]}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white text-sm">{ra.athlete_name}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${ra.injury_status === 'active' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                          {ra.injury_status === 'active' ? 'Active' : 'Cond.'}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{ra.diagnosis}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {ra.prescription_title ? (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">{ra.prescription_title}</span>
+                        <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">Phase {ra.current_phase}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">未処方</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* フィルタUI */}
         <div className="flex flex-wrap items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">

@@ -8,6 +8,7 @@ import {
   Lock,
   Unlock,
   CheckCircle2,
+  Stethoscope,
 } from 'lucide-react';
 
 // ACWR 情報の型（マップの中身）
@@ -66,6 +67,10 @@ interface AthleteListProps {
 
   // 週次カード（今週）: athlete_user_id -> card
   weekCardMap?: Record<string, CoachWeekAthleteCard>;
+  // リスク判定
+  athleteRiskMap?: Record<string, any>;
+  // リハビリ中の選手ID
+  rehabAthleteIds?: Set<string>;
 }
 
 // ACWR 分析を始めるまでに必要な日数
@@ -76,10 +81,12 @@ export function AthleteList({
   onAthleteSelect,
   athleteACWRMap = {},
   weekCardMap = {},
+  rehabAthleteIds,
 }: AthleteListProps) {
   const [search, setSearch] = useState('');
   const [filterRisk, setFilterRisk] = useState<'all' | 'high'>('all');
   const [filterSharing, setFilterSharing] = useState<'all' | 'on'>('all');
+  const [filterRehab, setFilterRehab] = useState(false);
   const displayName = (a: any) => a?.nickname || a?.name || '名前未設定';
 
   const filteredAthletes = useMemo(() => {
@@ -117,9 +124,11 @@ export function AthleteList({
       const text = `${displayName(athlete)}`.toLowerCase();
       const searchMatch = s === '' ? true : text.includes(s);
 
-      return riskMatch && sharingMatch && searchMatch;
+      const rehabMatch = !filterRehab || (rehabAthleteIds?.has(athlete.id) ?? false);
+
+      return riskMatch && sharingMatch && searchMatch && rehabMatch;
     });
-  }, [athletes, search, filterRisk, filterSharing, athleteACWRMap, weekCardMap]);
+  }, [athletes, search, filterRisk, filterSharing, filterRehab, athleteACWRMap, weekCardMap, rehabAthleteIds]);
 
   const renderRiskBadge = (riskLevel: RiskLevel) => {
     switch (riskLevel) {
@@ -258,6 +267,21 @@ export function AthleteList({
             <Unlock className="w-3 h-3" />
             共有ONのみ
           </button>
+
+          {rehabAthleteIds && rehabAthleteIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilterRehab(!filterRehab)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
+                filterRehab
+                  ? 'bg-orange-50 text-orange-700 border-orange-200'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-700'
+              }`}
+            >
+              <Stethoscope className="w-3 h-3" />
+              リハビリ中 ({rehabAthleteIds.size})
+            </button>
+          )}
         </div>
       </div>
 

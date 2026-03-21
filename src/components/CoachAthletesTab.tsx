@@ -31,6 +31,7 @@ type CoachAthletesTabProps = {
   athleteRiskMap: Record<string, AthleteRisk>;
   onAthleteSelect: (athlete: User) => void;
   onRetry: () => void;
+  rehabAthleteIds?: Set<string>;
 };
 
 export function CoachAthletesTab({
@@ -41,6 +42,7 @@ export function CoachAthletesTab({
   athleteACWRMap,
   weekCardMap,
   athleteRiskMap,
+  rehabAthleteIds,
   onAthleteSelect,
   onRetry,
 }: CoachAthletesTabProps) {
@@ -94,6 +96,7 @@ export function CoachAthletesTab({
         athleteACWRMap={athleteACWRMap}
         weekCardMap={weekCardMap}
         athleteRiskMap={athleteRiskMap}
+        rehabAthleteIds={rehabAthleteIds}
       />
     </div>
   );
