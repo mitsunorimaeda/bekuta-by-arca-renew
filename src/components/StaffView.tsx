@@ -40,6 +40,7 @@ import {
   Calendar,
   Snowflake,
   Bell,
+  MessageSquare,
 } from 'lucide-react';
 
 // Lazy-loaded components
@@ -56,6 +57,9 @@ const CoachRankingsViewLazy =
   }) as React.LazyExoticComponent<React.ComponentType<CoachRankingsViewProps>>;
 const NotificationDashboard = lazy(() =>
   import('./NotificationDashboard').then((m) => ({ default: m.NotificationDashboard }))
+);
+const MessagingPanel = lazy(() =>
+  import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
 );
 
 // -------------------------
@@ -212,8 +216,34 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
+
+  // ✅ 未読メッセージ数
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const { count } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .eq('is_read', false);
+        setUnreadMessageCount(count ?? 0);
+      } catch {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60000); // 60秒ごとに更新
+    return () => clearInterval(interval);
+  }, [user.id]);
+
+  // メッセージタブへの直接遷移（AthleteDetailModalから）
+  const [messageTargetAthleteId, setMessageTargetAthleteId] = useState<string | null>(null);
+  const handleOpenMessageToAthlete = (athleteId: string) => {
+    setMessageTargetAthleteId(athleteId);
+    setSelectedAthlete(null); // モーダルを閉じる
+    setActiveTab('messages');
+  };
 
   // Rankings -> Performance Modal
   type MetricKey = 'primary_value' | 'relative_1rm';
@@ -807,13 +837,16 @@ export function StaffView({
                       <button
                         onClick={() => setShowMoreTabs(v => !v)}
                         className={`py-3.5 px-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis', 'notifications'].includes(activeTab)
+                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis', 'notifications', 'messages'].includes(activeTab)
                             ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                         }`}
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 relative">
                           <span>その他</span>
+                          {unreadMessageCount > 0 && !['messages'].includes(activeTab) && (
+                            <span className="absolute -top-1 -right-2 bg-red-500 rounded-full w-2 h-2" />
+                          )}
                           <svg className={`w-3.5 h-3.5 transition-transform ${showMoreTabs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
@@ -831,6 +864,7 @@ export function StaffView({
                               { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析' },
                               { key: 'team-analysis' as const, icon: Target, label: 'チーム分析' },
                               { key: 'notifications' as const, icon: Bell, label: '通知管理' },
+                              { key: 'messages' as const, icon: MessageSquare, label: 'メッセージ' },
                             ].map(({ key, icon: Icon, label }) => (
                               <button
                                 key={key}
@@ -843,6 +877,11 @@ export function StaffView({
                               >
                                 <Icon className="w-4 h-4" />
                                 {label}
+                                {key === 'messages' && unreadMessageCount > 0 && (
+                                  <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                                    {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                                  </span>
+                                )}
                               </button>
                             ))}
                           </div>
@@ -869,6 +908,7 @@ export function StaffView({
                       <option value="performance">パフォーマンス分析</option>
                       <option value="team-analysis">チーム分析</option>
                       <option value="notifications">通知管理</option>
+                      <option value="messages">メッセージ{unreadMessageCount > 0 ? ` (${unreadMessageCount})` : ''}</option>
                     </select>
                   </div>
                 </div>
@@ -969,6 +1009,16 @@ export function StaffView({
                       />
                     </Suspense>
                   )}
+
+                  {activeTab === 'messages' && (
+                    <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+                      <MessagingPanel
+                        userId={user.id}
+                        userName={user.name ?? user.email ?? ''}
+                        onClose={() => setActiveTab('athletes')}
+                      />
+                    </Suspense>
+                  )}
                 </div>
               </div>
             )}
@@ -988,6 +1038,7 @@ export function StaffView({
           onFrozenChange={() => {
             if (selectedTeam?.id) fetchTeamAthletesWithActivity(selectedTeam.id);
           }}
+          onOpenMessage={handleOpenMessageToAthlete}
         />
       )}
 

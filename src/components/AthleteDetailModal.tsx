@@ -1,6 +1,6 @@
 // src/components/AthleteDetailModal.tsx
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets, Snowflake } from 'lucide-react';
+import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets, Snowflake, MessageSquare } from 'lucide-react';
 import { User, supabase } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
@@ -28,6 +28,7 @@ interface AthleteDetailModalProps {
   currentUserId?: string;
   canFreeze?: boolean;
   onFrozenChange?: () => void;
+  onOpenMessage?: (athleteId: string) => void;
 }
 
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
@@ -99,7 +100,7 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange }: AthleteDetailModalProps) {
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
 
@@ -340,6 +341,15 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
             <p className="text-sm text-blue-100 mt-1">{athlete.email}</p>
           </div>
           <div className="flex items-center gap-2">
+            {onOpenMessage && (
+              <button
+                onClick={() => onOpenMessage(athlete.id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-white/10 hover:bg-white/20 text-blue-100"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                メッセージ
+              </button>
+            )}
             {canFreeze && (
               <button
                 onClick={() => setFreezeConfirm(true)}
