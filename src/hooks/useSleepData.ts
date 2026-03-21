@@ -82,8 +82,9 @@ export function useSleepData(userId: string) {
 
       const result = await offlineMutation({
         table: 'sleep_records',
-        operation: 'insert',
+        operation: 'upsert',
         payload: insertData,
+        onConflict: 'user_id,date',
       });
 
       if (result.queued) return { queued: true };

@@ -250,7 +250,7 @@ export function useTrainingData(userId: string) {
     async (payload: Omit<TrainingRecordRow, "id" | "user_id"> & { rpe: number; duration_min: number; date: string }) => {
       const result = await offlineMutation({
         table: 'training_records',
-        operation: 'insert',
+        operation: 'upsert',
         payload: {
           user_id: userId,
           date: payload.date,
@@ -259,6 +259,7 @@ export function useTrainingData(userId: string) {
           arrow_score: (payload as any).arrow_score ?? null,
           signal_score: (payload as any).signal_score ?? null,
         },
+        onConflict: 'user_id,date',
       });
 
       if (result.queued) return { queued: true };
