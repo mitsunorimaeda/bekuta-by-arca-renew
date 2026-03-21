@@ -20,9 +20,10 @@ interface RehabTemplateListProps {
   onOpenEditor: (templateId?: string) => void;
   onBack: () => void;
   showToast: (msg: string, type: 'success' | 'error') => void;
+  onAthleteSelect?: (athleteId: string) => void;
 }
 
-export default function RehabTemplateList({ onOpenEditor, onBack, showToast }: RehabTemplateListProps) {
+export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onAthleteSelect }: RehabTemplateListProps) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [rehabAthletes, setRehabAthletes] = useState<RehabAthlete[]>([]);
   const [loading, setLoading] = useState(true);
@@ -225,7 +226,7 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast }: R
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {rehabAthletes.map((ra, idx) => (
-                <div key={idx} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <div key={idx} onClick={() => onAthleteSelect?.(ra.athlete_user_id)} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gray-100 dark:bg-gray-600 rounded-lg flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-300">
                       {ra.athlete_name[0]}

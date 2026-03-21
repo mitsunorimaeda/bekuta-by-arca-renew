@@ -1102,6 +1102,10 @@ export function StaffView({
                         onOpenEditor={(templateId) => setFullscreenView({ type: 'editor', templateId })}
                         onBack={() => setActiveTab('athletes')}
                         showToast={showToast}
+                        onAthleteSelect={(athleteId) => {
+                          const athlete = safeAthletes.find(a => a.id === athleteId);
+                          if (athlete) setSelectedAthlete(athlete);
+                        }}
                       />
                     </Suspense>
                   )}
