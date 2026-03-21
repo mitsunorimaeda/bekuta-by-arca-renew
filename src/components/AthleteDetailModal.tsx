@@ -1,6 +1,6 @@
 // src/components/AthleteDetailModal.tsx
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets, Snowflake, MessageSquare } from 'lucide-react';
+import { X, Activity, Scale, BarChart2, User as UserIcon, Droplets, Snowflake, MessageSquare, Stethoscope } from 'lucide-react';
 import { User, supabase } from '../lib/supabase';
 import { useTrainingData } from '../hooks/useTrainingData';
 import { AthleteRisk, getRiskColor, getRiskLabel } from '../lib/riskUtils';
@@ -29,11 +29,13 @@ interface AthleteDetailModalProps {
   canFreeze?: boolean;
   onFrozenChange?: () => void;
   onOpenMessage?: (athleteId: string) => void;
+  onOpenRehabAssign?: (athleteId: string, injuryId?: string) => void;
 }
 
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
+const AthleteRehabTabLazy = lazy(() => import('./rehab/AthleteRehabTab'));
 
-type TabKey = 'overview' | 'weight' | 'rpe' | 'profile';
+type TabKey = 'overview' | 'weight' | 'rpe' | 'profile' | 'rehab';
 
 function getNextActions(risk: { riskLevel: 'high' | 'caution' | 'low'; reasons: string[]; acwr?: number | null }) {
   const reasons = risk.reasons || [];
@@ -100,7 +102,7 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage }: AthleteDetailModalProps) {
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage, onOpenRehabAssign }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
 
@@ -491,6 +493,19 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
               <UserIcon className="w-4 h-4" />
               プロフィール
             </button>
+            {onOpenRehabAssign && (
+              <button
+                onClick={() => setActiveTab('rehab')}
+                className={`flex items-center gap-1 px-3 py-2 border-b-2 text-sm whitespace-nowrap ${
+                  activeTab === 'rehab'
+                    ? 'border-orange-500 text-orange-600 font-semibold'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Stethoscope className="w-4 h-4" />
+                リハビリ
+              </button>
+            )}
           </div>
         </div>
 
@@ -754,6 +769,22 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
               }
             >
               <AthletePerformanceProfileLazy userId={athlete.id} />
+            </Suspense>
+          )}
+
+          {/* --- リハビリタブ --- */}
+          {activeTab === 'rehab' && onOpenRehabAssign && (
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" />
+                </div>
+              }
+            >
+              <AthleteRehabTabLazy
+                athleteId={athlete.id}
+                onOpenAssign={(athleteId, injuryId) => onOpenRehabAssign(athleteId, injuryId)}
+              />
             </Suspense>
           )}
         </div>

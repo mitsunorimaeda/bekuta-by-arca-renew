@@ -2983,6 +2983,7 @@ export type Database = {
           last_alert_email_sent: string | null
           name: string
           role: string
+          staff_type: string | null
           team_id: string | null
           terms_accepted: boolean
           terms_accepted_at: string | null
@@ -2999,6 +3000,7 @@ export type Database = {
           last_alert_email_sent?: string | null
           name: string
           role: string
+          staff_type?: string | null
           team_id?: string | null
           terms_accepted?: boolean
           terms_accepted_at?: string | null
@@ -3015,6 +3017,7 @@ export type Database = {
           last_alert_email_sent?: string | null
           name?: string
           role?: string
+          staff_type?: string | null
           team_id?: string | null
           terms_accepted?: boolean
           terms_accepted_at?: string | null

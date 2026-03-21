@@ -28,6 +28,7 @@ import { FrozenAthletesTab } from './FrozenAthletesTab';
 
 // ✅ PostHog Analytics
 import { trackEvent } from '../lib/posthog';
+import { canAccessRehab } from '../lib/staffPermissions';
 
 import {
   Users,
@@ -41,6 +42,8 @@ import {
   Snowflake,
   Bell,
   MessageSquare,
+  Stethoscope,
+  ArrowLeft,
 } from 'lucide-react';
 
 // Lazy-loaded components
@@ -61,6 +64,11 @@ const NotificationDashboard = lazy(() =>
 const MessagingPanel = lazy(() =>
   import('./MessagingPanel').then((m) => ({ default: m.MessagingPanel }))
 );
+
+// Rehab components (lazy)
+const RehabTemplateList = lazy(() => import('./rehab/RehabTemplateList'));
+const RehabProgramEditor = lazy(() => import('./rehab/RehabProgramEditor'));
+const RehabPrescriptionAssign = lazy(() => import('./rehab/RehabPrescriptionAssign'));
 
 // -------------------------
 // Types
@@ -216,8 +224,19 @@ export function StaffView({
 
   const [selectedAthlete, setSelectedAthlete] = useState<User | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
+
+  // リハビリ: フルスクリーンビュー管理
+  const [fullscreenView, setFullscreenView] = useState<
+    | { type: 'editor'; templateId?: string }
+    | { type: 'assign'; athleteId: string; injuryId?: string; fromPrescriptionId?: string }
+    | null
+  >(null);
+
+  const showToast = (msg: string, type: 'success' | 'error') => {
+    window.alert(msg); // TODO: bekuta の toast システムに接続
+  };
 
   // ✅ 未読メッセージ数
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
@@ -691,6 +710,42 @@ export function StaffView({
     );
   }
 
+  // フルスクリーンビュー（エディタ・処方割当）
+  if (fullscreenView) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 sticky top-0 z-30">
+          <button
+            onClick={() => setFullscreenView(null)}
+            className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium"
+          >
+            <ArrowLeft size={18} /> 戻る
+          </button>
+        </div>
+        <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+          {fullscreenView.type === 'editor' && (
+            <RehabProgramEditor
+              templateId={fullscreenView.templateId}
+              onBack={() => setFullscreenView(null)}
+              showToast={showToast}
+            />
+          )}
+          {fullscreenView.type === 'assign' && (
+            <RehabPrescriptionAssign
+              athleteId={fullscreenView.athleteId}
+              injuryId={fullscreenView.injuryId}
+              fromPrescriptionId={fullscreenView.fromPrescriptionId}
+              onBack={() => {
+                setFullscreenView(null);
+              }}
+              showToast={showToast}
+            />
+          )}
+        </Suspense>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* Team selector bar */}
@@ -865,6 +920,7 @@ export function StaffView({
                               { key: 'team-analysis' as const, icon: Target, label: 'チーム分析' },
                               { key: 'notifications' as const, icon: Bell, label: '通知管理' },
                               { key: 'messages' as const, icon: MessageSquare, label: 'メッセージ' },
+                              ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, icon: Stethoscope, label: 'プログラム管理' }] : []),
                             ].map(({ key, icon: Icon, label }) => (
                               <button
                                 key={key}
@@ -909,6 +965,7 @@ export function StaffView({
                       <option value="team-analysis">チーム分析</option>
                       <option value="notifications">通知管理</option>
                       <option value="messages">メッセージ{unreadMessageCount > 0 ? ` (${unreadMessageCount})` : ''}</option>
+                      {canAccessRehab(user.staff_type) && <option value="rehab-programs">プログラム管理</option>}
                     </select>
                   </div>
                 </div>
@@ -1020,6 +1077,16 @@ export function StaffView({
                       />
                     </Suspense>
                   )}
+
+                  {activeTab === 'rehab-programs' && (
+                    <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+                      <RehabTemplateList
+                        onOpenEditor={(templateId) => setFullscreenView({ type: 'editor', templateId })}
+                        onBack={() => setActiveTab('athletes')}
+                        showToast={showToast}
+                      />
+                    </Suspense>
+                  )}
                 </div>
               </div>
             )}
@@ -1040,6 +1107,10 @@ export function StaffView({
             if (selectedTeam?.id) fetchTeamAthletesWithActivity(selectedTeam.id);
           }}
           onOpenMessage={handleOpenMessageToAthlete}
+          onOpenRehabAssign={canAccessRehab(user.staff_type) ? (athleteId, injuryId) => {
+            setSelectedAthlete(null);
+            setFullscreenView({ type: 'assign', athleteId, injuryId });
+          } : undefined}
         />
       )}
 
