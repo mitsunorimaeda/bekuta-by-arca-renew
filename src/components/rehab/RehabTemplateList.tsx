@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
-  Copy, Sword, Calendar, Edit2,
+  Sword, Calendar, Edit2,
   LayoutGrid, Trash2, Plus, Archive, RotateCcw, Filter, Stethoscope, Activity
 } from 'lucide-react';
 import { BODY_PART_OPTIONS, getBodyPartLabel } from '../../lib/rehabConstants';
@@ -135,64 +135,7 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
     }
   };
 
-  const quickAssignToMe = async (template: any) => {
-    if (!window.confirm(`「${template.title}」を自分自身に割り当ててテストしますか？`)) return;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
-      const { error: archiveError } = await supabase
-        .schema('rehab')
-        .from('prescriptions')
-        .update({ status: 'completed' })
-        .eq('athlete_user_id', user.id)
-        .eq('status', 'active')
-        .is('injury_id', null);
-
-      if (archiveError) throw archiveError;
-
-      const { data: newPrescription, error: pError } = await supabase
-        .schema('rehab')
-        .from('prescriptions')
-        .insert({
-          athlete_user_id: user.id,
-          trainer_id: user.id,
-          type: 'assigned',
-          title: template.title,
-          description: template.description,
-          status: 'active'
-        })
-        .select()
-        .single();
-      if (pError) throw pError;
-
-      const { data: sourceItems } = await supabase
-        .schema('rehab')
-        .from('prescription_items')
-        .select('*')
-        .eq('prescription_id', template.id);
-
-      if (sourceItems && sourceItems.length > 0) {
-        const itemsToInsert = sourceItems.map(item => ({
-          prescription_id: newPrescription.id,
-          name: item.name,
-          quantity: item.quantity,
-          sets: item.sets,
-          phase: item.phase,
-          xp: item.xp,
-          icon_type: item.icon_type,
-          video_url: item.video_url,
-          item_index: item.item_index
-        }));
-        await supabase.schema('rehab').from('prescription_items').insert(itemsToInsert);
-      }
-
-      showToast("リハビリボードを確認してください", 'success');
-      onBack();
-    } catch (e: any) {
-      showToast(e.message, 'error');
-    }
-  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-800 p-6 pb-20">
@@ -345,18 +288,12 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
                     </div>
                   </div>
 
-                  <div className="p-6 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 gap-4">
+                  <div className="p-6 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700">
                     <button
                       onClick={() => onOpenEditor(t.id)}
-                      className="bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold py-4 rounded-2xl flex items-center justify-center transition-all border border-gray-200 dark:border-gray-600 uppercase tracking-widest shadow-sm active:scale-95"
+                      className="w-full bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold py-4 rounded-2xl flex items-center justify-center transition-all border border-gray-200 dark:border-gray-600 uppercase tracking-widest shadow-sm active:scale-95"
                     >
                       <Edit2 size={16} className="mr-2 text-blue-500" /> 編集
-                    </button>
-                    <button
-                      onClick={() => quickAssignToMe(t)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-4 rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-blue-500/20 active:scale-95 uppercase tracking-widest"
-                    >
-                      <Copy size={16} className="mr-2" /> テスト割当
                     </button>
                   </div>
                 </div>
