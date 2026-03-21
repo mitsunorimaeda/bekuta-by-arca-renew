@@ -82,12 +82,12 @@ export default function RehabPrescriptionView({ prescriptionId, athleteId, onBac
         .single();
       setAthlete(userData);
 
-      // 直近のログ
+      // 直近のログ（選手の全処方のログを表示）
       const { data: logData } = await supabase
         .schema('rehab')
         .from('prescription_daily_logs')
         .select('log_date, pain_level, item_results')
-        .eq('prescription_id', prescriptionId)
+        .eq('athlete_user_id', athleteId)
         .order('log_date', { ascending: false })
         .limit(14);
       setLogs((logData || []).reverse());
