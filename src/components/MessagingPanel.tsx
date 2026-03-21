@@ -1,7 +1,157 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMessages } from '../hooks/useMessages';
 import { MessageSquare, X, Send, Search, Loader, User, AlertCircle, EyeOff, Eye, MoreVertical } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+
+// スワイプ対応スレッドアイテム
+function SwipeableThread({
+  thread,
+  isActive,
+  isHidden,
+  onSelect,
+  onHide,
+  onUnhide,
+}: {
+  thread: any;
+  isActive: boolean;
+  isHidden: boolean;
+  onSelect: () => void;
+  onHide: () => void;
+  onUnhide: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const startXRef = useRef(0);
+  const currentXRef = useRef(0);
+  const swipingRef = useRef(false);
+  const [offsetX, setOffsetX] = useState(0);
+  const [showAction, setShowAction] = useState(false);
+
+  const THRESHOLD = 70; // スワイプ閾値
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    startXRef.current = e.touches[0].clientX;
+    currentXRef.current = 0;
+    swipingRef.current = false;
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const diff = e.touches[0].clientX - startXRef.current;
+    // 左スワイプのみ
+    if (diff < -10) {
+      swipingRef.current = true;
+      const clamped = Math.max(diff, -100);
+      currentXRef.current = clamped;
+      setOffsetX(clamped);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (currentXRef.current < -THRESHOLD) {
+      setShowAction(true);
+      setOffsetX(-THRESHOLD);
+    } else {
+      setShowAction(false);
+      setOffsetX(0);
+    }
+  }, []);
+
+  const handleClick = useCallback(() => {
+    if (swipingRef.current) return; // スワイプ中はクリックしない
+    if (showAction) {
+      setShowAction(false);
+      setOffsetX(0);
+      return;
+    }
+    onSelect();
+  }, [showAction, onSelect]);
+
+  const handleAction = useCallback(() => {
+    if (isHidden) {
+      onUnhide();
+    } else {
+      onHide();
+    }
+    setShowAction(false);
+    setOffsetX(0);
+  }, [isHidden, onHide, onUnhide]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative overflow-hidden border-b border-gray-200 dark:border-gray-700 ${
+        isActive ? 'bg-blue-50 dark:bg-gray-700' : isHidden ? 'opacity-60' : ''
+      }`}
+    >
+      {/* 背景アクションボタン */}
+      <div className="absolute inset-y-0 right-0 flex items-center">
+        <button
+          onClick={handleAction}
+          className={`h-full px-5 text-white text-xs font-medium flex items-center gap-1 ${
+            isHidden ? 'bg-blue-500' : 'bg-gray-500'
+          }`}
+        >
+          {isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+          {isHidden ? '表示' : '非表示'}
+        </button>
+      </div>
+
+      {/* スライドするコンテンツ */}
+      <div
+        className="relative bg-white dark:bg-gray-800 transition-transform duration-150 ease-out"
+        style={{ transform: `translateX(${offsetX}px)` }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={handleClick}
+      >
+        <div className="p-3 cursor-pointer group">
+          <div className="flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-2">
+                <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                  {thread.other_user?.name || '不明なユーザー'}
+                </p>
+                {(thread.unread_count || 0) > 0 && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {thread.unread_count}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                {thread.other_user?.role === 'global_admin'
+                  ? '管理者'
+                  : thread.other_user?.role === 'staff'
+                  ? 'コーチ'
+                  : 'アスリート'}
+              </p>
+              {thread.last_message_preview && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+                  {thread.last_message_preview}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1 ml-2">
+              <span className="text-xs text-gray-400 whitespace-nowrap">
+                {new Date(thread.last_message_at).toLocaleDateString('ja-JP', {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </span>
+              {/* PC: ホバーで表示 */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleAction(); }}
+                className="hidden sm:block p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
+                title={isHidden ? '再表示' : '非表示'}
+              >
+                {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface MessagingPanelProps {
   userId: string;
@@ -266,62 +416,15 @@ export const MessagingPanel = React.memo(function MessagingPanel({
                 filteredThreads.map((thread) => {
                   const isHidden = hiddenThreadIds.has(thread.id);
                   return (
-                  <div
-                    key={thread.id}
-                    className={`relative group border-b border-gray-200 dark:border-gray-700 ${
-                      activeThreadId === thread.id
-                        ? 'bg-blue-50 dark:bg-gray-700'
-                        : isHidden
-                        ? 'bg-gray-50 dark:bg-gray-800/50 opacity-60'
-                        : ''
-                    }`}
-                  >
-                    <button
-                      onClick={() => handleThreadSelect(thread.id)}
-                      className="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">
-                              {thread.other_user?.name || '不明なユーザー'}
-                            </p>
-                            {(thread.unread_count || 0) > 0 && (
-                              <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                                {thread.unread_count}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                            {thread.other_user?.role === 'global_admin'
-                              ? '管理者'
-                              : thread.other_user?.role === 'staff'
-                              ? 'コーチ'
-                              : 'アスリート'}
-                          </p>
-                          {thread.last_message_preview && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
-                              {thread.last_message_preview}
-                            </p>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
-                          {new Date(thread.last_message_at).toLocaleDateString(
-                            'ja-JP',
-                            { month: 'short', day: 'numeric' }
-                          )}
-                        </span>
-                      </div>
-                    </button>
-                    {/* 非表示/再表示ボタン（ホバーで表示） */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); isHidden ? unhideThread(thread.id) : hideThread(thread.id); }}
-                      className="absolute right-2 top-2 p-1.5 rounded-full bg-white dark:bg-gray-700 shadow opacity-0 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
-                      title={isHidden ? '再表示' : '非表示'}
-                    >
-                      {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
+                    <SwipeableThread
+                      key={thread.id}
+                      thread={thread}
+                      isActive={activeThreadId === thread.id}
+                      isHidden={isHidden}
+                      onSelect={() => handleThreadSelect(thread.id)}
+                      onHide={() => hideThread(thread.id)}
+                      onUnhide={() => unhideThread(thread.id)}
+                    />
                   );
                 })
               )}
