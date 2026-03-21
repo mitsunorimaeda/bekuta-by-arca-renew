@@ -11,18 +11,26 @@ export async function upsertDailyEnergySnapshot(params: {
   const srpe = (rpe ?? 0) * (durationMin ?? 0);
 
   // ✅ 最新BMRを取得（あなたのDBにある前提：nutrition_metabolism_snapshots）
-  const { data: meta, error: metaErr } = await supabase
-    .from("nutrition_metabolism_snapshots")
-    .select("bmr")
-    .eq("user_id", userId)
-    .order("calculated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // オフライン時はスキップ（BMR取得にはネットワーク必要）
+  let bmr: number | null = null;
+  try {
+    const { data: meta, error: metaErr } = await supabase
+      .from("nutrition_metabolism_snapshots")
+      .select("bmr")
+      .eq("user_id", userId)
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (metaErr) throw metaErr;
+    if (metaErr) throw metaErr;
+    bmr = meta?.bmr ?? null;
+  } catch (e) {
+    // オフラインやネットワークエラー時はスキップ
+    console.warn('[EnergySnapshot] BMR取得失敗（オフライン？）- スキップ:', e);
+    return;
+  }
 
   // BMR未計算ならスキップ（UIは死なせない）
-  const bmr = meta?.bmr;
   if (!bmr) return;
 
   // ✅ activity factor（まずは簡易）

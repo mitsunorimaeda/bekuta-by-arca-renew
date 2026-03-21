@@ -877,7 +877,7 @@ export function AthleteView({
   // =========================
   const handleTrainingSubmit = useCallback(
     async (data: { rpe: number; duration_min: number; date: string; arrow_score?: number; signal_score?: number }) => {
-      await addTrainingRecord({
+      const result = await addTrainingRecord({
         rpe: data.rpe,
         duration_min: data.duration_min,
         date: data.date,
@@ -885,12 +885,17 @@ export function AthleteView({
         signal_score: data.signal_score ?? 50,
       } as any);
 
-      await upsertDailyEnergySnapshot({
-        userId: user.id,
-        date: data.date,
-        rpe: data.rpe,
-        durationMin: data.duration_min,
-      });
+      // オフラインキューに入った場合はエネルギースナップショットもスキップ
+      if (!(result as any)?.queued) {
+        await upsertDailyEnergySnapshot({
+          userId: user.id,
+          date: data.date,
+          rpe: data.rpe,
+          durationMin: data.duration_min,
+        });
+      }
+
+      return result;
     },
     [addTrainingRecord, user.id]
   );
