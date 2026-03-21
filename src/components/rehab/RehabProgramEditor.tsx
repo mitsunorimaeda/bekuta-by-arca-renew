@@ -581,16 +581,18 @@ export default function RehabProgramEditor({ templateId, defaultPurpose, onBack,
                               <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">種目名</label>
                               <input type="text" list={`list-${quest.type}`} value={quest.title} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'title', e.target.value)} className="w-full font-black text-gray-800 dark:text-gray-200 border-none bg-gray-50 dark:bg-gray-700 rounded-xl px-4 py-3 md:py-2.5 text-sm focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 transition-all shadow-inner" />
                             </div>
-                            <div className="grid grid-cols-2 gap-3 md:col-span-6">
-                              <div>
-                                <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">回数</label>
-                                <input type="text" value={quest.quantity} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'quantity', e.target.value)} className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner" />
+                            {quest.input_type !== 'weight' && (
+                              <div className="grid grid-cols-2 gap-3 md:col-span-6">
+                                <div>
+                                  <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">回数</label>
+                                  <input type="text" value={quest.quantity} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'quantity', e.target.value)} className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner" />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">セット</label>
+                                  <input type="text" value={quest.sets} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'sets', e.target.value)} className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner" />
+                                </div>
                               </div>
-                              <div>
-                                <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">セット</label>
-                                <input type="text" value={quest.sets} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'sets', e.target.value)} className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border-none rounded-xl px-4 py-3 md:py-2.5 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 shadow-inner" />
-                              </div>
-                            </div>
+                            )}
 
                             <div className="md:col-span-6">
                               <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block tracking-widest">記録タイプ</label>
@@ -631,6 +633,11 @@ export default function RehabProgramEditor({ templateId, defaultPurpose, onBack,
                                     <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">テンポ (下降-底-挙上)</label>
                                     <input type="text" value={quest.tempo || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'tempo' as keyof Quest, e.target.value)}
                                       placeholder="2-1-1" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">セット数</label>
+                                    <input type="text" value={quest.sets} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'sets', e.target.value)}
+                                      placeholder="3セット" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
                                   </div>
                                   <div>
                                     <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">REST (秒)</label>
