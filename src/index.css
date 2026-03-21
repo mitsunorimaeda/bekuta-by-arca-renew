@@ -4,7 +4,6 @@
 
 /* ✅ Tutorial: ターゲット要素のハイライトアニメーション */
 .tutorial-highlight-target {
-  position: relative;
   outline: 3px solid #3B82F6 !important;
   outline-offset: 6px;
   border-radius: 12px;
