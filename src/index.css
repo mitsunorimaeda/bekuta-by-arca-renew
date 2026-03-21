@@ -5,31 +5,21 @@
 /* ✅ Tutorial: ターゲット要素のハイライトアニメーション */
 .tutorial-highlight-target {
   position: relative;
-  z-index: 10003 !important;
-  border-radius: 12px !important;
-  background: white !important;
-  padding: 12px !important;
-  margin: -12px !important;
+  outline: 3px solid #3B82F6 !important;
+  outline-offset: 6px;
+  border-radius: 12px;
   animation: tutorial-glow 1.5s ease-in-out infinite;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.3), 0 0 60px rgba(59, 130, 246, 0.1) !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  .tutorial-highlight-target {
-    background: #1f2937 !important;
-  }
-}
-
-.dark .tutorial-highlight-target {
-  background: #1f2937 !important;
+  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2) !important;
 }
 
 @keyframes tutorial-glow {
   0%, 100% {
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.3), 0 0 60px rgba(59, 130, 246, 0.1);
+    outline-color: #3B82F6;
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.4), 0 0 40px rgba(59, 130, 246, 0.4), 0 0 80px rgba(59, 130, 246, 0.2);
+    outline-color: #60A5FA;
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.2), 0 0 40px rgba(59, 130, 246, 0.3);
   }
 }
 

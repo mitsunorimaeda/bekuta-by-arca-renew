@@ -241,12 +241,14 @@ export function TutorialController({
 
   return (
     <>
-      {/* ✅ Overlayは「背面」(z:10000) */}
-      <TutorialOverlay
-        targetElement={targetElement}
-        onClick={handleSkip}
-        allowInteraction={currentStep.allowInteraction || isWaitingStep}
-      />
+      {/* ✅ Overlayは「背面」(z:10000) — インタラクティブステップでは非表示 */}
+      {!isWaitingStep && (
+        <TutorialOverlay
+          targetElement={targetElement}
+          onClick={handleSkip}
+          allowInteraction={false}
+        />
+      )}
 
       {/* ✅ ツールチップ（z:10001） */}
       <div className="fixed inset-0 z-[10001] pointer-events-none">
