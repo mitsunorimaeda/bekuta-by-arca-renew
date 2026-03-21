@@ -59,7 +59,7 @@ export default defineConfig({
 
   build: {
     chunkSizeWarningLimit: 1000,
-    minify: "terser",
+    minify: "esbuild",
 
     // ✅ 重要：ソースマップを吐く
     sourcemap: true,
