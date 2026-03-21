@@ -1006,6 +1006,7 @@ export function StaffView({
                         teamName={selectedTeam.name}
                         athletes={safeAthletes.map((a) => ({ id: a.id, name: a.name ?? '' }))}
                         userId={user.id}
+                        userName={user.name}
                       />
                     </Suspense>
                   )}

@@ -41,9 +41,10 @@ interface NotificationDashboardProps {
   teamName: string;
   athletes: Athlete[];
   userId: string;
+  userName?: string;
 }
 
-export function NotificationDashboard({ teamId, teamName, athletes, userId }: NotificationDashboardProps) {
+export function NotificationDashboard({ teamId, teamName, athletes, userId, userName }: NotificationDashboardProps) {
   // --- Broadcast form state ---
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -155,7 +156,7 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId }: No
       }
 
       // Record broadcast in DB
-      await supabase.from('notification_broadcasts').insert({
+      const { data: broadcastData } = await supabase.from('notification_broadcasts').insert({
         team_id: teamId,
         sender_user_id: userId,
         title: title.trim(),
@@ -165,7 +166,19 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId }: No
         recipients_count: targetAthletes.length,
         delivered_count: delivered,
         failed_count: failed,
-      });
+      }).select('id').single();
+
+      // 各選手の通知受信テーブルにも保存（アプリ内で確認可能に）
+      if (broadcastData?.id) {
+        const userNotifications = targetAthletes.map((a) => ({
+          user_id: a.id,
+          broadcast_id: broadcastData.id,
+          title: title.trim(),
+          body: body.trim(),
+          sender_name: userName || 'コーチ',
+        }));
+        await supabase.from('user_notifications').insert(userNotifications);
+      }
 
       setSendResult({
         type: failed === targetAthletes.length ? 'error' : 'success',

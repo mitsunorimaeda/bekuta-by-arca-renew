@@ -43,6 +43,7 @@ import { useEntryPopup } from "../hooks/useEntryPopup";
 import { EntryPopup } from "./EntryPopup";
 import { buildDailyAssistTexts } from "../lib/dailyOneWord";
 import { SentryErrorButton } from "./SentryErrorButton";
+import { NotificationInbox } from "./NotificationInbox";
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
 
@@ -1031,6 +1032,9 @@ export function AthleteView({
               >
                 <HelpCircle className="w-5 h-5" />
               </button>
+
+              {/* 通知ベルアイコン */}
+              {!readOnly && <NotificationInbox userId={user.id} />}
 
               {/* メッセージアイコン */}
               <button
