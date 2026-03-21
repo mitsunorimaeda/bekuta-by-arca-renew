@@ -70,6 +70,7 @@ const RehabTemplateList = lazy(() => import('./rehab/RehabTemplateList'));
 const RehabProgramEditor = lazy(() => import('./rehab/RehabProgramEditor'));
 const RehabPrescriptionAssign = lazy(() => import('./rehab/RehabPrescriptionAssign'));
 const RehabPrescriptionView = lazy(() => import('./rehab/RehabPrescriptionView'));
+const BulkPrescriptionAssign = lazy(() => import('./rehab/BulkPrescriptionAssign'));
 
 // -------------------------
 // Types
@@ -236,6 +237,7 @@ export function StaffView({
     | { type: 'editor'; templateId?: string }
     | { type: 'assign'; athleteId: string; injuryId?: string; fromPrescriptionId?: string }
     | { type: 'view-prescription'; prescriptionId: string; athleteId: string }
+    | { type: 'bulk-assign' }
     | null
   >(null);
 
@@ -768,6 +770,12 @@ export function StaffView({
               onEdit={(presId, athId) => setFullscreenView({ type: 'assign', athleteId: athId, fromPrescriptionId: presId })}
             />
           )}
+          {fullscreenView.type === 'bulk-assign' && (
+            <BulkPrescriptionAssign
+              onBack={() => setFullscreenView(null)}
+              showToast={showToast}
+            />
+          )}
         </Suspense>
       </div>
     );
@@ -1117,6 +1125,7 @@ export function StaffView({
                           if (athlete) setSelectedAthlete(athlete);
                         }}
                         teamAthleteIds={teamAthleteIds}
+                        onBulkAssign={() => setFullscreenView({ type: 'bulk-assign' })}
                       />
                     </Suspense>
                   )}

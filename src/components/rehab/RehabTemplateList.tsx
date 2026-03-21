@@ -22,9 +22,10 @@ interface RehabTemplateListProps {
   showToast: (msg: string, type: 'success' | 'error') => void;
   onAthleteSelect?: (athleteId: string) => void;
   teamAthleteIds?: string[];
+  onBulkAssign?: () => void;
 }
 
-export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onAthleteSelect, teamAthleteIds }: RehabTemplateListProps) {
+export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onAthleteSelect, teamAthleteIds, onBulkAssign }: RehabTemplateListProps) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [rehabAthletes, setRehabAthletes] = useState<RehabAthlete[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,12 +162,22 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
               リハビリプログラムのテンプレート管理
             </p>
           </div>
-          <button
-            onClick={() => onOpenEditor()}
-            className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-xl shadow-blue-500/20 hover:shadow-blue-500/40 flex items-center transition-all active:scale-95 text-sm uppercase tracking-widest"
-          >
-            <Plus size={20} className="mr-2 stroke-[3]" /> 新規プログラム作成
-          </button>
+          <div className="flex gap-3">
+            {onBulkAssign && (
+              <button
+                onClick={onBulkAssign}
+                className="px-6 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-bold shadow-xl shadow-orange-500/20 hover:shadow-orange-500/40 flex items-center transition-all active:scale-95 text-sm uppercase tracking-widest"
+              >
+                <LayoutGrid size={20} className="mr-2 stroke-[3]" /> 一括割当
+              </button>
+            )}
+            <button
+              onClick={() => onOpenEditor()}
+              className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-xl shadow-blue-500/20 hover:shadow-blue-500/40 flex items-center transition-all active:scale-95 text-sm uppercase tracking-widest"
+            >
+              <Plus size={20} className="mr-2 stroke-[3]" /> 新規プログラム作成
+            </button>
+          </div>
         </div>
 
         {/* リハビリ中の選手 */}
