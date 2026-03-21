@@ -84,9 +84,18 @@ async function executeMutation(mutation: PendingMutation): Promise<void> {
     const { error } = await query;
     if (error) throw error;
   } else {
-    // insert
+    // insert → ユニーク制約違反時はupsertにフォールバック
     const { error } = await (supabase as any).from(table).insert(payload);
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') {
+        // duplicate key → upsertでリトライ
+        console.log(`[OfflineQueue] ユニーク制約違反 → upsertでリトライ: ${table}`);
+        const { error: upsertError } = await (supabase as any).from(table).upsert(payload);
+        if (upsertError) throw upsertError;
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
