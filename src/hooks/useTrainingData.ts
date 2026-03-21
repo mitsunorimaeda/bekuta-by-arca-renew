@@ -227,15 +227,21 @@ export function useTrainingData(userId: string) {
   // =========================
   const checkExistingRecord = useCallback(
     async (date: string) => {
-      const { data, error } = await supabase
-        .from("training_records")
-        .select("id,user_id,date,rpe,duration_min,arrow_score,signal_score,created_at")
-        .eq("user_id", userId)
-        .eq("date", date)
-        .maybeSingle();
+      try {
+        const { data, error } = await supabase
+          .from("training_records")
+          .select("id,user_id,date,rpe,duration_min,arrow_score,signal_score,created_at")
+          .eq("user_id", userId)
+          .eq("date", date)
+          .maybeSingle();
 
-      if (error) throw error;
-      return (data as TrainingRecordRow) ?? null;
+        if (error) throw error;
+        return (data as TrainingRecordRow) ?? null;
+      } catch (e) {
+        console.error('Error checking existing training record:', e);
+        // オフライン時はnull（既存なし）として新規保存に進む
+        return null;
+      }
     },
     [userId]
   );
