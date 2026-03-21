@@ -7,6 +7,7 @@ import { AlertSummary } from './AlertSummary';
 import { supabase } from '../lib/supabase';
 import { WeightForm } from './WeightForm';
 import { OfflineIndicator } from './OfflineIndicator';
+import { OnboardingBanner } from './OnboardingBanner';
 
 import { BMIDisplay } from './BMIDisplay';
 import { ProfileEditForm } from './ProfileEditForm';
@@ -1373,6 +1374,17 @@ export function AthleteView({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4 sm:pt-4 sm:pb-8">
         {activeTab === 'unified' ? (
           <>
+      {/* ★ オンボーディングバナー */}
+      {!readOnly && (
+        <OnboardingBanner
+          userId={user.id}
+          gender={user.gender ?? null}
+          heightCm={user.height_cm != null ? Number(user.height_cm) : null}
+          dateOfBirth={user.date_of_birth ?? null}
+          onOpenProfileEdit={() => setShowProfileEdit(true)}
+        />
+      )}
+
       {/* ★ 追加：リハビリ開放カード（怪我人のみ最上部） */}
       {isRehabilitating && (
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">

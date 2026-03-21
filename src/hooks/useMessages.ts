@@ -270,6 +270,16 @@ export function useMessages(userId: string) {
 
         if (sendError) throw sendError;
 
+        // Push通知をfire-and-forget送信（失敗しても無視）
+        supabase.functions.invoke('send-web-push', {
+          body: {
+            user_id: receiverId,
+            title: '新しいメッセージ',
+            body: trimmedContent.length > 100 ? trimmedContent.slice(0, 97) + '...' : trimmedContent,
+            url: '/',
+          },
+        }).catch(() => {});
+
         await Promise.all([fetchMessages(threadId), fetchThreads()]);
         return { success: true, error: null };
       } catch (err) {
