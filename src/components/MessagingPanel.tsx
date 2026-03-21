@@ -235,6 +235,7 @@ export const MessagingPanel = React.memo(function MessagingPanel({
                 onClick={() => {
                   setShowNewMessage(true);
                   setActiveThreadId(null);
+                  setShowThreadList(false); // モバイルではスレッドリストを隠す
                 }}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg transition-colors text-sm font-medium"
               >
@@ -309,7 +310,7 @@ export const MessagingPanel = React.memo(function MessagingPanel({
 
           {/* Messages Area */}
           <div className={`${
-            !showThreadList || activeThread || showNewMessage ? 'flex' : 'hidden sm:flex'
+            !showThreadList ? 'flex' : 'hidden sm:flex'
           } flex-1 flex-col`}>
             {showNewMessage ? (
               /* New Message Composer */
