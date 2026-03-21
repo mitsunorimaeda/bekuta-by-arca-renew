@@ -29,12 +29,15 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
     if (!userId) return;
     setLoading(true);
     try {
+      // 30日以内の通知を最大50件取得
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('user_notifications')
         .select('id, title, body, sender_name, is_read, created_at')
         .eq('user_id', userId)
+        .gte('created_at', thirtyDaysAgo)
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(50);
       if (error) throw error;
       setNotifications(data ?? []);
     } catch (e) {
@@ -140,15 +143,21 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
               </div>
             ) : (
               notifications.map((n) => (
-                <div
+                <button
                   key={n.id}
-                  className={`px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors ${
+                  type="button"
+                  onClick={() => { if (!n.is_read) markAsRead(n.id); }}
+                  className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors ${
                     n.is_read
                       ? 'bg-white dark:bg-gray-800'
-                      : 'bg-blue-50 dark:bg-blue-900/20'
+                      : 'bg-blue-50 dark:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/40'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3">
+                    {/* 未読ドット */}
+                    <div className="flex-shrink-0 pt-1.5">
+                      <div className={`w-2 h-2 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-blue-500'}`} />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className={`text-sm ${n.is_read ? 'text-gray-700 dark:text-gray-300' : 'text-gray-900 dark:text-white font-medium'}`}>
                         {n.title}
@@ -163,17 +172,8 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
                         <span className="text-[10px] text-gray-400">{relativeTime(n.created_at)}</span>
                       </div>
                     </div>
-                    {!n.is_read && (
-                      <button
-                        onClick={() => markAsRead(n.id)}
-                        className="flex-shrink-0 p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded"
-                        title="既読にする"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>
