@@ -42,7 +42,8 @@ export function useOfflineQueue() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      doFlush(); // オンライン復帰で即同期
+      // ネットワーク安定化を待ってから同期開始
+      setTimeout(() => doFlush(), 2000);
     };
     const handleOffline = () => setIsOnline(false);
 

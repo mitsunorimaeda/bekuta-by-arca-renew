@@ -103,32 +103,76 @@ function isNetworkError(err: unknown): boolean {
   );
 }
 
+/** 認証エラーかどうか判定（リトライ可能） */
+function isAuthError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? '');
+  const code = String((err as any)?.code ?? '');
+  return (
+    msg.includes('JWT expired') ||
+    msg.includes('token is expired') ||
+    msg.includes('invalid claim') ||
+    msg.includes('認証が必要です') ||
+    code === 'PGRST301' ||
+    code === '401'
+  );
+}
+
 /**
  * キュー内の全ミューテーションを順次実行して同期する
  * @returns 残りのペンディング件数
  */
 export async function flush(): Promise<number> {
-  // 認証チェック
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    console.warn('[OfflineQueue] セッション無効 — 同期スキップ');
+  // セッションリフレッシュを試行（期限切れトークンの更新）
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (!session) {
+      // セッションがない場合はrefreshを試行
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.warn('[OfflineQueue] セッション無効 — 同期スキップ:', refreshError.message);
+        return await count();
+      }
+    }
+    if (sessionError) {
+      console.warn('[OfflineQueue] セッション取得エラー — 同期スキップ');
+      return await count();
+    }
+  } catch {
+    console.warn('[OfflineQueue] セッション確認失敗 — 同期スキップ');
     return await count();
   }
 
   const mutations = await dequeueAll();
   if (mutations.length === 0) return 0;
 
+  console.log(`[OfflineQueue] ${mutations.length}件の同期を開始`);
+
   for (const mutation of mutations) {
     try {
       await executeMutation(mutation);
       await remove(mutation.id!);
+      console.log(`[OfflineQueue] 同期成功: ${mutation.table}`);
     } catch (err) {
       if (isNetworkError(err)) {
-        // ネットワークエラー → 中断、残りは後で再試行
         console.warn('[OfflineQueue] ネットワークエラー — 同期中断');
         return await count();
       }
-      // サーバーエラー（4xx: 制約違反等）→ Sentryに記録して削除（無限リトライ防止）
+      if (isAuthError(err)) {
+        // 認証エラー → セッションリフレッシュ後にリトライ（データは消さない）
+        console.warn('[OfflineQueue] 認証エラー — セッション更新後にリトライ:', err);
+        try {
+          await supabase.auth.refreshSession();
+          // リフレッシュ成功 → もう一度試行
+          await executeMutation(mutation);
+          await remove(mutation.id!);
+          console.log(`[OfflineQueue] リトライ成功: ${mutation.table}`);
+        } catch (retryErr) {
+          console.warn('[OfflineQueue] リトライも失敗 — 次回に持ち越し:', retryErr);
+          return await count(); // 残りは次回
+        }
+        continue;
+      }
+      // サーバーエラー（制約違反等）→ Sentryに記録して削除（無限リトライ防止）
       Sentry.captureException(err, {
         extra: {
           table: mutation.table,
@@ -142,5 +186,6 @@ export async function flush(): Promise<number> {
     }
   }
 
+  console.log('[OfflineQueue] 全件同期完了');
   return await count();
 }
