@@ -23,6 +23,13 @@ type Quest = {
   type: ExerciseCategory;
   input_type: InputType;
   video_url?: string;
+  // ストレングス処方用
+  intensity?: string;      // "80%1RM" or "70kg"
+  rep_range?: string;       // "8-10"
+  target_rpe?: string;      // "8.5"
+  tempo?: string;           // "2-1-1"
+  rest_seconds?: number;    // 120
+  sub_exercise?: string;    // REST中サブエクササイズ
 };
 
 type Phase = {
@@ -127,7 +134,13 @@ export default function RehabProgramEditor({ templateId, defaultPurpose, onBack,
               sets: item.sets,
               type: (item.icon_type as ExerciseCategory) || 'training',
               input_type: (item.input_type as InputType) || 'check',
-              video_url: item.video_url || ""
+              video_url: item.video_url || "",
+              intensity: item.intensity || "",
+              rep_range: item.rep_range || "",
+              target_rpe: item.target_rpe || "",
+              tempo: item.tempo || "",
+              rest_seconds: item.rest_seconds || undefined,
+              sub_exercise: item.sub_exercise || ""
             }))
         };
       });
@@ -299,7 +312,14 @@ export default function RehabProgramEditor({ templateId, defaultPurpose, onBack,
             icon_type: quest.type,
             input_type: quest.input_type || 'check',
             video_url: quest.video_url,
-            item_index: itemsToInsert.length
+            item_index: itemsToInsert.length,
+            // ストレングス処方用
+            intensity: quest.intensity || null,
+            rep_range: quest.rep_range || null,
+            target_rpe: quest.target_rpe || null,
+            tempo: quest.tempo || null,
+            rest_seconds: quest.rest_seconds || null,
+            sub_exercise: quest.sub_exercise || null,
           });
         }
       }
@@ -584,6 +604,47 @@ export default function RehabProgramEditor({ templateId, defaultPurpose, onBack,
                                 ))}
                               </select>
                             </div>
+
+                            {/* ストレングス処方フィールド（weight時のみ） */}
+                            {(quest.input_type === 'weight') && (
+                              <div className="md:col-span-12 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-xl p-4 space-y-3">
+                                <div className="text-xs font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest flex items-center gap-1">
+                                  <Dumbbell size={12} /> ストレングス処方
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">強度</label>
+                                    <input type="text" value={quest.intensity || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'intensity' as keyof Quest, e.target.value)}
+                                      placeholder="80%1RM" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">目安Rep</label>
+                                    <input type="text" value={quest.rep_range || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'rep_range' as keyof Quest, e.target.value)}
+                                      placeholder="8-10" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">目標RPE</label>
+                                    <input type="text" value={quest.target_rpe || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'target_rpe' as keyof Quest, e.target.value)}
+                                      placeholder="8.5" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">テンポ (下降-底-挙上)</label>
+                                    <input type="text" value={quest.tempo || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'tempo' as keyof Quest, e.target.value)}
+                                      placeholder="2-1-1" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">REST (秒)</label>
+                                    <input type="number" value={quest.rest_seconds || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'rest_seconds' as keyof Quest, e.target.value ? Number(e.target.value) : undefined)}
+                                      placeholder="120" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase mb-1 block">REST中サブ種目</label>
+                                    <input type="text" value={quest.sub_exercise || ""} onChange={(e) => updateQuest(focusedPhaseIdx, qIdx, 'sub_exercise' as keyof Quest, e.target.value)}
+                                      placeholder="バンドプルアパート 15回" className="w-full text-xs font-bold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg px-3 py-2 shadow-inner border-none focus:ring-2 focus:ring-orange-200" />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
 
                             <div className="md:col-span-12">
                               <label className="text-xs text-gray-400 dark:text-gray-500 font-black uppercase mb-1 px-1 block flex items-center gap-1">
