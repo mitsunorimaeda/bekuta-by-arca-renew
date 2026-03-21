@@ -21,9 +21,10 @@ interface RehabTemplateListProps {
   onBack: () => void;
   showToast: (msg: string, type: 'success' | 'error') => void;
   onAthleteSelect?: (athleteId: string) => void;
+  teamAthleteIds?: string[];
 }
 
-export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onAthleteSelect }: RehabTemplateListProps) {
+export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onAthleteSelect, teamAthleteIds }: RehabTemplateListProps) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [rehabAthletes, setRehabAthletes] = useState<RehabAthlete[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,15 +34,24 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
   useEffect(() => {
     fetchData();
     fetchRehabAthletes();
-  }, [filterBodyPart, showArchived]);
+  }, [filterBodyPart, showArchived, teamAthleteIds]);
 
   const fetchRehabAthletes = async () => {
     try {
-      const { data: injuries } = await supabase
+      if (teamAthleteIds && teamAthleteIds.length === 0) { setRehabAthletes([]); return; }
+
+      let query = supabase
         .schema('rehab')
         .from('injuries')
         .select('athlete_user_id, diagnosis, body_part_key, status')
         .in('status', ['active', 'conditioning']);
+
+      // チーム選手でフィルタ
+      if (teamAthleteIds && teamAthleteIds.length > 0) {
+        query = query.in('athlete_user_id', teamAthleteIds);
+      }
+
+      const { data: injuries } = await query;
 
       if (!injuries || injuries.length === 0) { setRehabAthletes([]); return; }
 

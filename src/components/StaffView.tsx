@@ -1116,6 +1116,7 @@ export function StaffView({
                           const athlete = safeAthletes.find(a => a.id === athleteId);
                           if (athlete) setSelectedAthlete(athlete);
                         }}
+                        teamAthleteIds={teamAthleteIds}
                       />
                     </Suspense>
                   )}
