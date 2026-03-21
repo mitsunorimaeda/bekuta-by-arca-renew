@@ -134,21 +134,30 @@ export function TutorialController({
     let cancelled = false;
     let cleanupFn: (() => void) | null = null;
 
+    let listenerAttached = false;
+
     const setupListener = () => {
-      if (cancelled) return;
+      if (cancelled || listenerAttached) return;
       const waitEl = document.querySelector(currentStep.waitForSelector!) as HTMLElement | null;
       if (!waitEl) {
-        // 要素がまだ無い場合は少し待ってリトライ
         const retryTimer = setTimeout(setupListener, 300);
         cleanupFn = () => clearTimeout(retryTimer);
         return;
       }
 
-      const eventType = currentStep.waitForEvent || 'click';
+      listenerAttached = true;
+      const baseEvent = currentStep.waitForEvent || 'click';
       const delay = currentStep.autoAdvanceDelay || 500;
 
+      // input/changeの両方をリッスン（モバイルのrange対応）
+      const events = baseEvent === 'input'
+        ? ['input', 'change', 'touchend']
+        : [baseEvent];
+
+      let fired = false;
       const handler = () => {
-        if (cancelled) return;
+        if (cancelled || fired) return;
+        fired = true;
         setTimeout(() => {
           if (!cancelled) {
             handleNextRef.current();
@@ -156,11 +165,14 @@ export function TutorialController({
         }, delay);
       };
 
-      waitEl.addEventListener(eventType, handler, { once: true });
-      cleanupFn = () => waitEl.removeEventListener(eventType, handler);
+      const cleanups: (() => void)[] = [];
+      for (const evt of events) {
+        waitEl.addEventListener(evt, handler, { once: true });
+        cleanups.push(() => waitEl.removeEventListener(evt, handler));
+      }
+      cleanupFn = () => cleanups.forEach((c) => c());
     };
 
-    // MutationObserverで要素が出現するのを監視
     setupListener();
     const observer = new MutationObserver(setupListener);
     observer.observe(document.body, { childList: true, subtree: true });
