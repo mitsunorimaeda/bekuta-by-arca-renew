@@ -14,7 +14,8 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
     name: user.name,
     email: user.email,
     role: user.role,
-    teamId: user.team_id || ''
+    teamId: user.team_id || '',
+    staffType: (user as any).staff_type || 'coach',
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -85,7 +86,8 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
           name: formData.name,
           email: formData.email,
           role: formData.role,
-          teamId: formData.teamId || undefined
+          teamId: formData.teamId || undefined,
+          staffType: formData.role === 'staff' ? formData.staffType : undefined
         }),
       });
 
@@ -264,6 +266,26 @@ export function UserEditModal({ user, teams, onClose, onUserUpdated }: UserEditM
                 </p>
               )}
             </div>
+
+            {formData.role === 'staff' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  スタッフタイプ
+                </label>
+                <select
+                  value={formData.staffType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, staffType: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="coach">コーチ</option>
+                  <option value="trainer">トレーナー</option>
+                  <option value="both">コーチ＆トレーナー</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  トレーナーはリハビリプログラム管理にアクセスできます
+                </p>
+              </div>
+            )}
 
             {message && (
               <div className={`flex items-center space-x-3 p-3 rounded-lg ${
