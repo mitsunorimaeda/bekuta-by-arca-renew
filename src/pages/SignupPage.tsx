@@ -78,9 +78,8 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
         return;
       }
 
-      // 招待リンク生成
-      const link = `${window.location.origin}/join?token=${data.inviteToken}`;
-      setInviteLink(link);
+      // 招待リンク設定
+      setInviteLink(data.athleteInviteUrl || `${window.location.origin}/join?token=${data.athleteInviteToken}`);
 
       // 自動ログイン
       const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
