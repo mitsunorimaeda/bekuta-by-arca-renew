@@ -374,7 +374,7 @@ export default function RehabQuestView({ userId, prescriptionId: propPrescriptio
       <section className="px-2">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest">
-            <Zap size={14} className="text-yellow-500" /> Rehab Roadmap
+            <Zap size={14} className="text-yellow-500" /> Roadmap
           </div>
           <span className="text-[9px] font-bold text-slate-400">番号をタップして内容を確認</span>
         </div>
@@ -491,22 +491,27 @@ export default function RehabQuestView({ userId, prescriptionId: propPrescriptio
                         {(weightInputs[item.id] || []).map((set, sIdx) => (
                           <div key={sIdx} className="flex items-center gap-2 bg-gray-50 dark:bg-slate-700 rounded-xl px-3 py-2">
                             <span className="text-[10px] font-black text-gray-400 w-8">S{sIdx + 1}</span>
-                            <input
-                              type="number"
-                              value={set.weight || ''}
-                              onChange={(e) => updateWeightSet(item.id, sIdx, 'weight', Number(e.target.value))}
-                              placeholder="kg"
-                              className="w-16 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
-                            />
-                            <span className="text-xs text-gray-400">kg ×</span>
-                            <input
-                              type="number"
-                              value={set.reps || ''}
-                              onChange={(e) => updateWeightSet(item.id, sIdx, 'reps', Number(e.target.value))}
-                              placeholder="回"
-                              className="w-14 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
-                            />
-                            <span className="text-xs text-gray-400">回</span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={set.weight || ''}
+                                onChange={(e) => updateWeightSet(item.id, sIdx, 'weight', Number(e.target.value))}
+                                placeholder="0"
+                                className="w-14 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
+                              />
+                              <span className="text-[10px] font-bold text-gray-400">kg</span>
+                            </div>
+                            <span className="text-gray-300">×</span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={set.reps || ''}
+                                onChange={(e) => updateWeightSet(item.id, sIdx, 'reps', Number(e.target.value))}
+                                placeholder="0"
+                                className="w-12 text-center text-sm font-bold bg-white dark:bg-slate-600 rounded-lg px-2 py-1.5 border-none shadow-inner"
+                              />
+                              <span className="text-[10px] font-bold text-gray-400">rep</span>
+                            </div>
                           </div>
                         ))}
                       </div>
