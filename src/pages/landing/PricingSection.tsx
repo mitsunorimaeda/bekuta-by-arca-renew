@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Check, X, Smartphone, CreditCard, Zap } from 'lucide-react';
+import { Check, X, Smartphone, CreditCard, Zap, Sparkles, Video } from 'lucide-react';
 
 interface PricingSectionProps {
   onNavigateToSignup: () => void;
@@ -13,7 +13,7 @@ interface PlanFeature {
 }
 
 const planFeatures: PlanFeature[] = [
-  { label: '選手数', free: '20人', pro: '100人', proMax: '300人' },
+  { label: '選手数', free: '30人', pro: '100人', proMax: '300人' },
   { label: 'チーム数', free: '1チーム', pro: '1チーム', proMax: '8チーム' },
   { label: 'ACWR自動計算', free: true, pro: true, proMax: true },
   { label: 'チェックイン', free: true, pro: true, proMax: true },
@@ -26,7 +26,6 @@ const planFeatures: PlanFeature[] = [
   { label: 'データエクスポート（CSV）', free: false, pro: true, proMax: true },
   { label: 'レポート自動生成', free: false, pro: true, proMax: true },
   { label: '優先サポート', free: false, pro: false, proMax: true },
-  { label: 'API連携', free: false, pro: false, proMax: true },
 ];
 
 const highlights = [
@@ -76,7 +75,7 @@ export function PricingSection({ onNavigateToSignup }: PricingSectionProps) {
                 <span className="text-4xl font-bold text-gray-900">¥0</span>
                 <span className="text-gray-500 text-sm">/月</span>
               </div>
-              <p className="mt-2 text-xs text-gray-500">20人まで・1チーム</p>
+              <p className="mt-2 text-xs text-gray-500">30人まで・1チーム</p>
             </div>
             <button
               onClick={onNavigateToSignup}
@@ -156,6 +155,45 @@ export function PricingSection({ onNavigateToSignup }: PricingSectionProps) {
               ))}
             </tbody>
           </table>
+        </motion.div>
+
+        {/* Coming Soon Options */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.5 }}
+          className="mt-16 max-w-3xl mx-auto"
+        >
+          <h3 className="text-center text-lg font-bold text-gray-900 mb-6">
+            今後追加予定のオプション
+          </h3>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="flex items-start gap-4 p-5 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border border-purple-100">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <Sparkles size={20} className="text-purple-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-gray-900">AI栄養管理</h4>
+                  <span className="px-2 py-0.5 text-xs font-medium text-purple-600 bg-purple-100 rounded-full">準備中</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">AIが食事内容を分析し、最適な栄養プランを提案</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-4 p-5 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Video size={20} className="text-emerald-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-gray-900">動画解析パフォーマンス計測</h4>
+                  <span className="px-2 py-0.5 text-xs font-medium text-emerald-600 bg-emerald-100 rounded-full">準備中</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">動画からフォーム分析やパフォーマンス指標を自動計測</p>
+              </div>
+            </div>
+          </div>
         </motion.div>
 
         {/* Highlights */}

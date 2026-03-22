@@ -7,6 +7,7 @@ import { FounderStorySection } from './landing/FounderStorySection';
 import { PricingSection } from './landing/PricingSection';
 import { SafetySection } from './landing/SafetySection';
 import { HowItWorksSection } from './landing/HowItWorksSection';
+import { TeamsSection } from './landing/TeamsSection';
 import { CTASection } from './landing/CTASection';
 import { LandingFooter } from './landing/LandingFooter';
 
@@ -37,6 +38,7 @@ export function LandingPage({
         <SolutionSection />
         <FeaturesSection />
         <FounderStorySection />
+        <TeamsSection />
         <PricingSection onNavigateToSignup={onNavigateToSignup} />
         <SafetySection />
         <HowItWorksSection />
