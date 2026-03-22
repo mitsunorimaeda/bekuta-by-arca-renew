@@ -19,10 +19,21 @@ export function initPostHog() {
     capture_pageleave: true,
     // パフォーマンス計測
     capture_performance: IS_PROD,
-    // セッションリプレイ（本番のみ、サンプリング10%）
+    // ── Session Replay（本番のみ）──
+    // パスワード等のinputはマスク、それ以外のテキスト・UIは録画
     session_recording: IS_PROD
-      ? { maskAllInputs: true, maskTextSelector: '*' }
+      ? {
+          maskAllInputs: false,           // 全inputマスク → OFF
+          maskInputOptions: {
+            password: true,               // パスワードだけマスク
+          },
+          maskTextSelector: '[data-mask]', // data-mask属性の要素だけテキストマスク
+        }
       : undefined,
+    // ── Surveys ──
+    enable_surveys: true,
+    // ── Autocapture（クリック・フォーム送信を自動記録）──
+    autocapture: true,
     // Cookie使わずlocalStorage
     persistence: 'localStorage',
     // 開発環境ではログ出す
