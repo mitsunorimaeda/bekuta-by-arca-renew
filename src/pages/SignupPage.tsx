@@ -21,6 +21,8 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+
   // Step 2
   const [organizationName, setOrganizationName] = useState('');
   const [teamName, setTeamName] = useState('');
@@ -33,6 +35,7 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
     if (!email.trim()) return 'メールアドレスを入力してください';
     if (!/\S+@\S+\.\S+/.test(email)) return '正しいメールアドレスを入力してください';
     if (password.length < 8) return 'パスワードは8文字以上で設定してください';
+    if (password !== passwordConfirm) return 'パスワードが一致しません';
     return null;
   };
 
@@ -192,6 +195,16 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">パスワード（確認）</label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={passwordConfirm}
+                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                    placeholder="もう一度入力"
+                  />
                 </div>
               </div>
 
