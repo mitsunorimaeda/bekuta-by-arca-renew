@@ -8,7 +8,7 @@ import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import { Building2, Users, UserPlus, AlertTriangle, BarChart3, X, HelpCircle, CreditCard, Sliders, UserCog, UsersRound, Layout, ShieldCheck, Menu, Shield, FileText } from 'lucide-react';
 import { OrganizationOverview } from './OrganizationOverview';
-import { SubscriptionManagement } from './SubscriptionManagement';
+import { SubscriptionSettings } from './SubscriptionSettings';
 import { OrganizationSettings } from './OrganizationSettings';
 import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
@@ -364,9 +364,8 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                   ) : organizationSubTab === 'settings' ? (
                     <OrganizationSettings organizationId={organizationId} />
                   ) : organizationSubTab === 'subscription' ? (
-                    <SubscriptionManagement
+                    <SubscriptionSettings
                       organizationId={organizationId}
-                      organizationName={organizationName}
                     />
                   ) : organizationSubTab === 'transfers' ? (
                     <AthleteTransferManagement

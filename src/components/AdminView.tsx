@@ -32,7 +32,7 @@ import {
 import { OrganizationManagement } from './OrganizationManagement';
 import { PerformanceAnalysisPanel } from './PerformanceAnalysisPanel';
 import { OrganizationOverview } from './OrganizationOverview';
-import { SubscriptionManagement } from './SubscriptionManagement';
+import { SubscriptionSettings } from './SubscriptionSettings';
 import { OrganizationSettings } from './OrganizationSettings';
 import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
@@ -771,7 +771,7 @@ export function AdminView({
                   ) : organizationSubTab === 'subscription' ? (
                     <div>
                       {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
-                        <SubscriptionManagement organizationId={selectedOrganizationId} organizationName="デモ組織" />
+                        <SubscriptionSettings organizationId={selectedOrganizationId} />
                       ) : (
                         <div className="text-center py-12">
                           <p className="text-gray-600 dark:text-gray-400 mb-4">
