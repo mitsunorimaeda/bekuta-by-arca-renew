@@ -15,13 +15,27 @@ interface PlanLimits {
   isAtLimit: boolean;
   isOverLimit: boolean;
   remainingSlots: number | null;
-  canExport: boolean;
-  canGenerateReports: boolean;
-  hasPrioritySupport: boolean;
+  // 数値制限
   pushLimit: number | null;
   teamsLimit: number | null;
+  staffLimit: number | null;
   dataRetentionMonths: number | null;
+  // 機能ゲート
+  canExport: boolean;
+  canGenerateReports: boolean;
+  canUseNutrition: boolean;
+  canUsePerformanceTesting: boolean;
+  canUseRehab: boolean;
+  canUseInBody: boolean;
+  canUseInsights: boolean;
+  canUseAdvancedTeamAnalysis: boolean;
+  canUseRankings: boolean;
+  canUseParentWeeklyReport: boolean;
+  canUseParentViewAccess: boolean;
+  hasPrioritySupport: boolean;
   isSponsored: boolean;
+  // ヘルパー
+  hasFeature: (key: string) => boolean;
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -106,6 +120,8 @@ export function usePlanLimits(organizationId: string | null | undefined): PlanLi
   const isOverLimit = athleteLimit !== null && currentAthletes > athleteLimit;
   const remainingSlots = athleteLimit !== null ? Math.max(0, athleteLimit - currentAthletes) : null;
 
+  const hasFeature = (key: string) => features[key] === true;
+
   return {
     plan,
     currentAthletes,
@@ -113,13 +129,27 @@ export function usePlanLimits(organizationId: string | null | undefined): PlanLi
     isAtLimit,
     isOverLimit,
     remainingSlots,
-    canExport: features.export === true,
-    canGenerateReports: features.reports === true,
-    hasPrioritySupport: features.priority_support === true,
+    // 数値制限
     pushLimit: features.push_limit ?? null,
     teamsLimit: features.teams_limit ?? null,
+    staffLimit: features.staff_limit ?? null,
     dataRetentionMonths: features.data_retention_months ?? null,
-    isSponsored: features.sponsored === true,
+    // 機能ゲート
+    canExport: hasFeature('export'),
+    canGenerateReports: hasFeature('reports'),
+    canUseNutrition: hasFeature('nutrition'),
+    canUsePerformanceTesting: hasFeature('performance_testing'),
+    canUseRehab: hasFeature('rehab'),
+    canUseInBody: hasFeature('inbody'),
+    canUseInsights: hasFeature('insights'),
+    canUseAdvancedTeamAnalysis: hasFeature('advanced_team_analysis'),
+    canUseRankings: hasFeature('rankings'),
+    canUseParentWeeklyReport: hasFeature('parent_weekly_report'),
+    canUseParentViewAccess: hasFeature('parent_view_access'),
+    hasPrioritySupport: hasFeature('priority_support'),
+    isSponsored: hasFeature('sponsored'),
+    // ヘルパー
+    hasFeature,
     loading,
     error,
     refresh: fetchLimits,
