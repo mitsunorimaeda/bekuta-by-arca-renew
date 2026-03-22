@@ -351,22 +351,24 @@ export default function RehabQuestView({ userId, prescriptionId: propPrescriptio
         </div>
       )}
 
-      {/* 1. 怪我診断情報 */}
-      <section className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 shadow-sm border border-slate-100 dark:border-slate-700">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-red-50 dark:bg-red-500/20 rounded-xl text-red-500"><Stethoscope size={20}/></div>
-          <h3 className="font-black text-sm uppercase tracking-tighter text-slate-500 dark:text-slate-300">Medical Status</h3>
-        </div>
-        <div className="space-y-2">
-          <div className="text-xl font-black">{injury?.diagnosis || '診断名未設定'}</div>
-          <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            <span>受傷日: {injury?.injury_date}</span>
-            <span className={`font-black ${injury?.status === 'conditioning' ? 'text-orange-500' : 'text-blue-600'}`}>
-              {injury?.status === 'conditioning' ? '● コンディショニング' : '● 治療継続中'}
-            </span>
+      {/* 1. 怪我診断情報（リハビリ時のみ） */}
+      {isRehab && injury && (
+        <section className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 shadow-sm border border-slate-100 dark:border-slate-700">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-red-50 dark:bg-red-500/20 rounded-xl text-red-500"><Stethoscope size={20}/></div>
+            <h3 className="font-black text-sm uppercase tracking-tighter text-slate-500 dark:text-slate-300">Medical Status</h3>
           </div>
-        </div>
-      </section>
+          <div className="space-y-2">
+            <div className="text-xl font-black">{injury?.diagnosis || '診断名未設定'}</div>
+            <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <span>受傷日: {injury?.injury_date}</span>
+              <span className={`font-black ${injury?.status === 'conditioning' ? 'text-orange-500' : 'text-blue-600'}`}>
+                {injury?.status === 'conditioning' ? '● コンディショニング' : '● 治療継続中'}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 2. フェーズ・ロードマップ */}
       <section className="px-2">
@@ -572,13 +574,6 @@ export default function RehabQuestView({ userId, prescriptionId: propPrescriptio
         </section>
       )}
 
-      <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-500/20 rounded-3xl p-6 flex gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0"><Info size={24} /></div>
-        <div>
-          <h5 className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-1">Medical Advice</h5>
-          <p className="text-xs text-slate-600 dark:text-blue-200/80 font-bold leading-relaxed italic">「痛みは身体が発するシグナル。無理をしてフェーズを急ぐより、着実にこなすことが完全復帰への近道だぞ。」</p>
-        </div>
-      </div>
     </div>
   );
 }
