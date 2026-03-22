@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
 import { Alert } from '../lib/alerts';
-import { UserInvitation } from './UserInvitation';
-import { BulkUserInvitation } from './BulkUserInvitation';
 import { UserManagement } from './UserManagement';
 import { AlertSummary } from './AlertSummary';
 import { TutorialController } from './TutorialController';
@@ -34,7 +32,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'organization'>('overview');
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'pending'>('invite');
   const [organizationSubTab, setOrganizationSubTab] = useState<'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'>('members');
-  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk' | 'link'>('single');
+  // inviteSubTab removed - share link only
   const [loading, setLoading] = useState(true);
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
@@ -344,67 +342,10 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
               ) : activeTab === 'users' ? (
                 <div>
                   {usersSubTab === 'invite' ? (
-                    <div>
-                      <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-                        <nav className="flex space-x-8">
-                          <button
-                            onClick={() => setInviteSubTab('single')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'single'
-                                ? 'border-green-500 text-green-600 dark:text-green-400'
-                                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                          >
-                            個別招待
-                          </button>
-                          <button
-                            onClick={() => setInviteSubTab('bulk')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'bulk'
-                                ? 'border-green-500 text-green-600 dark:text-green-400'
-                                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                          >
-                            一括招待 (CSV)
-                          </button>
-                          <button
-                            onClick={() => setInviteSubTab('link')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'link'
-                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                          >
-                            シェアリンク
-                          </button>
-                        </nav>
-                      </div>
-
-                      {inviteSubTab === 'single' ? (
-                        <div data-tutorial="single-invite">
-                          <UserInvitation
-                            teams={teams}
-                            onUserInvited={() => {}}
-                            restrictToOrganizationId={organizationId}
-                            allowAdminInvite={false}
-                          />
-                        </div>
-                      ) : inviteSubTab === 'bulk' ? (
-                        <div data-tutorial="bulk-invite">
-                          <BulkUserInvitation
-                            teams={teams}
-                            onUsersInvited={() => {}}
-                            restrictToOrganizationId={organizationId}
-                            allowAdminInvite={false}
-                          />
-                        </div>
-                      ) : (
-                        <InviteLinkGenerator
-                          organizationId={organizationId}
-                          teams={teams}
-                        />
-                      )}
-                    </div>
+                    <InviteLinkGenerator
+                      organizationId={organizationId}
+                      teams={teams}
+                    />
                   ) : usersSubTab === 'manage' ? (
                     <div data-tutorial="user-list">
                       <UserManagement teams={teams} restrictToOrganizationId={organizationId} />

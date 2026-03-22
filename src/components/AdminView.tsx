@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Team, supabase } from '../lib/supabase';
 import { isGlobalAdmin } from '../lib/permissions';
 import { Alert } from '../lib/alerts';
-import { UserInvitation } from './UserInvitation';
-import { BulkUserInvitation } from './BulkUserInvitation';
+// UserInvitation, BulkUserInvitation removed - share link only
 import { UserManagement } from './UserManagement';
 import { InviteLinkGenerator } from './InviteLinkGenerator';
 import { PendingStaffApproval } from './PendingStaffApproval';
@@ -79,7 +78,7 @@ export function AdminView({
   const [systemSubTab, setSystemSubTab] = useState<'overview' | 'nutrition-dev'>('overview');
 
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'inbody' | 'pending'>('invite');
-  const [inviteSubTab, setInviteSubTab] = useState<'single' | 'bulk' | 'link'>('single');
+  // inviteSubTab removed - share link only
 
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [organizationSubTab, setOrganizationSubTab] = useState<
@@ -670,62 +669,17 @@ export function AdminView({
                 <div>
                   {usersSubTab === 'invite' ? (
                     <div>
-                      <div className="border-b border-gray-200 mb-6">
-                        <nav className="flex space-x-8">
-                          <button
-                            onClick={() => setInviteSubTab('single')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'single'
-                                ? 'border-green-500 text-green-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                          >
-                            個別招待
-                          </button>
-                          <button
-                            onClick={() => setInviteSubTab('bulk')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'bulk'
-                                ? 'border-green-500 text-green-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                          >
-                            一括招待 (CSV)
-                          </button>
-                          <button
-                            onClick={() => setInviteSubTab('link')}
-                            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                              inviteSubTab === 'link'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                          >
-                            シェアリンク
-                          </button>
-                        </nav>
-                      </div>
-
-                      {inviteSubTab === 'single' ? (
-                        <div>
-                          <UserInvitation teams={teams} onUserInvited={() => {}} />
-                        </div>
-                      ) : inviteSubTab === 'bulk' ? (
-                        <div>
-                          <BulkUserInvitation teams={teams} onUsersInvited={() => {}} />
-                        </div>
+                      {selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
+                        <InviteLinkGenerator
+                          organizationId={selectedOrganizationId}
+                          teams={teams.filter(t => t.organization_id === selectedOrganizationId)}
+                        />
                       ) : (
-                        selectedOrganizationId && selectedOrganizationId !== 'ALL' ? (
-                          <InviteLinkGenerator
-                            organizationId={selectedOrganizationId}
-                            teams={teams.filter(t => t.organization_id === selectedOrganizationId)}
-                          />
-                        ) : (
-                          <div className="text-center py-12">
-                            <p className="text-gray-600 mb-4">
-                              シェアリンクを管理するには、上部のドロップダウンから組織を選択してください。
-                            </p>
-                          </div>
-                        )
+                        <div className="text-center py-12">
+                          <p className="text-gray-600 mb-4">
+                            シェアリンクを管理するには、上部のドロップダウンから組織を選択してください。
+                          </p>
+                        </div>
                       )}
                     </div>
                   ) : usersSubTab === 'manage' ? (
