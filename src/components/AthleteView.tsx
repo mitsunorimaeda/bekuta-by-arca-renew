@@ -1130,7 +1130,7 @@ export function AthleteView({
               : activeTab === 'gamification'
               ? 'ストリーク、バッジ、目標を管理'
               : activeTab === 'rehab' // ★ 追加
-              ? 'リハビリ' // ★ 追加
+              ? 'トレーニング / リハビリ' // ★ 追加
               : activeTab === 'ftt' // ★ 追加
               ? '神経疲労チェック' // ★ 追加
               : '設定とお知らせ'}
@@ -1181,7 +1181,7 @@ export function AthleteView({
                   }`}
                 >
                   <Sword className="w-4 h-4 text-indigo-500" />
-                  <span className="text-sm font-medium">修行（リハビリ）</span>
+                  <span className="text-sm font-medium">トレーニング / リハビリ</span>
                 </button>
               )}
 
@@ -1467,10 +1467,10 @@ export function AthleteView({
               </div>
               <div className="text-left">
                 <h3 className="text-lg font-black italic tracking-tight uppercase">
-                  {isRehabilitating ? 'Special Quest Unlocked' : 'Training Program'}
+                  Today's Program
                 </h3>
                 <p className="text-xs text-white/80 font-bold">
-                  {isRehabilitating ? '復帰へ向けてエクササイズしよう' : `${activeProgramCount}つのプログラムが処方されています`}
+                  {`${activeProgramCount}つのプログラムが処方されています`}
                 </p>
               </div>
             </div>
