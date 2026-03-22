@@ -26,6 +26,7 @@
     "@sentry/react": "^10.34.0",
     "@supabase/supabase-js": "^2.89.0",
     "canvas-confetti": "^1.9.4",
+    "framer-motion": "^12.38.0",
     "idb": "^8.0.3",
     "lucide-react": "^0.344.0",
     "pg": "^8.16.3",

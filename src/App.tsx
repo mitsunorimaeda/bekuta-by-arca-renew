@@ -41,6 +41,10 @@ import { TermsOfService } from './pages/TermsOfService';
 import { CommercialTransactions } from './pages/CommercialTransactions';
 import { HelpPage } from './pages/HelpPage';
 import { TeamAchievementNotification } from './components/TeamAchievementNotification';
+const LandingPage = lazy(() =>
+  import('./pages/LandingPage').then((m) => ({ default: m.LandingPage })),
+);
+
 import type { AppRole } from './lib/roles';          // ← 型（TypeScript用）
 import { isGlobalAdmin } from './lib/permissions';
 import { supabase, recoverFromInvalidRefreshToken } from './lib/supabase';
@@ -114,7 +118,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
+    React.useState<'app' | 'landing' | 'login' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
@@ -149,11 +153,44 @@ function App() {
       return;
     }
 
+    if (pathname === '/login') {
+      setCurrentPage('login');
+      return;
+    }
+
     // ✅ welcome（token は WelcomePage 側で読む）
     if (pathname.startsWith('/welcome') || searchParams.get('token')) {
       setCurrentPage('welcome');
       return;
     }
+
+    // ✅ 法的ページ（未認証でもアクセス可能に）
+    if (pathname === '/privacy') {
+      setCurrentPage('privacy');
+      return;
+    }
+    if (pathname === '/terms') {
+      setCurrentPage('terms');
+      return;
+    }
+    if (pathname === '/commercial') {
+      setCurrentPage('commercial');
+      return;
+    }
+  }, []);
+
+  // ✅ ブラウザの戻る/進む対応
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const pathname = window.location.pathname;
+      if (pathname === '/login') setCurrentPage('login');
+      else if (pathname === '/privacy') setCurrentPage('privacy');
+      else if (pathname === '/terms') setCurrentPage('terms');
+      else if (pathname === '/commercial') setCurrentPage('commercial');
+      else setCurrentPage('app');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // recovery hash
@@ -254,7 +291,78 @@ function App() {
     );
   }
 
-  if (!user) return <LoginForm onLogin={signIn} />;
+  // ✅ 法的ページ（未認証でもアクセス可能）
+  if (currentPage === 'privacy' && !user) {
+    return (
+      <PrivacyPolicy
+        onBack={() => {
+          setCurrentPage('app');
+          window.history.pushState({}, '', '/');
+        }}
+      />
+    );
+  }
+  if (currentPage === 'terms' && !user) {
+    return (
+      <TermsOfService
+        onBack={() => {
+          setCurrentPage('app');
+          window.history.pushState({}, '', '/');
+        }}
+      />
+    );
+  }
+  if (currentPage === 'commercial' && !user) {
+    return (
+      <CommercialTransactions
+        onBack={() => {
+          setCurrentPage('app');
+          window.history.pushState({}, '', '/');
+        }}
+      />
+    );
+  }
+
+  if (!user) {
+    // ログインページ
+    if (currentPage === 'login') {
+      return (
+        <LoginForm
+          onLogin={signIn}
+          onNavigateToLanding={() => {
+            setCurrentPage('app');
+            window.history.pushState({}, '', '/');
+          }}
+        />
+      );
+    }
+    // ランディングページ（デフォルト）
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-white" />}>
+        <LandingPage
+          onNavigateToLogin={() => {
+            setCurrentPage('login');
+            window.history.pushState({}, '', '/login');
+          }}
+          onNavigateToSignup={() => {
+            window.location.href = '/join';
+          }}
+          onNavigateToPrivacy={() => {
+            setCurrentPage('privacy');
+            window.history.pushState({}, '', '/privacy');
+          }}
+          onNavigateToTerms={() => {
+            setCurrentPage('terms');
+            window.history.pushState({}, '', '/terms');
+          }}
+          onNavigateToCommercial={() => {
+            setCurrentPage('commercial');
+            window.history.pushState({}, '', '/commercial');
+          }}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <ProfileGate

@@ -4,9 +4,10 @@ import { trackEvent } from '../lib/posthog';
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
+  onNavigateToLanding?: () => void;
 }
 
-export function LoginForm({ onLogin }: LoginFormProps) {
+export function LoginForm({ onLogin, onNavigateToLanding }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -342,6 +343,18 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           </div>
 
           <p className="mt-4 text-xs">ログイン情報が不明な場合は管理者にお問い合わせください</p>
+
+          {onNavigateToLanding && (
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={onNavigateToLanding}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+              >
+                &larr; Bekutaについて詳しく見る
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
