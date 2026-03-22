@@ -45,6 +45,10 @@ const LandingPage = lazy(() =>
   import('./pages/LandingPage').then((m) => ({ default: m.LandingPage })),
 );
 
+const SignupPage = lazy(() =>
+  import('./pages/SignupPage').then((m) => ({ default: m.SignupPage })),
+);
+
 import type { AppRole } from './lib/roles';          // ← 型（TypeScript用）
 import { isGlobalAdmin } from './lib/permissions';
 import { supabase, recoverFromInvalidRefreshToken } from './lib/supabase';
@@ -118,7 +122,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'landing' | 'login' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
+    React.useState<'app' | 'landing' | 'login' | 'signup' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
@@ -158,6 +162,11 @@ function App() {
       return;
     }
 
+    if (pathname === '/signup') {
+      setCurrentPage('signup');
+      return;
+    }
+
     // ✅ welcome（token は WelcomePage 側で読む）
     if (pathname.startsWith('/welcome') || searchParams.get('token')) {
       setCurrentPage('welcome');
@@ -184,6 +193,7 @@ function App() {
     const handlePopState = () => {
       const pathname = window.location.pathname;
       if (pathname === '/login') setCurrentPage('login');
+      else if (pathname === '/signup') setCurrentPage('signup');
       else if (pathname === '/privacy') setCurrentPage('privacy');
       else if (pathname === '/terms') setCurrentPage('terms');
       else if (pathname === '/commercial') setCurrentPage('commercial');
@@ -336,6 +346,27 @@ function App() {
         />
       );
     }
+    // サインアップページ
+    if (currentPage === 'signup') {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50" />}>
+          <SignupPage
+            onLoginSuccess={() => {
+              setCurrentPage('app');
+              window.history.replaceState({}, '', '/');
+            }}
+            onNavigateToLogin={() => {
+              setCurrentPage('login');
+              window.history.pushState({}, '', '/login');
+            }}
+            onNavigateToLanding={() => {
+              setCurrentPage('app');
+              window.history.pushState({}, '', '/');
+            }}
+          />
+        </Suspense>
+      );
+    }
     // ランディングページ（デフォルト）
     return (
       <Suspense fallback={<div className="min-h-screen bg-white" />}>
@@ -345,7 +376,8 @@ function App() {
             window.history.pushState({}, '', '/login');
           }}
           onNavigateToSignup={() => {
-            window.location.href = '/join';
+            setCurrentPage('signup');
+            window.history.pushState({}, '', '/signup');
           }}
           onNavigateToPrivacy={() => {
             setCurrentPage('privacy');
