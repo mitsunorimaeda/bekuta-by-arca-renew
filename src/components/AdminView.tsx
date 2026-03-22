@@ -223,7 +223,7 @@ export function AdminView({
   const testCalculateMetabolism = async () => {
     try {
       if (!targetUserId) {
-        alert("user_id を入れてください");
+        console.warn("user_id を入れてください");
         return;
       }
 
@@ -231,7 +231,7 @@ export function AdminView({
       const accessToken = data.session?.access_token;
 
       if (!accessToken) {
-        alert("セッションが取得できません（未ログイン？）");
+        console.warn("セッションが取得できません（未ログイン？）");
         return;
       }
 
@@ -253,14 +253,13 @@ export function AdminView({
       const json = await res.json();
 
       if (!res.ok) {
-        alert(`失敗: ${res.status}\n` + JSON.stringify(json, null, 2));
+        console.error(`失敗: ${res.status}`, json);
         return;
       }
 
-      alert(JSON.stringify(json, null, 2));
+      console.log('Metabolism result:', json);
     } catch (e) {
-      console.error(e);
-      alert("エラー発生（consoleを確認）");
+      console.error("エラー発生:", e);
     }
   };
 
