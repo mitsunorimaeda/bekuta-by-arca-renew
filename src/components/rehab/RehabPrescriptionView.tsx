@@ -142,8 +142,15 @@ export default function RehabPrescriptionView({ prescriptionId, athleteId, onBac
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{prescription.description}</p>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
-              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded font-medium">
-                現在 Phase {prescription.current_phase}
+              <span className={`text-xs px-2 py-1 rounded font-medium ${
+                prescription.purpose === 'performance' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                : prescription.purpose === 'conditioning' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+              }`}>
+                {prescription.purpose === 'performance' ? 'パフォーマンス' : prescription.purpose === 'conditioning' ? 'コンディショニング' : 'リハビリ'}
+              </span>
+              <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded font-medium">
+                Phase {prescription.current_phase}
               </span>
               {injury && (
                 <span className="text-xs px-2 py-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded font-medium">
@@ -212,9 +219,23 @@ export default function RehabPrescriptionView({ prescriptionId, athleteId, onBac
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900 dark:text-white text-sm">{item.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    {item.quantity} × {item.sets}
-                  </div>
+                  {(item as any).input_type === 'weight' ? (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-wrap gap-x-2">
+                      {(item as any).intensity && <span>{(item as any).intensity}</span>}
+                      {(item as any).rep_range && <span>({(item as any).rep_range}rep)</span>}
+                      {(item as any).target_rpe && <span>RPE {(item as any).target_rpe}</span>}
+                      {(item as any).tempo && <span>T:{(item as any).tempo}</span>}
+                      {item.sets && <span>{item.sets}</span>}
+                      {(item as any).rest_seconds && <span>REST{(item as any).rest_seconds}s</span>}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {item.quantity} × {item.sets}
+                    </div>
+                  )}
+                  {(item as any).sub_exercise && (
+                    <div className="text-[10px] text-blue-500 mt-0.5">REST中: {(item as any).sub_exercise}</div>
+                  )}
                 </div>
               </div>
             ))}
@@ -222,10 +243,12 @@ export default function RehabPrescriptionView({ prescriptionId, athleteId, onBac
         )}
       </div>
 
-      {/* NRS推移 */}
+      {/* NRS/RPE推移 */}
       {logs.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-4 text-sm">NRS推移（直近14日）</h3>
+          <h3 className="font-bold text-gray-900 dark:text-white mb-4 text-sm">
+            {prescription.purpose === 'rehab' || !prescription.purpose ? 'NRS推移（直近14日）' : 'RPE推移（直近14日）'}
+          </h3>
           <div className="flex items-end gap-1 h-24">
             {logs.map((log, idx) => (
               <div key={idx} className="flex-1 flex flex-col items-center gap-1">

@@ -159,7 +159,7 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
               <LayoutGrid size={32} className="mr-3 text-blue-600" /> プログラムテンプレート
             </h2>
             <p className="text-gray-400 font-bold mt-2 uppercase tracking-widest text-xs">
-              リハビリプログラムのテンプレート管理
+              リハビリ・パフォーマンス プログラムのテンプレート管理
             </p>
           </div>
           <div className="flex gap-3">
@@ -185,7 +185,7 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
               <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Stethoscope size={18} className="text-orange-500" /> リハビリ中の選手 ({rehabAthletes.length})
+                <Stethoscope size={18} className="text-orange-500" /> プログラム実施中の選手 ({rehabAthletes.length})
               </h3>
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -263,8 +263,12 @@ export default function RehabTemplateList({ onOpenEditor, onBack, showToast, onA
                   <div className="p-8 flex-1">
                     <div className="flex justify-between items-start mb-6">
                       <div className="flex flex-wrap gap-2">
-                        <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-widest border border-blue-100 dark:border-blue-800">
-                          リハビリプログラム
+                        <span className={`text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-widest border ${
+                          t.purpose === 'performance' ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800'
+                          : t.purpose === 'conditioning' ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 border-teal-100 dark:border-teal-800'
+                          : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800'
+                        }`}>
+                          {t.purpose === 'performance' ? 'パフォーマンス' : t.purpose === 'conditioning' ? 'コンディショニング' : 'リハビリ'}
                         </span>
                         {t.body_part_key && (
                           <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-full border border-emerald-100 dark:border-emerald-800">
