@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { getBodyPartLabel } from '../../lib/rehabConstants';
+import { getBodyPartLabel, getPurposeLabel, type PrescriptionPurpose } from '../../lib/rehabConstants';
 import {
   FileText, Save, ArrowLeft, Plus, Trash2,
   Info, Layers, Dumbbell, Sword, Trophy, Youtube, Stethoscope, PlusCircle, MinusCircle
@@ -10,6 +10,7 @@ interface RehabPrescriptionAssignProps {
   athleteId: string;
   injuryId?: string;
   fromPrescriptionId?: string;
+  purpose?: PrescriptionPurpose;
   onBack: () => void;
   showToast: (msg: string, type: 'success' | 'error') => void;
 }
@@ -18,9 +19,12 @@ export default function RehabPrescriptionAssign({
   athleteId,
   injuryId: propInjuryId,
   fromPrescriptionId,
+  purpose: propPurpose,
   onBack,
   showToast,
 }: RehabPrescriptionAssignProps) {
+  const purpose = propPurpose || 'rehab';
+  const isRehab = purpose === 'rehab';
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [activePhaseTab, setActivePhaseTab] = useState(1);
@@ -151,24 +155,29 @@ export default function RehabPrescriptionAssign({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      if (selectedInjuryId) {
+      if (isRehab && selectedInjuryId) {
         await supabase.schema('rehab').from('prescriptions')
           .update({ status: 'completed' })
           .eq('injury_id', selectedInjuryId)
           .eq('status', 'active');
       }
-      await supabase.schema('rehab').from('prescriptions')
+      // 同じpurposeの既存active処方を完了にする
+      const archiveQuery = supabase.schema('rehab').from('prescriptions')
         .update({ status: 'completed' })
         .eq('athlete_user_id', athleteId)
         .eq('status', 'active')
-        .is('injury_id', null)
+        .eq('purpose', purpose)
         .neq('type', 'template');
+      if (isRehab) archiveQuery.is('injury_id', null);
+      await archiveQuery;
 
       const { data: newPrescription, error: pError } = await supabase.schema('rehab').from('prescriptions').insert({
-        athlete_user_id: athleteId, trainer_id: user.id, type: 'rehab',
+        athlete_user_id: athleteId, trainer_id: user.id,
+        type: isRehab ? 'rehab' : 'performance',
+        purpose: purpose,
         title: form.title, description: form.description, phase_details: phaseMetadata,
         start_date: form.start_date, progress_mode: form.progress_mode, status: 'active',
-        injury_id: selectedInjuryId || null,
+        injury_id: isRehab ? (selectedInjuryId || null) : null,
       }).select().single();
       if (pError) throw pError;
       if (items.length > 0) {

@@ -8,6 +8,7 @@ import {
 interface BulkPrescriptionAssignProps {
   onBack: () => void;
   showToast: (msg: string, type: 'success' | 'error') => void;
+  athletes?: { id: string; name: string; team_id?: string }[];
 }
 
 interface TeamAthlete {
@@ -44,7 +45,7 @@ interface TemplateItem {
   sub_exercise: string | null;
 }
 
-export default function BulkPrescriptionAssign({ onBack, showToast }: BulkPrescriptionAssignProps) {
+export default function BulkPrescriptionAssign({ onBack, showToast, athletes: propAthletes }: BulkPrescriptionAssignProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -64,7 +65,12 @@ export default function BulkPrescriptionAssign({ onBack, showToast }: BulkPrescr
 
   useEffect(() => {
     fetchTemplates();
-    fetchAthletes();
+    if (propAthletes && propAthletes.length > 0) {
+      // 親コンポーネントから選手リストを受け取った場合はそれを使う
+      setAthletes(propAthletes.map(a => ({ id: a.id, name: a.name, team_id: a.team_id || '' })));
+    } else {
+      fetchAthletes();
+    }
   }, []);
 
   const fetchTemplates = async () => {

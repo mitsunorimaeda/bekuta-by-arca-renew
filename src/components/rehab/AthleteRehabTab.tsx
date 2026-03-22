@@ -21,6 +21,7 @@ interface Prescription {
   current_phase: number;
   status: string;
   injury_id: string | null;
+  purpose: string;
   created_at: string;
 }
 
@@ -31,7 +32,7 @@ interface DailyLog {
 
 interface AthleteRehabTabProps {
   athleteId: string;
-  onOpenAssign: (athleteId: string, injuryId?: string) => void;
+  onOpenAssign: (athleteId: string, injuryId?: string, purpose?: string) => void;
   onOpenEvaluation?: (injuryId: string, bodyPartKey: string, currentPhase: number) => void;
   onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
 }
@@ -65,7 +66,7 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
       const { data: presData } = await supabase
         .schema('rehab')
         .from('prescriptions')
-        .select('id, title, current_phase, status, injury_id, created_at')
+        .select('id, title, current_phase, status, injury_id, purpose, created_at')
         .eq('athlete_user_id', athleteId)
         .eq('status', 'active')
         .order('created_at', { ascending: false });
@@ -209,11 +210,11 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
         </div>
       )}
 
-      {/* 怪我に紐づかない処方 */}
+      {/* パフォーマンス・コンディショニング処方 */}
       {prescriptions.filter(p => !p.injury_id).length > 0 && (
         <div>
           <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-            <Activity size={16} className="text-green-500" /> その他のリハビリプログラム
+            <Activity size={16} className="text-blue-500" /> トレーニングプログラム
           </h3>
           <div className="space-y-2">
             {prescriptions.filter(p => !p.injury_id).map(pres => (
@@ -224,7 +225,14 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
               >
                 <div>
                   <div className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{pres.title}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Phase {pres.current_phase}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                      pres.purpose === 'performance' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                      pres.purpose === 'conditioning' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                      'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                    }`}>{pres.purpose === 'performance' ? 'パフォーマンス' : pres.purpose === 'conditioning' ? 'コンディショニング' : 'リハビリ'}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Phase {pres.current_phase}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded font-medium">
@@ -237,6 +245,14 @@ export default function AthleteRehabTab({ athleteId, onOpenAssign, onOpenEvaluat
           </div>
         </div>
       )}
+
+      {/* パフォーマンス処方追加ボタン */}
+      <button
+        onClick={() => onOpenAssign(athleteId, undefined, 'performance')}
+        className="w-full py-3 bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-xl text-blue-600 dark:text-blue-400 font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+      >
+        <Plus size={16} /> パフォーマンス処方を追加
+      </button>
     </div>
   );
 }

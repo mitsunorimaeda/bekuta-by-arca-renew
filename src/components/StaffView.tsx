@@ -235,7 +235,7 @@ export function StaffView({
   // リハビリ: フルスクリーンビュー管理
   const [fullscreenView, setFullscreenView] = useState<
     | { type: 'editor'; templateId?: string }
-    | { type: 'assign'; athleteId: string; injuryId?: string; fromPrescriptionId?: string }
+    | { type: 'assign'; athleteId: string; injuryId?: string; fromPrescriptionId?: string; purpose?: string }
     | { type: 'view-prescription'; prescriptionId: string; athleteId: string }
     | { type: 'bulk-assign' }
     | null
@@ -756,6 +756,7 @@ export function StaffView({
               athleteId={fullscreenView.athleteId}
               injuryId={fullscreenView.injuryId}
               fromPrescriptionId={fullscreenView.fromPrescriptionId}
+              purpose={(fullscreenView.purpose as any) || 'rehab'}
               onBack={() => {
                 setFullscreenView(null);
               }}
@@ -774,6 +775,7 @@ export function StaffView({
             <BulkPrescriptionAssign
               onBack={() => setFullscreenView(null)}
               showToast={showToast}
+              athletes={safeAthletes.map(a => ({ id: a.id, name: a.name ?? '', team_id: a.team_id }))}
             />
           )}
         </Suspense>
@@ -1149,9 +1151,9 @@ export function StaffView({
             if (selectedTeam?.id) fetchTeamAthletesWithActivity(selectedTeam.id);
           }}
           onOpenMessage={handleOpenMessageToAthlete}
-          onOpenRehabAssign={canAccessRehab(user.staff_type) ? (athleteId, injuryId) => {
+          onOpenRehabAssign={canAccessRehab(user.staff_type) ? (athleteId, injuryId, purpose) => {
             setSelectedAthlete(null);
-            setFullscreenView({ type: 'assign', athleteId, injuryId });
+            setFullscreenView({ type: 'assign', athleteId, injuryId, purpose });
           } : undefined}
           onOpenPrescription={canAccessRehab(user.staff_type) ? (prescriptionId, athleteId) => {
             setSelectedAthlete(null);

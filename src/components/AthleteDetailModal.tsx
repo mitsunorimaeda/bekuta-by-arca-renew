@@ -29,7 +29,7 @@ interface AthleteDetailModalProps {
   canFreeze?: boolean;
   onFrozenChange?: () => void;
   onOpenMessage?: (athleteId: string) => void;
-  onOpenRehabAssign?: (athleteId: string, injuryId?: string) => void;
+  onOpenRehabAssign?: (athleteId: string, injuryId?: string, purpose?: string) => void;
   onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
 }
 
@@ -784,7 +784,7 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
             >
               <AthleteRehabTabLazy
                 athleteId={athlete.id}
-                onOpenAssign={(athleteId, injuryId) => onOpenRehabAssign(athleteId, injuryId)}
+                onOpenAssign={(athleteId, injuryId, purpose) => onOpenRehabAssign(athleteId, injuryId, purpose)}
                 onOpenPrescription={onOpenPrescription ? (presId, athId) => {
                   onClose();
                   onOpenPrescription(presId, athId);
