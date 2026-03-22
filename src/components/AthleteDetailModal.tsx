@@ -335,13 +335,12 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-w-5xl w-full h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         {/* ヘッダー */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Activity className="w-5 h-5" />
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 sm:p-6 flex items-center justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-xl font-bold flex items-center gap-2 truncate">
+              <Activity className="w-4 h-4 flex-shrink-0" />
               {athlete.nickname || athlete.name || '選手'}
             </h2>
-            <p className="text-sm text-blue-100 mt-1">{athlete.email}</p>
           </div>
           <div className="flex items-center gap-2">
             {onOpenMessage && (
@@ -402,111 +401,47 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
           </div>
         )}
 
-        {/* ✅ 状態 → 原因 → 次の一手 */}
+        {/* ✅ 状態バー（コンパクト） */}
         {risk && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded-full border ${getRiskColor(risk.riskLevel)}`}>
-                    {getRiskLabel(risk.riskLevel)}
-                  </span>
-
-                  {displayACWR != null && (
-                    <span className="text-xs text-gray-600">
-                      ACWR <b>{displayACWR.toFixed(2)}</b>
-                    </span>
-                  )}
-
-                  {weekCard?.is_sharing_active === false && (
-                    <span className="text-xs px-2 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
-                      🔒 共有OFF
-                    </span>
-                  )}
-                </div>
-
-                {risk.reasons?.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {risk.reasons.slice(0, 2).map((r) => (
-                      <span key={r} className="text-[11px] px-2 py-1 rounded-full border bg-gray-50 text-gray-700 border-gray-200">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-3 text-sm text-gray-800">
-              <div className="font-semibold mb-1">次の一手</div>
-              <ul className="list-disc pl-5 space-y-1">
-                {getNextActions(risk).map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
-            </div>
+          <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+            <span className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${getRiskColor(risk.riskLevel)}`}>
+              {getRiskLabel(risk.riskLevel)}
+            </span>
+            {displayACWR != null && (
+              <span className="text-[11px] text-gray-500">ACWR <b>{displayACWR.toFixed(2)}</b></span>
+            )}
+            {risk.reasons?.length > 0 && risk.reasons.slice(0, 2).map((r) => (
+              <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r}</span>
+            ))}
+            {weekCard?.is_sharing_active === false && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">共有OFF</span>
+            )}
           </div>
         )}
 
         {/* タブ */}
-        <div className="border-b border-gray-200 px-6 pt-3">
-          <div className="flex gap-4 overflow-x-auto text-sm">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`pb-3 border-b-2 ${
-                activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-600 font-semibold'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              概要
-            </button>
-            <button
-              onClick={() => setActiveTab('weight')}
-              className={`pb-3 border-b-2 flex items-center gap-1 ${
-                activeTab === 'weight'
-                  ? 'border-green-500 text-green-600 font-semibold'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Scale className="w-4 h-4" />
-              体重推移
-            </button>
-            <button
-              onClick={() => setActiveTab('rpe')}
-              className={`pb-3 border-b-2 flex items-center gap-1 ${
-                activeTab === 'rpe'
-                  ? 'border-purple-500 text-purple-600 font-semibold'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <BarChart2 className="w-4 h-4" />
-              RPE / 負荷 / ACWR
-            </button>
-            <button
-              onClick={() => setActiveTab('profile')}
-              className={`flex items-center gap-1 px-3 py-2 border-b-2 text-sm whitespace-nowrap ${
-                activeTab === 'profile'
-                  ? 'border-indigo-500 text-indigo-600 font-semibold'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <UserIcon className="w-4 h-4" />
-              プロフィール
-            </button>
-            {onOpenRehabAssign && (
+        <div className="border-b border-gray-200 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar text-xs sm:text-sm">
+            {[
+              { key: 'overview', label: '概要', color: 'blue' },
+              { key: 'weight', label: '体重', color: 'green', icon: Scale },
+              { key: 'rpe', label: 'RPE/ACWR', color: 'purple', icon: BarChart2 },
+              { key: 'profile', label: 'プロフィール', color: 'indigo', icon: UserIcon },
+              ...(onOpenRehabAssign ? [{ key: 'rehab', label: 'リハ', color: 'orange', icon: Stethoscope }] : []),
+            ].map(({ key, label, color, icon: Icon }) => (
               <button
-                onClick={() => setActiveTab('rehab')}
-                className={`flex items-center gap-1 px-3 py-2 border-b-2 text-sm whitespace-nowrap ${
-                  activeTab === 'rehab'
-                    ? 'border-orange-500 text-orange-600 font-semibold'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                key={key}
+                onClick={() => setActiveTab(key as any)}
+                className={`flex items-center gap-1 px-3 py-2.5 border-b-2 whitespace-nowrap font-medium transition-colors ${
+                  activeTab === key
+                    ? `border-${color}-500 text-${color}-600 font-semibold`
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}
               >
-                <Stethoscope className="w-4 h-4" />
-                リハビリ
+                {Icon && <Icon className="w-3.5 h-3.5" />}
+                {label}
               </button>
-            )}
+            ))}
           </div>
         </div>
 
