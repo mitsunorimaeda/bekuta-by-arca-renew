@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Users, UserCheck, UserX, ChevronDown, ChevronRight, UserPlus, Search } from 'lucide-react';
+import { Users, UserCheck, UserX, ChevronDown, ChevronRight, UserPlus, Search, Plus } from 'lucide-react';
 import type { Database } from '../lib/database.types';
 
 type Team = Database['public']['Tables']['teams']['Row'];
@@ -22,9 +22,18 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
   const [error, setError] = useState<string | null>(null);
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [addingTeam, setAddingTeam] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [organizationMembers, setOrganizationMembers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     loadTeamsAndMembers();
@@ -129,6 +138,25 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
     }
   };
 
+  const handleAddTeam = async () => {
+    if (!newTeamName.trim()) return;
+    setAddingTeam(true);
+    try {
+      const { error } = await supabase
+        .from('teams')
+        .insert({ name: newTeamName.trim(), organization_id: organizationId });
+      if (error) throw error;
+      showToast(`「${newTeamName.trim()}」を作成しました`);
+      setNewTeamName('');
+      setShowAddTeamModal(false);
+      await loadTeamsAndMembers();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'チームの作成に失敗しました', 'error');
+    } finally {
+      setAddingTeam(false);
+    }
+  };
+
   const toggleTeam = (teamId: string) => {
     setExpandedTeams(prev => {
       const next = new Set(prev);
@@ -173,10 +201,10 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
       await loadOrganizationMembers();
       setShowAddMemberModal(false);
       setSelectedTeam(null);
-      alert('メンバーをチームに追加しました');
+      showToast('メンバーをチームに追加しました');
     } catch (err) {
       console.error('Error assigning member:', err);
-      alert('メンバーの追加に失敗しました: ' + (err instanceof Error ? err.message : '不明なエラー'));
+      showToast('メンバーの追加に失敗しました', 'error');
     }
   };
 
@@ -202,10 +230,10 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
       }
 
       await loadTeamsAndMembers();
-      alert('メンバーをチームから削除しました');
+      showToast('メンバーをチームから削除しました');
     } catch (err) {
       console.error('Error removing member:', err);
-      alert('メンバーの削除に失敗しました: ' + (err instanceof Error ? err.message : '不明なエラー'));
+      showToast('メンバーの削除に失敗しました', 'error');
     }
   };
 
@@ -305,8 +333,15 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
       )}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">チーム別メンバー一覧</h3>
+          <button
+            onClick={() => setShowAddTeamModal(true)}
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1 text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            チーム追加
+          </button>
         </div>
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {teams.length === 0 ? (
@@ -417,6 +452,48 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
           )}
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium transition-all ${
+          toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* Add Team Modal */}
+      {showAddTeamModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">新しいチームを作成</h3>
+            <input
+              type="text"
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
+              placeholder="チーム名（例: サッカー部）"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-4"
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTeam()}
+              autoFocus
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowAddTeamModal(false); setNewTeamName(''); }}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleAddTeam}
+                disabled={addingTeam || !newTeamName.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {addingTeam ? '作成中...' : '作成'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddMemberModal && selectedTeam && (
         <AddMemberToTeamModal
