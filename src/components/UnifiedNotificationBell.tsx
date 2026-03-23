@@ -40,13 +40,14 @@ export function UnifiedNotificationBell({
   const [activeTab, setActiveTab] = useState<'all' | 'alerts' | 'notifications'>('all');
   const [showHistory, setShowHistory] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const isUpdatingRef = useRef(false); // 既読更新中フラグ
 
   const notifUnreadCount = notifications.filter((n) => !n.is_read).length;
   const totalUnread = alertUnreadCount + notifUnreadCount;
 
-  // 通知取得
+  // 通知取得（既読更新中はスキップ）
   const fetchNotifications = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || isUpdatingRef.current) return;
     try {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
@@ -69,12 +70,17 @@ export function UnifiedNotificationBell({
     return () => clearInterval(timer);
   }, [fetchNotifications]);
 
-  // パネルを開いた時に3秒後に通知を自動既読
+  // パネルを開いた時に3秒後に通知を自動既読（1回だけ）
+  const autoReadFiredRef = useRef(false);
   useEffect(() => {
-    if (!open || notifUnreadCount === 0) return;
-    const timer = setTimeout(() => { markAllNotifsRead(); }, 3000);
+    if (!open) { autoReadFiredRef.current = false; return; }
+    if (notifUnreadCount === 0 || autoReadFiredRef.current) return;
+    const timer = setTimeout(() => {
+      autoReadFiredRef.current = true;
+      markAllNotifsRead();
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [open, notifUnreadCount]);
+  }, [open]);
 
   // パネル外クリックで閉じる
   useEffect(() => {
@@ -89,15 +95,19 @@ export function UnifiedNotificationBell({
   }, [open]);
 
   const markNotifAsRead = async (id: string) => {
+    isUpdatingRef.current = true;
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
     await supabase.from('user_notifications').update({ is_read: true }).eq('id', id);
+    isUpdatingRef.current = false;
   };
 
   const markAllNotifsRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
+    isUpdatingRef.current = true;
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     await supabase.from('user_notifications').update({ is_read: true }).in('id', unreadIds);
+    isUpdatingRef.current = false;
   };
 
   const handleMarkAllRead = () => {
