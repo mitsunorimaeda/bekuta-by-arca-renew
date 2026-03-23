@@ -181,15 +181,14 @@ export function TutorialController({
         cleanupFn = () => waitEl.removeEventListener(baseEvent, handler);
       };
       setupListener();
-      const observer = new MutationObserver(setupListener);
-      observer.observe(document.body, { childList: true, subtree: true });
+      const mutationObserver = new MutationObserver(setupListener);
+      mutationObserver.observe(document.body, { childList: true, subtree: true });
       const prevCleanup = cleanupFn;
-      cleanupFn = () => { observer.disconnect(); prevCleanup?.(); };
+      cleanupFn = () => { mutationObserver.disconnect(); prevCleanup?.(); };
     }
 
     return () => {
       cancelled = true;
-      observer.disconnect();
       if (cleanupFn) cleanupFn();
     };
   }, [isActive, currentStep, currentStepIndex]);
