@@ -725,7 +725,7 @@ export function AdminView({
                 <div>
                   {organizationSubTab === 'overview' ? (
                     selectedOrganizationId && selectedOrganizationId !== 'ALL' && selectedOrganization ? (
-                      <OrganizationOverview organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} />
+                      <OrganizationOverview organizationId={selectedOrganizationId} organizationName={selectedOrganization.name} teamsLimit={adminPlanLimits.teamsLimit} />
                     ) : (
                       <div className="text-center py-12">
                         <p className="text-gray-600 dark:text-gray-400 mb-4">

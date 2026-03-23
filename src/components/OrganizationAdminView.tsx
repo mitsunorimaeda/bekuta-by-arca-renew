@@ -341,6 +341,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                 <OrganizationOverview
                   organizationId={organizationId}
                   organizationName={organizationName}
+                  teamsLimit={planLimits.teamsLimit}
                 />
               ) : activeTab === 'users' ? (
                 <div>

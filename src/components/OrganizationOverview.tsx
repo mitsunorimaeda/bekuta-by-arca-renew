@@ -9,6 +9,7 @@ type User = Database['public']['Tables']['users']['Row'];
 interface OrganizationOverviewProps {
   organizationId: string;
   organizationName: string;
+  teamsLimit?: number | null;
 }
 
 interface TeamWithMembers extends Team {
@@ -16,7 +17,7 @@ interface TeamWithMembers extends Team {
   coaches: User[];
 }
 
-export function OrganizationOverview({ organizationId, organizationName }: OrganizationOverviewProps) {
+export function OrganizationOverview({ organizationId, organizationName, teamsLimit }: OrganizationOverviewProps) {
   const [teams, setTeams] = useState<TeamWithMembers[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +141,10 @@ export function OrganizationOverview({ organizationId, organizationName }: Organ
 
   const handleAddTeam = async () => {
     if (!newTeamName.trim()) return;
+    if (teamsLimit !== null && teamsLimit !== undefined && teams.length >= teamsLimit) {
+      showToast(`チーム数が上限（${teamsLimit}チーム）に達しています。プランをアップグレードしてください。`, 'error');
+      return;
+    }
     setAddingTeam(true);
     try {
       const { error } = await supabase
