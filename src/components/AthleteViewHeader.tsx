@@ -22,10 +22,12 @@ import {
   ChevronDown,
   User,
   MessageCircle,
+  Lock,
 } from 'lucide-react';
 import { NotificationInbox } from './NotificationInbox';
 import * as Sentry from '@sentry/react';
 import type { ActiveTab } from '../types/athlete';
+import { LockedTabLabel } from './UpgradeGate';
 
 export type AthleteViewHeaderProps = {
   userName: string | null;
@@ -49,6 +51,12 @@ export type AthleteViewHeaderProps = {
   canUseNutrition: boolean;
   isRehabilitating: boolean;
   hasActivePrograms: boolean;
+  planLimits: {
+    canUseNutrition: boolean;
+    canUsePerformanceTesting: boolean;
+    canUseInsights: boolean;
+    canUseRehab: boolean;
+  };
   today: string;
   setNutritionDate: (d: string) => void;
 };
@@ -75,6 +83,7 @@ export function AthleteViewHeader({
   canUseNutrition,
   isRehabilitating,
   hasActivePrograms,
+  planLimits,
   today,
   setNutritionDate,
 }: AthleteViewHeaderProps) {
@@ -216,7 +225,7 @@ export function AthleteViewHeader({
                   }`}
                 >
                   <Sword className="w-4 h-4 text-indigo-500" />
-                  <span className="text-sm font-medium">トレーニング / リハビリ</span>
+                  <LockedTabLabel label="トレーニング / リハビリ" locked={!planLimits.canUseRehab} />
                 </button>
               )}
 
@@ -301,7 +310,7 @@ export function AthleteViewHeader({
                   }`}
                 >
                   <Flame className="w-4 h-4" />
-                  <span className="text-sm font-medium">栄養</span>
+                  <LockedTabLabel label="栄養" locked={!planLimits.canUseNutrition} />
                 </button>
               )}
 
@@ -322,7 +331,7 @@ export function AthleteViewHeader({
                 }`}
               >
                 <Zap className="w-4 h-4" />
-                <span className="text-sm font-medium">パフォーマンス</span>
+                <LockedTabLabel label="パフォーマンス" locked={!planLimits.canUsePerformanceTesting} />
               </button>
 
               {/* マイプロフィール（パフォーマンス分析） */}

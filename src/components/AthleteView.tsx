@@ -47,6 +47,11 @@ import { NotificationInbox } from "./NotificationInbox";
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
 
+// ✅ Plan gating
+import { usePlanLimits } from '../hooks/usePlanLimits';
+import { UpgradeGate } from './UpgradeGate';
+import { useOrganizations } from '../hooks/useOrganizations';
+
 import { useDarkMode } from '../hooks/useDarkMode';
 import { AthleteSettingsView } from './views/AthleteSettingsView';
 import { upsertDailyEnergySnapshot } from '../lib/upsertDailyEnergySnapshot';
@@ -324,6 +329,10 @@ export function AthleteView({
   const canUseFTT = !!(user as any).ftt_enabled;
   const canUseNutrition = !!(user as any).nutrition_enabled;
 
+  // ✅ Plan-based feature gating
+  const { organizations: userOrgs } = useOrganizations(user.id);
+  const userOrgId = userOrgs.length > 0 ? userOrgs[0].id : null;
+  const planLimits = usePlanLimits(userOrgId);
 
   // ✅ performance chunk prefetch（回線が良い&アイドル時だけ / 初回のみ）
   useEffect(() => {
@@ -899,6 +908,7 @@ export function AthleteView({
         canUseNutrition={canUseNutrition}
         isRehabilitating={isRehabilitating}
         hasActivePrograms={hasActivePrograms}
+        planLimits={planLimits}
         today={today}
         setNutritionDate={setNutritionDate}
       />
@@ -945,6 +955,7 @@ export function AthleteView({
 
         ) : activeTab === "rehab" ? (
           /* ★ 追加：リハビリ・トレーニング用ビュー */
+          <UpgradeGate allowed={planLimits.canUseRehab} featureName="トレーニング / リハビリ">
           <Suspense fallback={<div className="flex items-center justify-center h-64 animate-pulse text-indigo-500 font-black">修行の準備中...</div>}>
             {selectedQuestPrescriptionId ? (
               /* 個別クエスト画面 */
@@ -969,9 +980,11 @@ export function AthleteView({
               <RehabQuestViewLazy userId={user.id} onBackHome={() => setActiveTab('unified')} />
             )}
           </Suspense>
+          </UpgradeGate>
 
         ) : activeTab === "nutrition" ? (
-          canUseNutrition ? (
+          <UpgradeGate allowed={planLimits.canUseNutrition} featureName="栄養管理">
+          {canUseNutrition ? (
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-64">
@@ -994,7 +1007,8 @@ export function AthleteView({
                 onChangeDate={(d) => setNutritionDate(d)}
               />
             </Suspense>
-          ) : null
+          ) : null}
+          </UpgradeGate>
 
         ) : activeTab === 'ftt' ? (
           canUseFTT ? (
@@ -1051,9 +1065,11 @@ export function AthleteView({
             userDateOfBirth={user.date_of_birth}
             normalizedGenderFull={normalizedGenderFull}
             normalizedGenderBinary={normalizedGenderBinary}
+            canUseInBody={planLimits.canUseInBody}
           />
         ) : activeTab === 'insights' ? (
           /* Correlation Analysis Tab */
+          <UpgradeGate allowed={planLimits.canUseInsights} featureName="インサイト分析">
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">体重とACWRの相関グラフ</h2>
@@ -1074,7 +1090,9 @@ export function AthleteView({
             </Suspense>
             </div>
           </div>
+          </UpgradeGate>
        ) : activeTab === 'performance' ? (
+        <UpgradeGate allowed={planLimits.canUsePerformanceTesting} featureName="パフォーマンス測定">
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-64">
@@ -1087,6 +1105,7 @@ export function AthleteView({
             onBackHome={() => setActiveTab('unified')}
           />
         </Suspense>
+        </UpgradeGate>
       ) : activeTab === 'profile' ? (
         <Suspense
           fallback={

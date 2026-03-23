@@ -30,6 +30,10 @@ import { FrozenAthletesTab } from './FrozenAthletesTab';
 import { trackEvent } from '../lib/posthog';
 import { canAccessRehab } from '../lib/staffPermissions';
 
+// ✅ Plan gating
+import { usePlanLimits } from '../hooks/usePlanLimits';
+import { UpgradeGate, LockedTabLabel } from './UpgradeGate';
+
 import {
   Users,
   BarChart3,
@@ -337,6 +341,9 @@ export function StaffView({
   const safeOrganizations = Array.isArray(organizations) ? organizations : [];
   const currentOrganizationId =
     selectedTeam?.organization_id || (safeOrganizations.length > 0 ? safeOrganizations[0].id : '');
+
+  // ✅ Plan-based feature gating
+  const planLimits = usePlanLimits(currentOrganizationId || null);
 
   useEffect(() => {
     if (shouldShowTutorial() && !loading) startTutorial();
@@ -949,16 +956,16 @@ export function StaffView({
                           <div className="fixed inset-0 z-10" onClick={() => setShowMoreTabs(false)} />
                           <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
                             {[
-                              { key: 'frozen' as const, icon: Snowflake, label: '凍結済み選手' },
-                              { key: 'rankings' as const, icon: Trophy, label: 'ランキング' },
-                              { key: 'reports' as const, icon: FileText, label: 'レポート' },
-                              { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）' },
-                              { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析' },
-                              { key: 'team-analysis' as const, icon: Target, label: 'チーム分析' },
-                              { key: 'notifications' as const, icon: Bell, label: '通知管理' },
-                              { key: 'messages' as const, icon: MessageSquare, label: 'メッセージ' },
-                              ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, icon: Stethoscope, label: 'プログラム管理' }] : []),
-                            ].map(({ key, icon: Icon, label }) => (
+                              { key: 'frozen' as const, icon: Snowflake, label: '凍結済み選手', locked: false },
+                              { key: 'rankings' as const, icon: Trophy, label: 'ランキング', locked: !planLimits.canUseRankings },
+                              { key: 'reports' as const, icon: FileText, label: 'レポート', locked: !planLimits.canGenerateReports },
+                              { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）', locked: false },
+                              { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析', locked: !planLimits.canUsePerformanceTesting },
+                              { key: 'team-analysis' as const, icon: Target, label: 'チーム分析', locked: !planLimits.canUseAdvancedTeamAnalysis },
+                              { key: 'notifications' as const, icon: Bell, label: '通知管理', locked: false },
+                              { key: 'messages' as const, icon: MessageSquare, label: 'メッセージ', locked: false },
+                              ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, icon: Stethoscope, label: 'プログラム管理', locked: !planLimits.canUseRehab }] : []),
+                            ].map(({ key, icon: Icon, label, locked }) => (
                               <button
                                 key={key}
                                 onClick={() => { setActiveTab(key); setShowMoreTabs(false); }}
@@ -969,7 +976,7 @@ export function StaffView({
                                 }`}
                               >
                                 <Icon className="w-4 h-4" />
-                                {label}
+                                <LockedTabLabel label={label} locked={locked} />
                                 {key === 'messages' && unreadMessageCount > 0 && (
                                   <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                                     {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
@@ -995,14 +1002,14 @@ export function StaffView({
                       <option value="athletes">選手一覧</option>
                       <option value="team-trends">チーム傾向</option>
                       <option value="frozen">凍結済み選手</option>
-                      <option value="rankings">ランキング</option>
+                      <option value="rankings">{!planLimits.canUseRankings ? '🔒 ' : ''}ランキング</option>
                       <option value="settings">設定（フェーズ）</option>
-                      <option value="reports">レポート</option>
-                      <option value="performance">パフォーマンス分析</option>
-                      <option value="team-analysis">チーム分析</option>
+                      <option value="reports">{!planLimits.canGenerateReports ? '🔒 ' : ''}レポート</option>
+                      <option value="performance">{!planLimits.canUsePerformanceTesting ? '🔒 ' : ''}パフォーマンス分析</option>
+                      <option value="team-analysis">{!planLimits.canUseAdvancedTeamAnalysis ? '🔒 ' : ''}チーム分析</option>
                       <option value="notifications">通知管理</option>
                       <option value="messages">メッセージ{unreadMessageCount > 0 ? ` (${unreadMessageCount})` : ''}</option>
-                      {canAccessRehab(user.staff_type) && <option value="rehab-programs">プログラム管理</option>}
+                      {canAccessRehab(user.staff_type) && <option value="rehab-programs">{!planLimits.canUseRehab ? '🔒 ' : ''}プログラム管理</option>}
                     </select>
                   </div>
                 </div>
@@ -1049,6 +1056,7 @@ export function StaffView({
                   )}
 
                   {activeTab === 'rankings' && (
+                    <UpgradeGate allowed={planLimits.canUseRankings} featureName="ランキング">
                     <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>}>
                       <CoachRankingsViewLazy
                         team={selectedTeam!}
@@ -1057,6 +1065,7 @@ export function StaffView({
                         }}
                       />
                     </Suspense>
+                    </UpgradeGate>
                   )}
 
                   {activeTab === 'settings' && selectedTeam && (
@@ -1064,20 +1073,25 @@ export function StaffView({
                   )}
 
                   {activeTab === 'reports' && (
+                    <UpgradeGate allowed={planLimits.canGenerateReports} featureName="レポート生成">
                     <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>}>
                       <ReportView team={selectedTeam!} />
                     </Suspense>
+                    </UpgradeGate>
                   )}
 
                   {activeTab === 'performance' && (
+                    <UpgradeGate allowed={planLimits.canUsePerformanceTesting} featureName="パフォーマンス分析">
                     <PerformanceAnalysisPanel
                       organizationId={currentOrganizationId}
                       allowOrgFilter={false}
                       presetTeamId={selectedTeam?.id}
                     />
+                    </UpgradeGate>
                   )}
 
                   {activeTab === 'team-analysis' && selectedTeam && (
+                    <UpgradeGate allowed={planLimits.canUseAdvancedTeamAnalysis} featureName="チーム分析">
                     <CoachTeamTrendsTab
                       teamId={selectedTeam.id}
                       teamName={selectedTeam.name}
@@ -1092,6 +1106,7 @@ export function StaffView({
                       teamDaily={teamDaily}
                       cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
                     />
+                    </UpgradeGate>
                   )}
 
                   {activeTab === 'notifications' && selectedTeam && (
@@ -1117,6 +1132,7 @@ export function StaffView({
                   )}
 
                   {activeTab === 'rehab-programs' && (
+                    <UpgradeGate allowed={planLimits.canUseRehab} featureName="プログラム管理">
                     <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
                       <RehabTemplateList
                         onOpenEditor={(templateId) => setFullscreenView({ type: 'editor', templateId })}
@@ -1130,6 +1146,7 @@ export function StaffView({
                         onBulkAssign={() => setFullscreenView({ type: 'bulk-assign' })}
                       />
                     </Suspense>
+                    </UpgradeGate>
                   )}
                 </div>
               </div>

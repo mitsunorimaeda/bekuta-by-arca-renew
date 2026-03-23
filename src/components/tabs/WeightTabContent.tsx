@@ -5,6 +5,7 @@ import { WeightForm } from '../WeightForm';
 import { BMIDisplay } from '../BMIDisplay';
 import { getRiskLabel, getRiskColor } from '../../lib/acwr';
 import type { ActiveTab } from '../../types/athlete';
+import { UpgradeGate } from '../UpgradeGate';
 
 // ── Lazy ──
 const WeightChartLazy = lazy(() => import('../WeightChart').then((m) => ({ default: m.WeightChart })));
@@ -52,6 +53,8 @@ export type WeightTabContentProps = {
   userDateOfBirth: string | null;
   normalizedGenderFull: 'female' | 'male' | 'other' | 'prefer_not_to_say' | null;
   normalizedGenderBinary: 'female' | 'male' | null;
+  // Plan gating
+  canUseInBody?: boolean;
 };
 
 export function WeightTabContent(props: WeightTabContentProps) {
@@ -77,6 +80,7 @@ export function WeightTabContent(props: WeightTabContentProps) {
     userDateOfBirth,
     normalizedGenderFull,
     normalizedGenderBinary,
+    canUseInBody = true,
   } = props;
 
   return (
@@ -137,6 +141,7 @@ export function WeightTabContent(props: WeightTabContentProps) {
         </div>
 
         {/* InBody Latest */}
+        <UpgradeGate allowed={canUseInBody} featureName="InBody データ">
         {inbodyLoading ? (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 sm:p-6 transition-colors">
             <div className="flex items-center justify-center h-24">
@@ -162,6 +167,7 @@ export function WeightTabContent(props: WeightTabContentProps) {
             <p className="text-sm text-gray-600 dark:text-gray-400">InBodyデータはまだ登録されていません</p>
           </div>
         )}
+        </UpgradeGate>
 
         {/* BMI Display - Show only if height is set */}
         {userHeightCm && latestWeight && (
