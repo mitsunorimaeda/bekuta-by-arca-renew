@@ -57,11 +57,12 @@ export function useAlerts(userId: string, userRole: UserRole) {
   const loadAlertsFromDB = useCallback(async () => {
     if (!userId) return [];
 
+    // activeのみ取得（readやdismissedは表示しない）
     const { data, error } = await supabase
       .from('staff_alerts')
       .select('*')
       .eq('staff_user_id', userId)
-      .in('status', ['active', 'read'])
+      .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -309,41 +310,37 @@ export function useAlerts(userId: string, userRole: UserRole) {
     setUnreadCount(unread);
   }, [alerts]);
 
-  // 既読（DB更新）
+  // 既読 → dismissedに変更してリストから消す
   const markAsRead = useCallback(async (alertId: string) => {
-    await supabase
-      .from('staff_alerts')
-      .update({ status: 'read', updated_at: new Date().toISOString() })
-      .eq('id', alertId)
-      .eq('staff_user_id', userId);
+    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
 
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a))
-    );
-  }, [userId]);
-
-  // 非表示（DB更新）
-  const dismissAlert = useCallback(async (alertId: string) => {
     await supabase
       .from('staff_alerts')
       .update({ status: 'dismissed', updated_at: new Date().toISOString() })
       .eq('id', alertId)
       .eq('staff_user_id', userId);
-
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a))
-    );
   }, [userId]);
 
-  // 全て既読（DB更新）
-  const markAllAsRead = useCallback(async () => {
+  // 非表示（DB更新）
+  const dismissAlert = useCallback(async (alertId: string) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+
     await supabase
       .from('staff_alerts')
-      .update({ status: 'read', updated_at: new Date().toISOString() })
+      .update({ status: 'dismissed', updated_at: new Date().toISOString() })
+      .eq('id', alertId)
+      .eq('staff_user_id', userId);
+  }, [userId]);
+
+  // 全て既読 → dismissed（リストから全て消す）
+  const markAllAsRead = useCallback(async () => {
+    setAlerts([]);
+
+    await supabase
+      .from('staff_alerts')
+      .update({ status: 'dismissed', updated_at: new Date().toISOString() })
       .eq('staff_user_id', userId)
       .eq('status', 'active');
-
-    setAlerts((prev) => prev.map((a) => ({ ...a, is_read: true })));
   }, [userId]);
 
   const clearDismissedAlerts = useCallback(() => {
