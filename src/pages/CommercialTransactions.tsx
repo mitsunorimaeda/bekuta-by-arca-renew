@@ -82,40 +82,39 @@ export function CommercialTransactions({ onBack }: CommercialTransactionsProps) 
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">販売価格</h3>
               <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 space-y-3">
                 <div>
-                  <p className="font-semibold mb-2">個人プラン</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">500円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
+                  <p className="font-semibold mb-2">Freeプラン</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">0円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月</span></p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    選手個人でトレーニング記録を管理
+                    選手30名まで・チーム1つ・スタッフ3名まで。チェックイン・ACWR・ゲーミフィケーション等の基本機能を利用可能。
                   </p>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
-                  <p className="font-semibold mb-2">チームプラン</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">5,000円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
+                  <p className="font-semibold mb-2">Proプラン</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">2,980円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    30名までの選手とスタッフでデータ共有
+                    選手100名まで・チーム3つ・スタッフ10名まで。栄養管理・パフォーマンス測定・リハビリ管理・レポート生成・データエクスポート等の全機能を利用可能。
                   </p>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
-                  <p className="font-semibold mb-2">地域クラブプラン</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">15,000円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
+                  <p className="font-semibold mb-2">Pro Maxプラン</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">9,980円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    100名までの選手、複数競技対応
+                    選手300名まで・チーム8つ・スタッフ30名まで。Pro全機能に加え、優先サポート・無制限データ保持。
                   </p>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
-                  <p className="font-semibold mb-2">プロチームプラン</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">50,000円<span className="text-base font-normal text-gray-600 dark:text-gray-400">/月（税込）</span></p>
+                  <p className="font-semibold mb-2">AI栄養管理オプション（準備中）</p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    無制限の選手・スタッフ、優先サポート
+                    写真による自動栄養素解析機能。ライト（¥500/月・300回）、スタンダード（¥1,500/月・1,000回）、プレミアム（¥3,000/月・3,000回）、エリート（¥8,000/月・10,000回）の各プランを予定。
                   </p>
                 </div>
 
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
                   ※ 表示価格は全て税込です<br/>
-                  ※ 無料トライアル期間（7日間）あり
+                  ※ Freeプランはクレジットカード登録不要でご利用いただけます
                 </p>
               </div>
             </div>
@@ -126,10 +125,10 @@ export function CommercialTransactions({ onBack }: CommercialTransactionsProps) 
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                 <ul className="space-y-2">
                   <li>• クレジットカード（Visa、Mastercard、JCB、American Express、Diners Club）</li>
-                  <li>• 銀行振込（法人プランのみ）</li>
                 </ul>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
-                  ※ 決済はStripeを利用した安全な環境で行われます
+                  ※ 決済はStripeを利用した安全な環境で行われます<br/>
+                  ※ クレジットカード情報は当社では保管せず、Stripeにて安全に管理されます
                 </p>
               </div>
             </div>
@@ -158,29 +157,21 @@ export function CommercialTransactions({ onBack }: CommercialTransactionsProps) 
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">返金・キャンセルポリシー</h3>
               <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 space-y-4">
                 <div>
-                  <p className="font-semibold mb-2">返金保証について</p>
-                  <ul className="space-y-2 text-sm">
-                    <li>• 初回登録後7日以内であれば、理由を問わず全額返金いたします</li>
-                    <li>• 返金を希望される場合は、サポートまでご連絡ください</li>
-                    <li>• 返金処理は申請後5-10営業日以内に完了します</li>
-                  </ul>
-                </div>
-
-                <div className="border-t border-yellow-200 dark:border-yellow-700 pt-3">
                   <p className="font-semibold mb-2">解約について</p>
                   <ul className="space-y-2 text-sm">
                     <li>• いつでも解約可能です（違約金なし）</li>
-                    <li>• マイページから簡単に解約手続きができます</li>
+                    <li>• 設定画面の「請求管理」から解約手続きができます</li>
                     <li>• 解約後も契約期間終了まではサービスを利用できます</li>
+                    <li>• 解約後はFreeプランに自動的に移行します</li>
                     <li>• 月の途中での解約でも日割り返金はございません</li>
                   </ul>
                 </div>
 
                 <div className="border-t border-yellow-200 dark:border-yellow-700 pt-3">
-                  <p className="font-semibold mb-2">返金できない場合</p>
+                  <p className="font-semibold mb-2">プランダウングレードについて</p>
                   <ul className="space-y-2 text-sm">
-                    <li>• サービス開始後8日以上経過した場合</li>
-                    <li>• 利用規約違反によりアカウントが停止された場合</li>
+                    <li>• Pro / Pro Maxからダウングレードした場合、制限を超えるデータは閲覧のみ可能です</li>
+                    <li>• Freeプランの制限（選手30名・チーム1つ）を超える場合、新規追加はできません</li>
                   </ul>
                 </div>
               </div>
@@ -248,11 +239,13 @@ export function CommercialTransactions({ onBack }: CommercialTransactionsProps) 
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">注意事項</h3>
               <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 space-y-2">
                 <ul className="space-y-2 text-sm">
-                  <li>• 当サービスは継続課金（サブスクリプション）サービスです</li>
-                  <li>• 解約するまで毎月自動的に課金されます</li>
+                  <li>• 有料プラン（Pro / Pro Max）は継続課金（サブスクリプション）サービスです</li>
+                  <li>• Freeプランは課金なしでご利用いただけます</li>
+                  <li>• 有料プランは解約するまで毎月自動的に課金されます</li>
                   <li>• 18歳未満の方は保護者の同意が必要です</li>
                   <li>• クレジットカード情報は当社では保管せず、決済代行会社（Stripe）にて安全に管理されます</li>
                   <li>• 本サービスは医療機器ではなく、診断・治療を目的とするものではありません</li>
+                  <li>• ACWRやコンディションデータは参考情報であり、医学的診断を代替するものではありません</li>
                 </ul>
               </div>
             </div>
@@ -260,7 +253,7 @@ export function CommercialTransactions({ onBack }: CommercialTransactionsProps) 
 
           <div className="mt-12 pt-6 border-t border-gray-200 dark:border-gray-700 text-center text-sm text-gray-600 dark:text-gray-400">
             <p>制定日: 2025年10月9日</p>
-            <p>最終更新日: 2025年10月9日</p>
+            <p>最終更新日: 2026年3月23日</p>
           </div>
         </div>
       </div>

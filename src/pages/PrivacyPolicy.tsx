@@ -26,7 +26,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
           </div>
 
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-8">
-            最終更新日: 2025年10月9日
+            最終更新日: 2026年3月23日
           </p>
 
           <div className="space-y-8 text-gray-700 dark:text-gray-300">
@@ -50,30 +50,48 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
                   <li>氏名</li>
                   <li>メールアドレス</li>
                   <li>パスワード（暗号化して保管）</li>
-                  <li>生年月日（年齢確認のため）</li>
-                  <li>所属チーム情報</li>
+                  <li>生年月日（任意）</li>
+                  <li>性別（任意）</li>
+                  <li>身長（任意）</li>
+                  <li>電話番号（任意）</li>
+                  <li>所属組織・チーム情報</li>
                 </ul>
 
-                <p className="mt-4"><strong>2. トレーニング記録</strong></p>
+                <p className="mt-4"><strong>2. コンディション記録</strong></p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>トレーニング日時</li>
-                  <li>RPE（主観的運動強度）</li>
-                  <li>トレーニング時間</li>
-                  <li>計算された負荷値</li>
+                  <li>トレーニング記録（RPE、練習時間、日時）</li>
+                  <li>体重記録</li>
+                  <li>睡眠記録（時間・質）</li>
+                  <li>モチベーション記録</li>
+                  <li>月経周期記録（女性選手のみ・任意）</li>
+                  <li>デイリー振り返り（自由記述）</li>
+                  <li>計算されたACWR（急性慢性ワークロード比）</li>
                 </ul>
 
-                <p className="mt-4"><strong>3. 体重記録</strong></p>
+                <p className="mt-4"><strong>3. パフォーマンス記録（Proプラン以上）</strong></p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>測定日時</li>
-                  <li>体重（kg）</li>
-                  <li>メモ（利用者が入力した場合のみ）</li>
+                  <li>各種パフォーマンステスト結果</li>
+                  <li>InBodyデータ（CSV取り込みの場合）</li>
                 </ul>
 
-                <p className="mt-4"><strong>4. 利用情報</strong></p>
+                <p className="mt-4"><strong>4. 栄養記録（オプション機能）</strong></p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>アクセスログ</li>
-                  <li>利用状況データ</li>
-                  <li>デバイス情報</li>
+                  <li>食事写真</li>
+                  <li>AI解析による栄養素データ</li>
+                </ul>
+
+                <p className="mt-4"><strong>5. 利用情報</strong></p>
+                <ul className="list-disc list-inside ml-4 space-y-1">
+                  <li>アクセスログ・利用状況データ（PostHogによる匿名解析）</li>
+                  <li>エラーログ（Sentryによる自動収集）</li>
+                  <li>デバイス情報・ブラウザ情報</li>
+                  <li>Push通知のサブスクリプション情報</li>
+                </ul>
+
+                <p className="mt-4"><strong>6. 決済情報（有料プランのみ）</strong></p>
+                <ul className="list-disc list-inside ml-4 space-y-1">
+                  <li>Stripe経由での決済情報（当社ではカード情報を保管しません）</li>
+                  <li>請求先メールアドレス</li>
                 </ul>
               </div>
             </section>
@@ -86,13 +104,18 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
               </p>
               <ul className="list-decimal list-inside space-y-2 ml-4">
                 <li>ACWR（急性慢性ワークロード比）の計算および表示</li>
-                <li>トレーニング負荷の可視化およびグラフ表示</li>
-                <li>怪我リスクアラートの生成および通知</li>
-                <li>スタッフ・コーチへのトレーニングデータの共有（選手本人が所属するチームのみ）</li>
-                <li>サービスの提供、維持、改善</li>
+                <li>コンディションデータの可視化およびグラフ表示</li>
+                <li>怪我リスクアラートの生成およびPush通知</li>
+                <li>スタッフ・コーチへのコンディションデータの共有（選手本人が所属するチームのみ）</li>
+                <li>ゲーミフィケーション機能（ストリーク・バッジ・ランキング・レベル）の提供</li>
+                <li>AI栄養解析機能の提供（食事写真の解析）</li>
+                <li>パフォーマンス測定データの記録・分析</li>
+                <li>レポートの自動生成・エクスポート</li>
+                <li>サービスの提供、維持、改善（PostHogによる匿名利用分析を含む）</li>
                 <li>利用者からのお問い合わせへの対応</li>
                 <li>利用規約違反への対応</li>
                 <li>サービスに関する重要なお知らせの通知</li>
+                <li>サブスクリプションの管理・課金処理</li>
               </ul>
             </section>
 

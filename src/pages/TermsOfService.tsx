@@ -26,7 +26,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
           </div>
 
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-8">
-            最終更新日: 2025年10月9日
+            最終更新日: 2026年3月23日
           </p>
 
           <div className="space-y-8 text-gray-700 dark:text-gray-300">
@@ -334,7 +334,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
 
           <div className="mt-12 pt-6 border-t border-gray-200 dark:border-gray-700 text-center text-sm text-gray-600 dark:text-gray-400">
             <p>制定日: 2025年10月9日</p>
-            <p>最終更新日: 2025年10月9日</p>
+            <p>最終更新日: 2026年3月23日</p>
           </div>
         </div>
       </div>
