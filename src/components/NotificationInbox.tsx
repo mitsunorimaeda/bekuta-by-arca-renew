@@ -63,6 +63,15 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
     return () => clearInterval(timer);
   }, [fetchNotifications]);
 
+  // パネルを開いた時に3秒後に自動既読（閲覧したとみなす）
+  useEffect(() => {
+    if (!open || unreadCount === 0) return;
+    const timer = setTimeout(() => {
+      markAllAsRead();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [open, unreadCount]);
+
   // パネル外クリックで閉じる
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
