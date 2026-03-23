@@ -304,6 +304,22 @@ export function useAlerts(userId: string, userRole: UserRole) {
     };
   }, [userId, userRole, alertRules.length, registerPollJob, checkAndGenerateAlerts]);
 
+  // DB同期ポーリング（60秒）— 他デバイスでの既読操作を反映
+  useEffect(() => {
+    if (!userId || !userRole) return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        const dbAlerts = await loadAlertsFromDB();
+        setAlerts(sortAlertsByPriority(filterActiveAlerts(dbAlerts)));
+      } catch (e) {
+        // silent fail
+      }
+    }, 60 * 1000);
+
+    return () => clearInterval(syncInterval);
+  }, [userId, userRole, loadAlertsFromDB]);
+
   // 未読数更新
   useEffect(() => {
     const unread = alerts.filter((a) => !a.is_read && !a.is_dismissed).length;
