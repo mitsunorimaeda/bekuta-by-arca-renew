@@ -42,6 +42,33 @@ if (import.meta.env.PROD) {
     (e: any) => {
       const t = e?.target as any;
 
+      // ── JS TypeError（Mobile Safariで動的importが window.onerror 経由になるケース）
+      // unhandledrejection ではなく onerror として来るため別途ハンドル
+      if (e.error || (e.target === window && e.message)) {
+        const msg = String(e?.error?.message ?? e?.message ?? "");
+        if (
+          msg.includes("Importing a module script failed") ||
+          msg.includes("Failed to fetch dynamically imported module")
+        ) {
+          const key = "__bekuta_onerror_reload__";
+          let already = false;
+          try {
+            already = sessionStorage.getItem(key) === "1";
+            if (!already) sessionStorage.setItem(key, "1");
+          } catch {
+            try {
+              already = localStorage.getItem(key) === "1";
+              if (!already) localStorage.setItem(key, "1");
+            } catch {}
+          }
+          if (!already) {
+            Sentry.captureMessage(`Module import failed (onerror) -> reload: ${msg}`, "error");
+            Sentry.flush(1000).finally(() => window.location.reload());
+          }
+          return;
+        }
+      }
+
       // <script src="..."> のロード失敗（404/ネットワーク/ブロック等）
       if (t?.tagName === "SCRIPT" && t?.src) {
         Sentry.captureMessage(`Script load failed: ${t.src}`, "error");
