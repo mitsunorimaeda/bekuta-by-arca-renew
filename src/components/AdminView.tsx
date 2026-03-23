@@ -38,6 +38,7 @@ import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 import { useOrganizations } from '../hooks/useOrganizations';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 
 // ✅ InBody CSV Import
 import AdminInbodyCsvImport from './AdminInbodyCsvImport';
@@ -93,6 +94,7 @@ export function AdminView({
 
   const [loading, setLoading] = useState(true);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
+  const adminPlanLimits = usePlanLimits(selectedOrganizationId !== 'ALL' ? selectedOrganizationId : null);
 
   const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } =
     useTutorialContext();
@@ -672,6 +674,14 @@ export function AdminView({
                         <InviteLinkGenerator
                           organizationId={selectedOrganizationId}
                           teams={teams.filter(t => t.organization_id === selectedOrganizationId)}
+                          planLimits={{
+                            currentAthletes: adminPlanLimits.currentAthletes,
+                            athleteLimit: adminPlanLimits.athleteLimit,
+                            isAtLimit: adminPlanLimits.isAtLimit,
+                            isOverLimit: adminPlanLimits.isOverLimit,
+                            staffLimit: adminPlanLimits.staffLimit,
+                            teamsLimit: adminPlanLimits.teamsLimit,
+                          }}
                         />
                       ) : (
                         <div className="text-center py-12">

@@ -16,6 +16,7 @@ import { AthleteTransferManagement } from './AthleteTransferManagement';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 import { InviteLinkGenerator } from './InviteLinkGenerator';
 import { PendingStaffApproval } from './PendingStaffApproval';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 
 interface OrganizationAdminViewProps {
   user: User;
@@ -36,6 +37,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
   // inviteSubTab removed - share link only
   const [loading, setLoading] = useState(true);
   const [showAlertPanel, setShowAlertPanel] = useState(false);
+  const planLimits = usePlanLimits(organizationId);
   const [criticalAlertDismissed, setCriticalAlertDismissed] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const { isActive, shouldShowTutorial, startTutorial, completeTutorial, skipTutorial, currentStepIndex, setCurrentStepIndex } = useTutorialContext();
@@ -346,6 +348,14 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                     <InviteLinkGenerator
                       organizationId={organizationId}
                       teams={teams}
+                      planLimits={{
+                        currentAthletes: planLimits.currentAthletes,
+                        athleteLimit: planLimits.athleteLimit,
+                        isAtLimit: planLimits.isAtLimit,
+                        isOverLimit: planLimits.isOverLimit,
+                        staffLimit: planLimits.staffLimit,
+                        teamsLimit: planLimits.teamsLimit,
+                      }}
                     />
                   ) : usersSubTab === 'manage' ? (
                     <div data-tutorial="user-list">

@@ -42,9 +42,11 @@ interface NotificationDashboardProps {
   athletes: Athlete[];
   userId: string;
   userName?: string;
+  pushLimit?: number | null; // null = 無制限
+  organizationId?: string;
 }
 
-export function NotificationDashboard({ teamId, teamName, athletes, userId, userName }: NotificationDashboardProps) {
+export function NotificationDashboard({ teamId, teamName, athletes, userId, userName, pushLimit, organizationId }: NotificationDashboardProps) {
   // --- Broadcast form state ---
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -52,6 +54,26 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId, user
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [monthlyBroadcastCount, setMonthlyBroadcastCount] = useState(0);
+
+  // --- Monthly broadcast count for plan limit ---
+  useEffect(() => {
+    if (pushLimit === null || pushLimit === undefined) return;
+    const fetchMonthlyCount = async () => {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const { count } = await supabase
+        .from('notification_broadcasts')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId)
+        .gte('created_at', startOfMonth.toISOString());
+      setMonthlyBroadcastCount(count || 0);
+    };
+    fetchMonthlyCount();
+  }, [teamId, pushLimit]);
+
+  const isOverPushLimit = pushLimit !== null && pushLimit !== undefined && monthlyBroadcastCount >= pushLimit;
 
   // --- History state ---
   const [history, setHistory] = useState<BroadcastRecord[]>([]);
@@ -127,6 +149,10 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId, user
 
   const handleSend = async () => {
     if (!canSend || sending) return;
+    if (isOverPushLimit) {
+      setSendResult({ type: 'error', text: `今月の送信上限（${pushLimit}回）に達しています。プランをアップグレードしてください。` });
+      return;
+    }
     setSending(true);
     setSendResult(null);
 
@@ -184,6 +210,9 @@ export function NotificationDashboard({ teamId, teamName, athletes, userId, user
         type: failed === targetAthletes.length ? 'error' : 'success',
         text: `${delivered}人に送信完了${failed > 0 ? `（${failed}人失敗）` : ''}`,
       });
+
+      // 月間カウント更新
+      setMonthlyBroadcastCount(prev => prev + 1);
 
       // ✅ PostHog: 一斉通知送信トラッキング
       trackEvent('broadcast_sent', {

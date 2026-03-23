@@ -24,6 +24,14 @@ interface TokenRecord {
 interface Props {
   organizationId: string;
   teams: Team[];
+  planLimits?: {
+    currentAthletes: number;
+    athleteLimit: number | null;
+    isAtLimit: boolean;
+    isOverLimit: boolean;
+    staffLimit: number | null;
+    teamsLimit: number | null;
+  };
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -31,7 +39,7 @@ const ROLE_LABEL: Record<string, string> = {
   staff: 'スタッフ（コーチ・トレーナー）',
 };
 
-export function InviteLinkGenerator({ organizationId, teams }: Props) {
+export function InviteLinkGenerator({ organizationId, teams, planLimits }: Props) {
   const [tokens, setTokens] = useState<TokenRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -69,6 +77,27 @@ export function InviteLinkGenerator({ organizationId, teams }: Props) {
 
   const handleGenerate = async () => {
     setError(null);
+
+    // プラン制限チェック
+    if (planLimits) {
+      if (role === 'athlete' && planLimits.athleteLimit !== null && planLimits.isAtLimit) {
+        setError(`選手数が上限（${planLimits.athleteLimit}人）に達しています。プランをアップグレードしてください。`);
+        return;
+      }
+      if (role === 'staff' && planLimits.staffLimit !== null) {
+        // 現在のスタッフ数をカウント
+        const { count } = await supabase
+          .from('organization_members')
+          .select('id', { count: 'exact', head: true })
+          .eq('organization_id', organizationId)
+          .in('role', ['staff', 'organization_admin']);
+        if (count !== null && count >= planLimits.staffLimit) {
+          setError(`スタッフ数が上限（${planLimits.staffLimit}人）に達しています。プランをアップグレードしてください。`);
+          return;
+        }
+      }
+    }
+
     setGenerating(true);
     try {
       const expiresAt =
