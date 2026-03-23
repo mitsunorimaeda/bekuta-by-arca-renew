@@ -168,16 +168,16 @@ export function useAlerts(userId: string, userRole: UserRole) {
       // DB upsert: 同じスタッフ×選手×タイプでactiveなものがなければ挿入
       for (const alert of generatedAlerts) {
         // 既にactive/dismissed（既読済み）のアラートがあれば再生成しない
-        const { data: existing } = await supabase
+        const { data: existingRows } = await supabase
           .from('staff_alerts')
           .select('id, status')
           .eq('staff_user_id', userId)
           .eq('athlete_user_id', alert.user_id)
           .eq('alert_type', alert.type)
           .in('status', ['active', 'dismissed'])
-          .maybeSingle();
+          .limit(1);
 
-        if (!existing) {
+        if (!existingRows || existingRows.length === 0) {
           // 新規挿入
           await supabase.from('staff_alerts').insert({
             staff_user_id: userId,
