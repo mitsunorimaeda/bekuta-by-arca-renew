@@ -167,14 +167,14 @@ export function useAlerts(userId: string, userRole: UserRole) {
 
       // DB upsert: 同じスタッフ×選手×タイプでactiveなものがなければ挿入
       for (const alert of generatedAlerts) {
-        // 既にactiveまたはreadのアラートがあるかチェック
+        // 既にactive/dismissed（既読済み）のアラートがあれば再生成しない
         const { data: existing } = await supabase
           .from('staff_alerts')
           .select('id, status')
           .eq('staff_user_id', userId)
           .eq('athlete_user_id', alert.user_id)
           .eq('alert_type', alert.type)
-          .in('status', ['active', 'read'])
+          .in('status', ['active', 'dismissed'])
           .maybeSingle();
 
         if (!existing) {
@@ -212,7 +212,7 @@ export function useAlerts(userId: string, userRole: UserRole) {
         .from('staff_alerts')
         .select('id, athlete_user_id, alert_type')
         .eq('staff_user_id', userId)
-        .in('status', ['active', 'read'])
+        .in('status', ['active', 'dismissed'])
         .in('alert_type', ['high_risk', 'caution', 'srpe_high', 'srpe_spike']);
 
       for (const active of (activeAlerts || [])) {
