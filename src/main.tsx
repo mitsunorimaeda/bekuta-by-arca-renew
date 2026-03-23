@@ -74,9 +74,23 @@ if (import.meta.env.PROD) {
         Sentry.captureMessage(`Script load failed: ${t.src}`, "error");
       }
 
-      // <link rel="modulepreload" href="..."> の失敗（Safariで起きやすい）
+      // <link rel="modulepreload" href="..."> の失敗（Safariで起きやすい）→ 自動リロード
       if (t?.tagName === "LINK" && t?.rel === "modulepreload" && t?.href) {
-        Sentry.captureMessage(`Modulepreload failed: ${t.href}`, "error");
+        const key = "__bekuta_modulepreload_reload__";
+        let already = false;
+        try {
+          already = sessionStorage.getItem(key) === "1";
+          if (!already) sessionStorage.setItem(key, "1");
+        } catch {
+          try {
+            already = localStorage.getItem(key) === "1";
+            if (!already) localStorage.setItem(key, "1");
+          } catch {}
+        }
+        if (!already) {
+          Sentry.captureMessage(`Modulepreload failed -> reload: ${t.href}`, "error");
+          Sentry.flush(1000).finally(() => window.location.reload());
+        }
       }
     },
     true
