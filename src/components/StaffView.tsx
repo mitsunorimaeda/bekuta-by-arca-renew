@@ -48,6 +48,7 @@ import {
   MessageSquare,
   Stethoscope,
   ArrowLeft,
+  Settings2,
 } from 'lucide-react';
 
 // Lazy-loaded components
@@ -234,7 +235,21 @@ export function StaffView({
   const [rehabAthleteIds, setRehabAthleteIds] = useState<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
+  const [activeMainTab, setActiveMainTab] = useState<'athletes' | 'trends' | 'analysis' | 'communication' | 'management'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
+
+  // メインタブ変更時にサブタブも連動
+  const handleMainTabChange = (mainTab: typeof activeMainTab) => {
+    setActiveMainTab(mainTab);
+    const defaultSubTabs: Record<typeof activeMainTab, typeof activeTab> = {
+      athletes: 'athletes',
+      trends: 'team-trends',
+      analysis: 'team-analysis',
+      communication: 'messages',
+      management: 'settings',
+    };
+    setActiveTab(defaultSubTabs[mainTab]);
+  };
 
   // リハビリ: フルスクリーンビュー管理
   const [fullscreenView, setFullscreenView] = useState<
@@ -898,121 +913,160 @@ export function StaffView({
             {/* Tab Navigation */}
             {selectedTeam && (
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm transition-colors">
+                {/* Main tabs */}
                 <div className="border-b border-gray-200 dark:border-gray-700">
-                  {/* Desktop tabs */}
-                  <nav className="hidden sm:flex px-4 sm:px-6 items-center">
-                    <button
-                      onClick={() => setActiveTab('athletes')}
-                      className={`py-3.5 px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                        activeTab === 'athletes'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
-                      }`}
-                      data-tutorial="athletes-tab"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Activity className="w-4 h-4" />
-                        選手一覧
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab('team-trends')}
-                      className={`py-3.5 px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                        activeTab === 'team-trends'
-                          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
-                      }`}
-                      data-tutorial="team-average-tab"
-                    >
-                      <div className="flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4" />
-                        チーム傾向
-                      </div>
-                    </button>
-
-                    {/* More tabs dropdown */}
-                    <div className="ml-auto relative">
+                  <nav className="hidden sm:flex px-4 sm:px-6 overflow-x-auto scrollbar-hide">
+                    {([
+                      { key: 'athletes' as const, icon: Activity, label: '選手' },
+                      { key: 'trends' as const, icon: BarChart3, label: 'トレンド' },
+                      { key: 'analysis' as const, icon: Target, label: '分析' },
+                      { key: 'communication' as const, icon: MessageSquare, label: 'コミュニケーション', badge: unreadMessageCount },
+                      { key: 'management' as const, icon: Settings2, label: '管理' },
+                    ] as const).map(({ key, icon: Icon, label, badge }) => (
                       <button
-                        onClick={() => setShowMoreTabs(v => !v)}
-                        className={`py-3.5 px-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                          ['frozen', 'rankings', 'reports', 'settings', 'performance', 'team-analysis', 'notifications', 'messages'].includes(activeTab)
+                        key={key}
+                        onClick={() => handleMainTabChange(key)}
+                        className={`py-3.5 px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                          activeMainTab === key
                             ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
                         }`}
+                        data-tutorial={key === 'athletes' ? 'athletes-tab' : key === 'trends' ? 'team-average-tab' : undefined}
                       >
-                        <div className="flex items-center gap-1.5 relative">
-                          <span>その他</span>
-                          {unreadMessageCount > 0 && !['messages'].includes(activeTab) && (
-                            <span className="absolute -top-1 -right-2 bg-red-500 rounded-full w-2 h-2" />
+                        <div className="flex items-center gap-2 relative">
+                          <Icon className="w-4 h-4" />
+                          {label}
+                          {badge && badge > 0 && (
+                            <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                              {badge > 9 ? '9+' : badge}
+                            </span>
                           )}
-                          <svg className={`w-3.5 h-3.5 transition-transform ${showMoreTabs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
                         </div>
                       </button>
-                      {showMoreTabs && (
-                        <>
-                          <div className="fixed inset-0 z-10" onClick={() => setShowMoreTabs(false)} />
-                          <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
-                            {[
-                              { key: 'frozen' as const, icon: Snowflake, label: '凍結済み選手', locked: false },
-                              { key: 'rankings' as const, icon: Trophy, label: 'ランキング', locked: !planLimits.canUseRankings },
-                              { key: 'reports' as const, icon: FileText, label: 'レポート', locked: !planLimits.canGenerateReports },
-                              { key: 'settings' as const, icon: Calendar, label: '設定（フェーズ）', locked: false },
-                              { key: 'performance' as const, icon: Activity, label: 'パフォーマンス分析', locked: !planLimits.canUsePerformanceTesting },
-                              { key: 'team-analysis' as const, icon: Target, label: 'チーム分析', locked: !planLimits.canUseAdvancedTeamAnalysis },
-                              { key: 'notifications' as const, icon: Bell, label: '通知管理', locked: false },
-                              { key: 'messages' as const, icon: MessageSquare, label: 'メッセージ', locked: false },
-                              ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, icon: Stethoscope, label: 'プログラム管理', locked: !planLimits.canUseRehab }] : []),
-                            ].map(({ key, icon: Icon, label, locked }) => (
-                              <button
-                                key={key}
-                                onClick={() => { setActiveTab(key); setShowMoreTabs(false); }}
-                                className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 transition-colors ${
-                                  activeTab === key
-                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium'
-                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                }`}
-                              >
-                                <Icon className="w-4 h-4" />
-                                <LockedTabLabel label={label} locked={locked} />
-                                {key === 'messages' && unreadMessageCount > 0 && (
-                                  <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                                    {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                    ))}
                   </nav>
 
-                  {/* Mobile tab selector */}
-                  <div className="sm:hidden px-4 py-3">
-                    <select
-                      value={activeTab}
-                      onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                        bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                    >
-                      <option value="athletes">選手一覧</option>
-                      <option value="team-trends">チーム傾向</option>
-                      <option value="frozen">凍結済み選手</option>
-                      <option value="rankings">{!planLimits.canUseRankings ? '🔒 ' : ''}ランキング</option>
-                      <option value="settings">設定（フェーズ）</option>
-                      <option value="reports">{!planLimits.canGenerateReports ? '🔒 ' : ''}レポート</option>
-                      <option value="performance">{!planLimits.canUsePerformanceTesting ? '🔒 ' : ''}パフォーマンス分析</option>
-                      <option value="team-analysis">{!planLimits.canUseAdvancedTeamAnalysis ? '🔒 ' : ''}チーム分析</option>
-                      <option value="notifications">通知管理</option>
-                      <option value="messages">メッセージ{unreadMessageCount > 0 ? ` (${unreadMessageCount})` : ''}</option>
-                      {canAccessRehab(user.staff_type) && <option value="rehab-programs">{!planLimits.canUseRehab ? '🔒 ' : ''}プログラム管理</option>}
-                    </select>
+                  {/* Mobile main tab selector */}
+                  <div className="sm:hidden px-4 py-2">
+                    <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                      {([
+                        { key: 'athletes' as const, label: '選手' },
+                        { key: 'trends' as const, label: 'トレンド' },
+                        { key: 'analysis' as const, label: '分析' },
+                        { key: 'communication' as const, label: 'コミュニケーション', badge: unreadMessageCount },
+                        { key: 'management' as const, label: '管理' },
+                      ] as const).map(({ key, label, badge }) => (
+                        <button
+                          key={key}
+                          onClick={() => handleMainTabChange(key)}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
+                            activeMainTab === key
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                          }`}
+                        >
+                          {label}
+                          {badge && badge > 0 && (
+                            <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                              {badge > 9 ? '9+' : badge}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
+                {/* Sub-tabs */}
+                {activeMainTab !== 'athletes' && (
+                  <div className="border-b border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/50">
+                    <nav className="flex px-4 sm:px-6 overflow-x-auto scrollbar-hide">
+                      {activeMainTab === 'trends' && (
+                        <button
+                          onClick={() => setActiveTab('team-trends')}
+                          className={`py-2.5 px-3 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                            activeTab === 'team-trends'
+                              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                          }`}
+                        >
+                          チーム傾向
+                        </button>
+                      )}
+
+                      {activeMainTab === 'analysis' && (
+                        <>
+                          {[
+                            { key: 'team-analysis' as const, label: 'チーム分析', locked: !planLimits.canUseAdvancedTeamAnalysis },
+                            { key: 'rankings' as const, label: 'ランキング', locked: !planLimits.canUseRankings },
+                            { key: 'performance' as const, label: 'パフォーマンス', locked: !planLimits.canUsePerformanceTesting },
+                            { key: 'reports' as const, label: 'レポート', locked: !planLimits.canGenerateReports },
+                          ].map(({ key, label, locked }) => (
+                            <button
+                              key={key}
+                              onClick={() => setActiveTab(key)}
+                              className={`py-2.5 px-3 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                                activeTab === key
+                                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                              }`}
+                            >
+                              <LockedTabLabel label={label} locked={locked} />
+                            </button>
+                          ))}
+                        </>
+                      )}
+
+                      {activeMainTab === 'communication' && (
+                        <>
+                          {[
+                            { key: 'messages' as const, label: 'メッセージ' },
+                            { key: 'notifications' as const, label: '通知管理' },
+                          ].map(({ key, label }) => (
+                            <button
+                              key={key}
+                              onClick={() => setActiveTab(key)}
+                              className={`py-2.5 px-3 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                                activeTab === key
+                                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                              }`}
+                            >
+                              {label}
+                              {key === 'messages' && unreadMessageCount > 0 && activeTab !== 'messages' && (
+                                <span className="ml-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 inline-flex items-center justify-center">
+                                  {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </>
+                      )}
+
+                      {activeMainTab === 'management' && (
+                        <>
+                          {[
+                            { key: 'settings' as const, label: 'フェーズ設定', locked: false },
+                            { key: 'frozen' as const, label: '凍結選手', locked: false },
+                            ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, label: 'リハビリ', locked: !planLimits.canUseRehab }] : []),
+                          ].map(({ key, label, locked }) => (
+                            <button
+                              key={key}
+                              onClick={() => setActiveTab(key)}
+                              className={`py-2.5 px-3 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                                activeTab === key
+                                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                              }`}
+                            >
+                              <LockedTabLabel label={label} locked={locked} />
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </nav>
+                  </div>
+                )}
 
                 {/* Tab Content */}
                 <div className="p-4 sm:p-6">
