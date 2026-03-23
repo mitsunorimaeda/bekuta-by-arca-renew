@@ -2,6 +2,7 @@
 import React from 'react';
 import { AlertTriangle, HelpCircle, Menu, X, LogOut, Shield, FileText, Building2 } from 'lucide-react';
 import { AlertBadge } from './AlertBadge';
+import { NotificationInbox } from './NotificationInbox';
 import type { AppRole } from '../lib/roles';
 
 type Role = AppRole;
@@ -92,6 +93,9 @@ export function GlobalHeader({
               <span className="text-sm text-gray-600 dark:text-gray-300 hidden md:block transition-colors">
                 {userProfile.name}さん
               </span>
+
+              {/* Notifications (user_notifications) */}
+              <NotificationInbox userId={userProfile.id} />
 
               {/* Alerts */}
               {!alertsLoading && (
