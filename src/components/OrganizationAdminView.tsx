@@ -6,6 +6,7 @@ import { AlertSummary } from './AlertSummary';
 import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
+import { isGlobalAdmin } from '../lib/permissions';
 import { Building2, Users, UserPlus, AlertTriangle, BarChart3, X, HelpCircle, CreditCard, Sliders, UserCog, UsersRound, Layout, ShieldCheck, Menu, Shield, FileText } from 'lucide-react';
 import { OrganizationOverview } from './OrganizationOverview';
 import { SubscriptionSettings } from './SubscriptionSettings';
