@@ -180,9 +180,23 @@ export async function generateAthleteReport(
         totalSessions
       : 0;
 
-  // ✅ ACWR：RecordLike[] に正規化してから計算（ここが超重要）
+  // ✅ ACWR計算には慢性負荷（28日）が必要なので、期間開始の28日前からデータを取得
+  const acwrStartDate = new Date(period.start);
+  acwrStartDate.setDate(acwrStartDate.getDate() - 28);
+  const acwrStartStr = acwrStartDate.toISOString().slice(0, 10);
+
+  const { data: acwrTrainingRecords, error: acwrTrErr } = await supabase
+    .from('training_records')
+    .select('*')
+    .eq('user_id', athleteId)
+    .gte('date', acwrStartStr)
+    .lte('date', period.end)
+    .order('date', { ascending: true });
+
+  if (acwrTrErr) throw acwrTrErr;
+
   const recordLikes: RecordLike[] =
-    (trainingRecords || [])
+    (acwrTrainingRecords || [])
       .map((r: any) => {
         const date = toYMD(r?.date);
         if (!date) return null;
