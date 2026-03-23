@@ -512,23 +512,26 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                 </div>
               </div>
 
-              {/* 月経周期フェーズ（女性のみ） */}
+              {/* コンディションフェーズ（女性選手のみ・抽象表現） */}
               {isFemale && cyclePhaseInfo && (() => {
-                const colors = getCyclePhaseColorUtil(cyclePhaseInfo.phase);
+                const phaseConfig: Record<string, { label: string; tip: string; bg: string; text: string; border: string }> = {
+                  menstrual: { label: '回復フェーズ', tip: '負荷軽減を推奨', bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800' },
+                  follicular: { label: 'アクティブフェーズ', tip: '高強度トレーニングに適した時期', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-800' },
+                  ovulatory: { label: 'ピークフェーズ', tip: 'パフォーマンスが最も高い時期', bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800' },
+                  luteal: { label: 'ケアフェーズ', tip: '怪我リスクに注意。負荷調整を推奨', bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-700 dark:text-orange-400', border: 'border-orange-200 dark:border-orange-800' },
+                };
+                const cfg = phaseConfig[cyclePhaseInfo.phase] || phaseConfig.follicular;
                 return (
-                  <div className={`${colors.bg} border ${colors.border} rounded-xl p-4 flex items-center gap-3`}>
-                    <Droplets className={`w-5 h-5 ${colors.text}`} />
+                  <div className={`${cfg.bg} border ${cfg.border} rounded-xl p-4 flex items-center gap-3`}>
+                    <Activity className={`w-5 h-5 ${cfg.text}`} />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${colors.text}`}>
-                          {cyclePhaseInfo.phaseEmoji} {cyclePhaseInfo.phaseLabel}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          ({cyclePhaseInfo.dayInCycle}日目/{cyclePhaseInfo.totalCycleDays}日周期)
+                        <span className={`text-sm font-bold ${cfg.text}`}>
+                          {cfg.label}
                         </span>
                       </div>
                       <p className="text-xs text-gray-700 dark:text-gray-300 mt-0.5">
-                        {cyclePhaseInfo.trainingAdvice}
+                        {cfg.tip}
                       </p>
                     </div>
                   </div>

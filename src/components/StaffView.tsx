@@ -1066,6 +1066,7 @@ export function StaffView({
                       athleteACWRMap={athleteACWRMap}
                       weekCardMap={weekCardMap}
                       athleteRiskMap={athleteRiskMap}
+                      cyclePhaseMap={cyclePhaseMap}
                       onAthleteSelect={handleAthleteSelect}
                       onRetry={() => selectedTeam?.id && fetchTeamAthletesWithActivity(selectedTeam.id)}
                       rehabAthleteIds={rehabAthleteIds}

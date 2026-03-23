@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Stethoscope,
 } from 'lucide-react';
+import { ConditionPhaseBadge } from './ConditionPhaseBadge';
+import type { CyclePhase } from '../lib/cyclePhaseUtils';
 
 // ACWR 情報の型（マップの中身）
 type RiskLevel = 'high' | 'caution' | 'good' | 'low' | 'unknown';
@@ -66,6 +68,8 @@ interface AthleteListProps {
   weekCardMap?: Record<string, CoachWeekAthleteCard>;
   // リスク判定
   athleteRiskMap?: Record<string, any>;
+  // コンディションフェーズ（月経周期の抽象表現）
+  cyclePhaseMap?: Record<string, { phase: string } | undefined>;
   // リハビリ中の選手ID
   rehabAthleteIds?: Set<string>;
 }
@@ -78,6 +82,7 @@ export function AthleteList({
   onAthleteSelect,
   athleteACWRMap = {},
   weekCardMap = {},
+  cyclePhaseMap = {},
   rehabAthleteIds,
 }: AthleteListProps) {
   const [search, setSearch] = useState('');
@@ -323,7 +328,11 @@ export function AthleteList({
                     {(athlete as any).nickname && athlete.name && (
                       <p className="text-xs text-gray-400 truncate">({athlete.name})</p>
                     )}
-
+                    {/* コンディションフェーズバッジ */}
+                    <ConditionPhaseBadge
+                      phase={cyclePhaseMap[athlete.id]?.phase as CyclePhase | undefined}
+                      variant="badge"
+                    />
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-gray-500">
