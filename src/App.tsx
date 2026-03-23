@@ -301,36 +301,22 @@ function App() {
     );
   }
 
-  // ✅ 法的ページ（未認証でもアクセス可能）
-  if (currentPage === 'privacy' && !user) {
-    return (
-      <PrivacyPolicy
-        onBack={() => {
-          setCurrentPage('app');
-          window.history.pushState({}, '', '/');
-        }}
-      />
-    );
+  // ✅ 法的ページ・ヘルプページ（認証状態に関係なくアクセス可能）
+  const navigateBack = () => {
+    setCurrentPage('app');
+    window.history.pushState({}, '', '/');
+  };
+  if (currentPage === 'privacy') {
+    return <PrivacyPolicy onBack={navigateBack} />;
   }
-  if (currentPage === 'terms' && !user) {
-    return (
-      <TermsOfService
-        onBack={() => {
-          setCurrentPage('app');
-          window.history.pushState({}, '', '/');
-        }}
-      />
-    );
+  if (currentPage === 'terms') {
+    return <TermsOfService onBack={navigateBack} />;
   }
-  if (currentPage === 'commercial' && !user) {
-    return (
-      <CommercialTransactions
-        onBack={() => {
-          setCurrentPage('app');
-          window.history.pushState({}, '', '/');
-        }}
-      />
-    );
+  if (currentPage === 'commercial') {
+    return <CommercialTransactions onBack={navigateBack} />;
+  }
+  if (currentPage === 'help') {
+    return <HelpPage user={user || { id: '', name: '', email: '', role: 'athlete' } as any} onBack={navigateBack} />;
   }
 
   if (!user) {
