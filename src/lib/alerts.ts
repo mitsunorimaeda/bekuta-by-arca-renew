@@ -312,7 +312,17 @@ export function generateAlerts(
     }
   });
 
-  return alerts;
+  // ✅ 上位アラートが存在する場合、下位アラートを除外
+  // high_risk(ACWR>1.5) があれば caution(ACWR>1.3) は不要
+  // srpe_spike があれば srpe_high は不要
+  const alertTypes = new Set(alerts.map(a => a.type));
+  const filtered = alerts.filter(a => {
+    if (a.type === 'caution' && alertTypes.has('high_risk') && a.user_id === userId) return false;
+    if (a.type === 'srpe_high' && alertTypes.has('srpe_spike') && a.user_id === userId) return false;
+    return true;
+  });
+
+  return filtered;
 }
 
 // アラートの重要度に基づく色とアイコン
