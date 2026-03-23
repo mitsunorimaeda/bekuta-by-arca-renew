@@ -36,7 +36,9 @@ interface AthleteDetailModalProps {
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
 const AthleteRehabTabLazy = lazy(() => import('./rehab/AthleteRehabTab'));
 
-type TabKey = 'overview' | 'weight' | 'rpe' | 'profile' | 'rehab';
+type TabKey = 'overview' | 'trends' | 'profile' | 'rehab';
+type TrendPeriod = '1w' | '2w' | '1m' | '3m' | 'all';
+type TrendMetric = 'rpe' | 'duration' | 'load' | 'weight' | 'acwr';
 
 function getNextActions(risk: { riskLevel: 'high' | 'caution' | 'low'; reasons: string[]; acwr?: number | null }) {
   const reasons = risk.reasons || [];
@@ -155,6 +157,22 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
     }));
   }, [td.acwrData]);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('1m');
+  const [trendMetrics, setTrendMetrics] = useState<Set<TrendMetric>>(new Set(['load', 'weight']));
+
+  const toggleMetric = (metric: TrendMetric) => {
+    setTrendMetrics(prev => {
+      const next = new Set(prev);
+      if (next.has(metric)) {
+        if (next.size <= 1) return prev;
+        next.delete(metric);
+      } else {
+        if (next.size >= 3) return prev;
+        next.add(metric);
+      }
+      return next;
+    });
+  };
 
   // ===== DBのACWR（最新 / 前回） =====
   
@@ -266,7 +284,20 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
     return map;
   }, [records]);
 
-  // ===== DB日次 series → チャート用（load/acwr + rpe(任意)） =====
+  // ===== 日次 練習時間（training_records を日付でまとめる） =====
+  const durationByDay = useMemo(() => {
+    const map: Record<string, number> = {};
+    (records || []).forEach((r: any) => {
+      const ymd = toYMD(r?.date);
+      if (!ymd) return;
+      const dur = toNum(r?.duration_min ?? r?.duration_minutes ?? r?.duration);
+      if (dur == null || dur <= 0) return;
+      map[ymd] = (map[ymd] ?? 0) + dur;
+    });
+    return map;
+  }, [records]);
+
+  // ===== DB日次 series → チャート用（load/acwr + rpe + duration） =====
   const dailyChartData = useMemo(() => {
     const src = Array.isArray(acwrDaily) ? acwrDaily : [];
     if (src.length === 0) return [];
@@ -281,15 +312,17 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
         const rpe = rpeByDay[ymd] != null ? rpeByDay[ymd] : null;
 
         // 0埋めを活かすなら load は null ではなく 0 にしてもOK（ここは表示都合）
+        const duration = durationByDay[ymd] != null ? durationByDay[ymd] : null;
         return {
           rawDate: ymd,
           date: formatMD(ymd),
           load: load ?? 0,
           acwr,
           rpe,
+          duration,
         };
       })
-      .filter(Boolean) as { rawDate: string; date: string; load: number; acwr: number | null; rpe: number | null }[];
+      .filter(Boolean) as { rawDate: string; date: string; load: number; acwr: number | null; rpe: number | null; duration: number | null }[];
 
     return result;
   }, [acwrDaily, rpeByDay]);
@@ -312,14 +345,56 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
     return arr;
   }, [dailyChartData, weightChartData]);
 
-  const rightMax = useMemo(() => {
-    const maxAcwr = Math.max(
-      0,
-      ...(dailyChartData.map((d) => (d.acwr != null ? d.acwr : 0)))
-    );
-    // RPE(0-10) と同軸なので、最低10は確保してACWRがそれ以上なら広げる
-    return Math.max(10, Math.ceil(maxAcwr * 1.2 * 10) / 10);
-  }, [dailyChartData]);
+  // ===== データ推移タブ：期間フィルタリング =====
+  const filteredTrendData = useMemo(() => {
+    const data = loadWeightMergedData;
+    if (trendPeriod === 'all' || data.length === 0) return data;
+
+    const daysMap: Record<string, number> = { '1w': 7, '2w': 14, '1m': 30, '3m': 90 };
+    const days = daysMap[trendPeriod] || 30;
+
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+    const startStr = startDate.toISOString().slice(0, 10);
+
+    return data.filter((d: any) => d.rawDate >= startStr);
+  }, [loadWeightMergedData, trendPeriod]);
+
+  // ===== データ推移タブ：動的Y軸ドメイン =====
+  const trendAxisDomains = useMemo(() => {
+    const data = filteredTrendData;
+    // 左軸: load (bar)
+    const leftMax = Math.max(1, ...data.map((d: any) => d.load ?? 0));
+
+    // 右軸: 選択された指標の最大値に基づく
+    let rightMax = 0;
+    if (trendMetrics.has('rpe')) rightMax = Math.max(rightMax, 10);
+    if (trendMetrics.has('acwr')) {
+      const maxAcwr = Math.max(0, ...data.map((d: any) => d.acwr ?? 0));
+      rightMax = Math.max(rightMax, maxAcwr * 1.2);
+    }
+    if (trendMetrics.has('weight')) {
+      const maxW = Math.max(0, ...data.map((d: any) => d.weight ?? 0));
+      rightMax = Math.max(rightMax, maxW * 1.05);
+    }
+    if (trendMetrics.has('duration')) {
+      const maxD = Math.max(0, ...data.map((d: any) => d.duration ?? 0));
+      rightMax = Math.max(rightMax, maxD * 1.1);
+    }
+    if (rightMax === 0) rightMax = 10;
+
+    // 右軸の最小値（体重が選択されている場合はゼロから始めると見づらい）
+    let rightMin = 0;
+    if (trendMetrics.has('weight') && !trendMetrics.has('rpe') && !trendMetrics.has('acwr') && !trendMetrics.has('duration')) {
+      const minW = Math.min(Infinity, ...data.filter((d: any) => d.weight != null).map((d: any) => d.weight));
+      if (Number.isFinite(minW)) rightMin = Math.floor(minW * 0.95);
+    }
+
+    return {
+      leftDomain: [0, Math.ceil(leftMax * 1.1)] as [number, number],
+      rightDomain: [rightMin, Math.ceil(rightMax)] as [number, number],
+    };
+  }, [filteredTrendData, trendMetrics]);
 
   if (loading) {
     return (
@@ -421,8 +496,7 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
           <div className="flex gap-1 overflow-x-auto no-scrollbar text-xs sm:text-sm">
             {[
               { key: 'overview', label: '概要', color: 'blue' },
-              { key: 'weight', label: '体重', color: 'green', icon: Scale },
-              { key: 'rpe', label: 'RPE/ACWR', color: 'purple', icon: BarChart2 },
+              { key: 'trends', label: 'データ推移', color: 'purple', icon: BarChart2 },
               { key: 'profile', label: 'プロフィール', color: 'indigo', icon: UserIcon },
               ...(onOpenRehabAssign ? [{ key: 'rehab', label: 'リハ', color: 'orange', icon: Stethoscope }] : []),
             ].map(({ key, label, color, icon: Icon }) => (
@@ -540,158 +614,194 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
             </div>
           )}
 
-          {/* --- 体重タブ --- */}
-          {activeTab === 'weight' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-                <Scale className="w-4 h-4 text-green-500" />
-                体重推移 ＋ 日次負荷（DB）
-              </h3>
+          {/* --- データ推移タブ（統合） --- */}
+          {activeTab === 'trends' && (
+            <div className="space-y-3">
+              {/* 期間セレクター（iOS風セグメントコントロール） */}
+              <div className="flex rounded-lg bg-gray-100 p-0.5">
+                {([
+                  { key: '1w' as TrendPeriod, label: '1W' },
+                  { key: '2w' as TrendPeriod, label: '2W' },
+                  { key: '1m' as TrendPeriod, label: '1M' },
+                  { key: '3m' as TrendPeriod, label: '3M' },
+                  { key: 'all' as TrendPeriod, label: '全' },
+                ]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setTrendPeriod(key)}
+                    className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all ${
+                      trendPeriod === key
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-              <p className="text-xs text-gray-500">
-                体重：{weightChartData.length}件 / 日次：{dailyChartData.length}日
-              </p>
+              {/* 指標トグルチップ */}
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  { key: 'load' as TrendMetric, label: '負荷', color: '#60a5fa', bgActive: 'bg-blue-100', textActive: 'text-blue-700', borderActive: 'border-blue-300' },
+                  { key: 'weight' as TrendMetric, label: '体重', color: '#22c55e', bgActive: 'bg-green-100', textActive: 'text-green-700', borderActive: 'border-green-300' },
+                  { key: 'rpe' as TrendMetric, label: 'RPE', color: '#f97316', bgActive: 'bg-orange-100', textActive: 'text-orange-700', borderActive: 'border-orange-300' },
+                  { key: 'acwr' as TrendMetric, label: 'ACWR', color: '#a855f7', bgActive: 'bg-purple-100', textActive: 'text-purple-700', borderActive: 'border-purple-300' },
+                  { key: 'duration' as TrendMetric, label: '時間', color: '#06b6d4', bgActive: 'bg-cyan-100', textActive: 'text-cyan-700', borderActive: 'border-cyan-300' },
+                ]).map(({ key, label, color, bgActive, textActive, borderActive }) => {
+                  const isActive = trendMetrics.has(key);
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleMetric(key)}
+                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                        isActive
+                          ? `${bgActive} ${textActive} ${borderActive} font-medium`
+                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isActive ? color : '#d1d5db' }} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
 
-              {loadWeightMergedData.length === 0 ? (
-                <p className="text-sm text-gray-500">データがまだありません。</p>
+              {/* グラフ */}
+              {filteredTrendData.length === 0 ? (
+                <p className="text-sm text-gray-500 py-8 text-center">この期間のデータがありません。</p>
               ) : (
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={loadWeightMergedData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
+                    <ComposedChart data={filteredTrendData} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.5} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
 
-                      <YAxis
-                        yAxisId="left"
-                        orientation="left"
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(v: number) => `${Math.round(v)}`}
-                      />
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(v: number) => `${v.toFixed(1)}`}
-                      />
+                      {/* 左軸: 負荷 (Bar) */}
+                      {trendMetrics.has('load') && (
+                        <YAxis
+                          yAxisId="left"
+                          orientation="left"
+                          tick={{ fontSize: 10 }}
+                          domain={trendAxisDomains.leftDomain}
+                          tickFormatter={(v: number) => `${Math.round(v)}`}
+                          width={35}
+                        />
+                      )}
 
-                      <Tooltip
-                        formatter={(value: any, name: any) => {
-                          if (typeof value !== 'number') return value;
-                          if (name === '体重') return [value.toFixed(1), name];
-                          return [Math.round(value), name];
-                        }}
-                      />
-                      <Legend />
-
-                      <Bar
-                        yAxisId="left"
-                        dataKey="load"
-                        name="日次負荷（daily_load）"
-                        fill="#60a5fa"
-                        opacity={0.85}
-                      />
-
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="weight"
-                        name="体重"
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                        connectNulls
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* --- RPE / 負荷 / ACWR タブ --- */}
-          {activeTab === 'rpe' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-                <BarChart2 className="w-4 h-4 text-purple-500" />
-                日次負荷（DB）・RPE（日次）・ACWR（DB）
-              </h3>
-
-              <p className="text-xs text-gray-500">日次：{dailyChartData.length} 日</p>
-
-              {dailyChartData.length === 0 ? (
-                <p className="text-sm text-gray-500">日次データがまだありません。</p>
-              ) : (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={dailyChartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-
-                      {/* 左：負荷 */}
-                      <YAxis
-                        yAxisId="left"
-                        orientation="left"
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(v: number) => `${Math.round(v)}`}
-                      />
-                      {/* 右：RPE/ACWR（同軸） */}
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        tick={{ fontSize: 12 }}
-                        domain={[0, rightMax]}
-                        tickFormatter={(v: number) => v.toFixed(2)}
-                      />
+                      {/* 右軸: その他のLine指標 */}
+                      {(trendMetrics.has('rpe') || trendMetrics.has('acwr') || trendMetrics.has('weight') || trendMetrics.has('duration')) && (
+                        <YAxis
+                          yAxisId="right"
+                          orientation={trendMetrics.has('load') ? 'right' : 'left'}
+                          tick={{ fontSize: 10 }}
+                          domain={trendAxisDomains.rightDomain}
+                          tickFormatter={(v: number) => v >= 10 ? `${Math.round(v)}` : v.toFixed(1)}
+                          width={35}
+                        />
+                      )}
 
                       <Tooltip
+                        contentStyle={{ fontSize: 11, padding: '6px 10px' }}
                         formatter={(value: any, name: any) => {
-                          if (typeof value !== 'number') return value;
-                          if (typeof name === 'string' && name.includes('ACWR')) return [value.toFixed(2), name];
+                          if (typeof value !== 'number') return [value, name];
+                          if (name === 'ACWR') return [value.toFixed(2), name];
                           if (name === 'RPE') return [value.toFixed(1), name];
+                          if (name === '体重') return [`${value.toFixed(1)}kg`, name];
+                          if (name === '時間') return [`${Math.round(value)}分`, name];
                           return [Math.round(value), name];
                         }}
                       />
-                      <Legend />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
 
-                      <Bar
-                        yAxisId="left"
-                        dataKey="load"
-                        name="日次負荷（daily_load）"
-                        fill="#60a5fa"
-                        opacity={0.85}
-                      />
+                      {/* Bar: 日次負荷 */}
+                      {trendMetrics.has('load') && (
+                        <Bar
+                          yAxisId="left"
+                          dataKey="load"
+                          name="負荷"
+                          fill="#60a5fa"
+                          opacity={0.7}
+                          radius={[2, 2, 0, 0]}
+                        />
+                      )}
 
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="rpe"
-                        name="RPE（日次・duration加重）"
-                        stroke="#f97316"
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                        connectNulls
-                      />
+                      {/* Line: 体重 */}
+                      {trendMetrics.has('weight') && (
+                        <Line
+                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          type="monotone"
+                          dataKey="weight"
+                          name="体重"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#22c55e' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
 
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="acwr"
-                        name="ACWR（DB）"
-                        stroke="#a855f7"
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                        connectNulls
-                      />
+                      {/* Line: RPE */}
+                      {trendMetrics.has('rpe') && (
+                        <Line
+                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          type="monotone"
+                          dataKey="rpe"
+                          name="RPE"
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#f97316' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
 
-                      <ReferenceLine yAxisId="right" y={0.8} stroke="#22c55e" strokeDasharray="4 4" ifOverflow="extendDomain" />
-                      <ReferenceLine yAxisId="right" y={1.3} stroke="#f97316" strokeDasharray="4 4" ifOverflow="extendDomain" />
+                      {/* Line: ACWR */}
+                      {trendMetrics.has('acwr') && (
+                        <Line
+                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          type="monotone"
+                          dataKey="acwr"
+                          name="ACWR"
+                          stroke="#a855f7"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#a855f7' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
+
+                      {/* Line: 練習時間 */}
+                      {trendMetrics.has('duration') && (
+                        <Line
+                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          type="monotone"
+                          dataKey="duration"
+                          name="時間"
+                          stroke="#06b6d4"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#06b6d4' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
+
+                      {/* ACWR リファレンスライン */}
+                      {trendMetrics.has('acwr') && (
+                        <>
+                          <ReferenceLine yAxisId={trendMetrics.has('load') ? 'right' : 'right'} y={0.8} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
+                          <ReferenceLine yAxisId={trendMetrics.has('load') ? 'right' : 'right'} y={1.3} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
+                        </>
+                      )}
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               )}
+
+              {/* データ情報 */}
+              <p className="text-xs text-gray-400 text-center">
+                {filteredTrendData.length}日分 | {trendMetrics.size}項目選択中
+              </p>
             </div>
           )}
 
