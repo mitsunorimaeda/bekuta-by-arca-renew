@@ -83,17 +83,26 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
 
       if (dateOfBirth) {
         const birthDate = new Date(dateOfBirth);
+        if (Number.isNaN(birthDate.getTime())) {
+          throw new Error('生年月日を正しく入力してください。');
+        }
+        // DB側のCHECK制約に合わせて正確な年齢計算（年/月/日を考慮）
         const today = new Date();
-        const ageGuess = today.getFullYear() - birthDate.getFullYear();
-        if (Number.isNaN(birthDate.getTime()) || ageGuess < 10 || ageGuess > 150) {
+        let exactAge = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) exactAge--;
+        if (exactAge < 10 || exactAge > 150) {
           throw new Error('生年月日を正しく入力してください（10歳以上）。');
         }
       }
 
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-      // 携帯番号だけに絞る
-      if (!isLikelyJpMobile(normalizedPhone)) {
+      // 携帯番号チェック：既存DBの値から変更された場合のみ厳しく検証
+      // （すでに非携帯番号が保存されている選手がプロフィールを編集できなくなるのを防ぐ）
+      const originalNormalized = normalizePhoneNumber(user.phone_number || '');
+      const isPhoneChanged = normalizedPhone !== originalNormalized;
+      if (isPhoneChanged && !isLikelyJpMobile(normalizedPhone)) {
         throw new Error('電話番号は070 / 080 / 090から始まる携帯番号を入力してください（ハイフンOK）。');
       }
 
@@ -105,8 +114,15 @@ export function ProfileEditForm({ user, onUpdate, onClose }: ProfileEditFormProp
         phone_number: normalizedPhone || null, // 保存はハイフンなし（携帯のみ）
       };
 
-      const { error: updateError } = await supabase.from('users').update(updateData).eq('id', user.id);
+      const { error: updateError, count } = await supabase
+        .from('users')
+        .update(updateData, { count: 'exact' })
+        .eq('id', user.id);
       if (updateError) throw updateError;
+      // RLSで静かに弾かれた場合（0件更新）を検知
+      if (count === 0) {
+        throw new Error('プロフィールの更新に失敗しました（権限エラー）。再ログインをお試しください。');
+      }
 
       setSuccess(true);
 
