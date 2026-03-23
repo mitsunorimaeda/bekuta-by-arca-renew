@@ -13,62 +13,30 @@ import {
 import { calculateACWR } from "../lib/acwr";
 import { useRealtimeHub } from "./useRealtimeHub";
 
-const ENABLE_REALTIME_ALERT_EMAILS = false;
 type UserRole = AppRole;
 
-// --------------------------------------------------
-// localStorage によるアラート既読/非表示の永続化
-// キー: `${user_id}-${type}-${date}` （アラートの安定キー）
-// --------------------------------------------------
-const STORAGE_KEY = 'bekuta_alert_state';
-const STATE_TTL_DAYS = 14; // 14日で古いエントリを自動削除
-
-type PersistedAlertState = {
-  read: Record<string, number>;      // stableKey → timestamp
-  dismissed: Record<string, number>; // stableKey → timestamp
-};
-
-function getAlertStableKey(alert: { user_id: string; type: string; created_at: string }): string {
-  return `${alert.user_id}-${alert.type}-${alert.created_at.split("T")[0]}`;
-}
-
-function loadPersistedState(): PersistedAlertState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { read: {}, dismissed: {} };
-    return JSON.parse(raw) as PersistedAlertState;
-  } catch {
-    return { read: {}, dismissed: {} };
-  }
-}
-
-function savePersistedState(state: PersistedAlertState): void {
-  try {
-    // 古いエントリを掃除
-    const cutoff = Date.now() - STATE_TTL_DAYS * 24 * 60 * 60 * 1000;
-    for (const key of Object.keys(state.read)) {
-      if (state.read[key] < cutoff) delete state.read[key];
-    }
-    for (const key of Object.keys(state.dismissed)) {
-      if (state.dismissed[key] < cutoff) delete state.dismissed[key];
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // localStorage full or unavailable — silently ignore
-  }
-}
-
-/** 生成されたアラートに永続化された既読/非表示状態を適用 */
-function applyPersistedState(alerts: Alert[]): Alert[] {
-  const state = loadPersistedState();
-  return alerts.map((a) => {
-    const key = getAlertStableKey(a);
-    return {
-      ...a,
-      is_read: a.is_read || !!state.read[key],
-      is_dismissed: a.is_dismissed || !!state.dismissed[key],
-    };
-  });
+// DB row → フロントエンドのAlert型に変換
+function dbRowToAlert(row: any): Alert {
+  return {
+    id: row.id,
+    user_id: row.athlete_user_id,
+    user_name: row.metadata?.athlete_name || '',
+    type: row.alert_type as Alert['type'],
+    priority: row.priority as Alert['priority'],
+    title: row.title,
+    message: row.message,
+    acwr_value: row.metadata?.acwr_value,
+    threshold_exceeded: row.metadata?.threshold_exceeded,
+    last_training_date: row.metadata?.last_training_date,
+    days_since_last_training: row.metadata?.days_since_last_training,
+    srpe_value: row.metadata?.srpe_value,
+    srpe_avg_7d: row.metadata?.srpe_avg_7d,
+    srpe_spike_ratio: row.metadata?.srpe_spike_ratio,
+    is_read: row.status === 'read' || row.status === 'dismissed' || row.status === 'resolved',
+    is_dismissed: row.status === 'dismissed' || row.status === 'resolved',
+    created_at: row.created_at,
+    expires_at: row.metadata?.expires_at,
+  };
 }
 
 export function useAlerts(userId: string, userRole: UserRole) {
@@ -78,27 +46,35 @@ export function useAlerts(userId: string, userRole: UserRole) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const { registerPollJob } = useRealtimeHub();
-
-  // ✅ hookインスタンス固有（job key衝突回避）
   const instanceIdRef = useRef(
     globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
   );
-
-  // ✅ Poll unregister を保持
   const unregisterPollRef = useRef<null | (() => void)>(null);
 
-  const sendAlertEmailsForNewAlerts = async (newAlerts: Alert[]) => {
-    // フロント側からのアラートメール送信は停止中
-    if (import.meta.env.DEV) {
-      console.info(
-        "[useAlerts] sendAlertEmailsForNewAlerts is disabled. New alerts count:",
-        newAlerts.length
-      );
+  // -----------------------------
+  // DB からアラートを読み込み
+  // -----------------------------
+  const loadAlertsFromDB = useCallback(async () => {
+    if (!userId) return [];
+
+    const { data, error } = await supabase
+      .from('staff_alerts')
+      .select('*')
+      .eq('staff_user_id', userId)
+      .in('status', ['active', 'read'])
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.error('[useAlerts] DB load error:', error);
+      return [];
     }
-  };
+
+    return (data || []).map(dbRowToAlert);
+  }, [userId]);
 
   // -----------------------------
-  // ✅ Users取得（staff/admin含む） + dedupe
+  // Users取得（staff/admin含む）
   // -----------------------------
   const loadUsersToCheck = useCallback(async () => {
     if (!userId || !userRole) return [];
@@ -111,31 +87,19 @@ export function useAlerts(userId: string, userRole: UserRole) {
         .select("id, name")
         .eq("id", userId)
         .single();
-
       if (userData) usersToCheck = [userData];
     }
 
     if (userRole === "staff") {
       const { data: teamData, error } = await supabase
         .from("staff_team_links")
-        .select(
-          `
-          team_id,
-          teams!inner (
-            users!inner (
-              id,
-              name
-            )
-          )
-        `
-        )
+        .select(`team_id, teams!inner ( users!inner ( id, name ) )`)
         .eq("staff_user_id", userId);
 
       if (error) console.error("[useAlerts] staff team fetch error:", error);
 
       const rawUsers =
         teamData?.flatMap((link: any) => (link.teams as any)?.users || []) || [];
-
       const deduped = new Map<string, { id: string; name: string }>();
       for (const u of rawUsers) {
         if (!u?.id) continue;
@@ -149,9 +113,7 @@ export function useAlerts(userId: string, userRole: UserRole) {
         .from("users")
         .select("id, name")
         .eq("role", "athlete");
-
       if (error) console.error("[useAlerts] admin athletes fetch error:", error);
-
       const deduped = new Map<string, { id: string; name: string }>();
       for (const u of allAthletes || []) {
         if (!u?.id) continue;
@@ -164,7 +126,7 @@ export function useAlerts(userId: string, userRole: UserRole) {
   }, [userId, userRole]);
 
   // -----------------------------
-  // ✅ Alert生成（並列化）
+  // Alert生成 → DBにupsert
   // -----------------------------
   const checkAndGenerateAlerts = useCallback(async () => {
     if (!userId || !userRole) return;
@@ -173,7 +135,6 @@ export function useAlerts(userId: string, userRole: UserRole) {
       const usersToCheck = await loadUsersToCheck();
       if (!usersToCheck.length) return;
 
-      // ★ roleごとのルール調整：staff/admin には no_data を出さない
       const effectiveRules = (alertRules ?? []).filter((rule) => {
         if (userRole !== "athlete" && rule.type === "no_data") return false;
         return true;
@@ -185,67 +146,94 @@ export function useAlerts(userId: string, userRole: UserRole) {
           .select("*")
           .eq("user_id", u.id)
           .order("date", { ascending: true });
-
         if (error) throw { user: u, error };
-
         return { user: u, trainingRecords: trainingRecords || [] };
       });
 
       const results = await Promise.allSettled(fetchPromises);
-
-      const newAlerts: Alert[] = [];
+      const generatedAlerts: Alert[] = [];
 
       for (const r of results) {
         if (r.status === "rejected") {
           console.error("[useAlerts] training_records fetch failed:", r.reason);
           continue;
         }
-
         const { user, trainingRecords } = r.value;
         const acwrData = calculateACWR(trainingRecords);
-
-        const userAlerts = generateAlerts(
-          user.id,
-          user.name,
-          acwrData,
-          trainingRecords,
-          effectiveRules
-        );
-
-        newAlerts.push(...userAlerts);
+        const userAlerts = generateAlerts(user.id, user.name, acwrData, trainingRecords, effectiveRules);
+        generatedAlerts.push(...userAlerts);
       }
 
-      setAlerts((prev) => {
-        const existingAlertKeys = new Set(
-          prev.map((a) => getAlertStableKey(a))
-        );
+      // DB upsert: 同じスタッフ×選手×タイプでactiveなものがなければ挿入
+      for (const alert of generatedAlerts) {
+        // 既にactiveまたはreadのアラートがあるかチェック
+        const { data: existing } = await supabase
+          .from('staff_alerts')
+          .select('id, status')
+          .eq('staff_user_id', userId)
+          .eq('athlete_user_id', alert.user_id)
+          .eq('alert_type', alert.type)
+          .in('status', ['active', 'read'])
+          .maybeSingle();
 
-        const uniqueNewAlerts = newAlerts.filter(
-          (a) => !existingAlertKeys.has(getAlertStableKey(a))
-        );
-
-        if (uniqueNewAlerts.length > 0) {
-          if (ENABLE_REALTIME_ALERT_EMAILS) {
-            sendAlertEmailsForNewAlerts(uniqueNewAlerts).catch((error) => {
-              console.error("Error sending alert emails:", error);
-            });
-          }
-
-          const combined = [...prev, ...uniqueNewAlerts];
-          // 永続化された既読/非表示状態を適用
-          return sortAlertsByPriority(filterActiveAlerts(applyPersistedState(combined)));
+        if (!existing) {
+          // 新規挿入
+          await supabase.from('staff_alerts').insert({
+            staff_user_id: userId,
+            athlete_user_id: alert.user_id,
+            alert_type: alert.type,
+            priority: alert.priority,
+            title: alert.title,
+            message: alert.message,
+            status: 'active',
+            metadata: {
+              athlete_name: alert.user_name,
+              acwr_value: alert.acwr_value,
+              threshold_exceeded: alert.threshold_exceeded,
+              last_training_date: alert.last_training_date,
+              days_since_last_training: alert.days_since_last_training,
+              srpe_value: alert.srpe_value,
+              srpe_avg_7d: alert.srpe_avg_7d,
+              srpe_spike_ratio: alert.srpe_spike_ratio,
+              expires_at: alert.expires_at,
+            },
+          });
         }
+      }
 
-        return filterActiveAlerts(applyPersistedState(prev));
-      });
+      // 条件が解消されたアラートを自動resolveする
+      // 例: ACWRが安全圏に戻った選手のhigh_riskアラート
+      const generatedKeys = new Set(
+        generatedAlerts.map(a => `${a.user_id}:${a.type}`)
+      );
+
+      const { data: activeAlerts } = await supabase
+        .from('staff_alerts')
+        .select('id, athlete_user_id, alert_type')
+        .eq('staff_user_id', userId)
+        .in('status', ['active', 'read'])
+        .in('alert_type', ['high_risk', 'caution', 'srpe_high', 'srpe_spike']);
+
+      for (const active of (activeAlerts || [])) {
+        const key = `${active.athlete_user_id}:${active.alert_type}`;
+        if (!generatedKeys.has(key)) {
+          // この選手のこのアラートタイプは今回生成されなかった → 解消された
+          await supabase
+            .from('staff_alerts')
+            .update({ status: 'resolved', resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', active.id);
+        }
+      }
+
+      // DBから最新を読み込み
+      const dbAlerts = await loadAlertsFromDB();
+      setAlerts(sortAlertsByPriority(filterActiveAlerts(dbAlerts)));
     } catch (error) {
       console.error("Error checking and generating alerts:", error);
     }
-  }, [userId, userRole, alertRules, loadUsersToCheck]);
+  }, [userId, userRole, alertRules, loadUsersToCheck, loadAlertsFromDB]);
 
-  // -----------------------------
   // Alertルール初期化
-  // -----------------------------
   const loadAlertRules = useCallback(async () => {
     const rules = DEFAULT_ALERT_RULES.map((rule, index) => ({
       id: `default-${index}`,
@@ -254,10 +242,9 @@ export function useAlerts(userId: string, userRole: UserRole) {
     setAlertRules(rules);
   }, []);
 
-  // 初期化
+  // 初期化: DBから読み込み
   useEffect(() => {
     let cancelled = false;
-
     const init = async () => {
       if (!userId || !userRole) {
         setLoading(false);
@@ -266,20 +253,19 @@ export function useAlerts(userId: string, userRole: UserRole) {
       setLoading(true);
       try {
         await loadAlertRules();
+        const dbAlerts = await loadAlertsFromDB();
+        if (!cancelled) {
+          setAlerts(sortAlertsByPriority(filterActiveAlerts(dbAlerts)));
+        }
       } catch (e) {
-        console.error("Error loading alert rules:", e);
-        // fallback（同じ内容でOK）
-        await loadAlertRules();
+        console.error("Error loading alerts:", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     init();
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, userRole, loadAlertRules]);
+    return () => { cancelled = true; };
+  }, [userId, userRole, loadAlertRules, loadAlertsFromDB]);
 
   // ルール設定後に即1回チェック
   useEffect(() => {
@@ -288,31 +274,25 @@ export function useAlerts(userId: string, userRole: UserRole) {
     }
   }, [alertRules.length, userId, userRole, checkAndGenerateAlerts]);
 
-  // ✅ Hubポーリング（30分）へ移管
+  // Hubポーリング（30分）
   useEffect(() => {
-    // 既存jobを必ず解除
     if (unregisterPollRef.current) {
       unregisterPollRef.current();
       unregisterPollRef.current = null;
     }
-
     if (!userId || !userRole) return;
     if (alertRules.length === 0) return;
 
     const key = `alerts:${userId}:${userRole}:${instanceIdRef.current}`;
-
     const unregister = registerPollJob({
       key,
       intervalMs: 30 * 60 * 1000,
-      run: async () => {
-        await checkAndGenerateAlerts();
-      },
+      run: async () => { await checkAndGenerateAlerts(); },
       enabled: true,
-      requireVisible: true, // ✅ 背景は止める
+      requireVisible: true,
       requireOnline: true,
-      immediate: false, // ✅ 直前の「即1回チェック」と二重にしない
+      immediate: false,
     });
-
     unregisterPollRef.current = unregister;
 
     return () => {
@@ -329,40 +309,42 @@ export function useAlerts(userId: string, userRole: UserRole) {
     setUnreadCount(unread);
   }, [alerts]);
 
+  // 既読（DB更新）
   const markAsRead = useCallback(async (alertId: string) => {
-    setAlerts((prev) => {
-      const target = prev.find((a) => a.id === alertId);
-      if (target) {
-        const state = loadPersistedState();
-        state.read[getAlertStableKey(target)] = Date.now();
-        savePersistedState(state);
-      }
-      return prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a));
-    });
-  }, []);
+    await supabase
+      .from('staff_alerts')
+      .update({ status: 'read', updated_at: new Date().toISOString() })
+      .eq('id', alertId)
+      .eq('staff_user_id', userId);
 
+    setAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a))
+    );
+  }, [userId]);
+
+  // 非表示（DB更新）
   const dismissAlert = useCallback(async (alertId: string) => {
-    setAlerts((prev) => {
-      const target = prev.find((a) => a.id === alertId);
-      if (target) {
-        const state = loadPersistedState();
-        state.dismissed[getAlertStableKey(target)] = Date.now();
-        savePersistedState(state);
-      }
-      return prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a));
-    });
-  }, []);
+    await supabase
+      .from('staff_alerts')
+      .update({ status: 'dismissed', updated_at: new Date().toISOString() })
+      .eq('id', alertId)
+      .eq('staff_user_id', userId);
 
+    setAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, is_dismissed: true } : a))
+    );
+  }, [userId]);
+
+  // 全て既読（DB更新）
   const markAllAsRead = useCallback(async () => {
-    setAlerts((prev) => {
-      const state = loadPersistedState();
-      for (const a of prev) {
-        state.read[getAlertStableKey(a)] = Date.now();
-      }
-      savePersistedState(state);
-      return prev.map((a) => ({ ...a, is_read: true }));
-    });
-  }, []);
+    await supabase
+      .from('staff_alerts')
+      .update({ status: 'read', updated_at: new Date().toISOString() })
+      .eq('staff_user_id', userId)
+      .eq('status', 'active');
+
+    setAlerts((prev) => prev.map((a) => ({ ...a, is_read: true })));
+  }, [userId]);
 
   const clearDismissedAlerts = useCallback(() => {
     setAlerts((prev) => prev.filter((a) => !a.is_dismissed));

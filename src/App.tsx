@@ -528,7 +528,11 @@ function App() {
                 alertsLoading={alertsLoading}
                 unreadCount={unreadCount}
                 hasHighPriorityAlerts={hasHighPriorityAlerts}
+                alerts={alerts}
                 onOpenAlertPanel={() => setShowAlertPanel(true)}
+                onMarkAlertRead={markAsRead}
+                onDismissAlert={dismissAlert}
+                onMarkAllAlertsRead={markAllAsRead}
                 onLogout={handleLogout}
                 onHome={() => {
                   setCurrentPage("app");

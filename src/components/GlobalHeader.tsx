@@ -1,9 +1,9 @@
 // src/components/GlobalHeader.tsx
 import React from 'react';
 import { AlertTriangle, HelpCircle, Menu, X, LogOut, Shield, FileText, Building2 } from 'lucide-react';
-import { AlertBadge } from './AlertBadge';
-import { NotificationInbox } from './NotificationInbox';
+import { UnifiedNotificationBell } from './UnifiedNotificationBell';
 import type { AppRole } from '../lib/roles';
+import type { Alert } from '../lib/alerts';
 
 type Role = AppRole;
 
@@ -19,8 +19,12 @@ type GlobalHeaderProps = {
   alertsLoading: boolean;
   unreadCount: number;
   hasHighPriorityAlerts: boolean;
+  alerts: Alert[];
 
   onOpenAlertPanel: () => void;
+  onMarkAlertRead: (id: string) => void;
+  onDismissAlert: (id: string) => void;
+  onMarkAllAlertsRead: () => void;
   onLogout: (e: React.MouseEvent<HTMLButtonElement>) => void;
 
   onHome: () => void;
@@ -37,7 +41,11 @@ export function GlobalHeader({
   alertsLoading,
   unreadCount,
   hasHighPriorityAlerts,
+  alerts,
   onOpenAlertPanel,
+  onMarkAlertRead,
+  onDismissAlert,
+  onMarkAllAlertsRead,
   onLogout,
   onHome,
   onNavigateToPrivacy,
@@ -94,18 +102,15 @@ export function GlobalHeader({
                 {userProfile.name}さん
               </span>
 
-              {/* Notifications (user_notifications) */}
-              <NotificationInbox userId={userProfile.id} />
-
-              {/* Alerts */}
-              {!alertsLoading && (
-                <AlertBadge
-                  count={unreadCount}
-                  hasHighPriority={hasHighPriorityAlerts}
-                  onClick={onOpenAlertPanel}
-                  className="touch-target"
-                />
-              )}
+              {/* 統合通知ベル（アラート + お知らせ） */}
+              <UnifiedNotificationBell
+                userId={userProfile.id}
+                alerts={alerts}
+                alertUnreadCount={unreadCount}
+                onMarkAlertRead={onMarkAlertRead}
+                onDismissAlert={onDismissAlert}
+                onMarkAllAlertsRead={onMarkAllAlertsRead}
+              />
 
               {/* Desktop legal/help (optional): ここは出さず、モバイルメニューに集約でもOK */}
               {/* Desktop logout */}
