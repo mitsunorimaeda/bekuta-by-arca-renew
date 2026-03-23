@@ -8,7 +8,6 @@ import {
 import { TrainingForm } from '../TrainingForm';
 import { AlertSummary } from '../AlertSummary';
 import { DerivedStatsBar } from '../DerivedStatsBar';
-import { ShareStatusButton } from '../ShareStatusButton';
 import { getRiskLabel, getRiskColor } from '../../lib/acwr';
 import type { ActiveTab } from '../../types/athlete';
 
@@ -93,10 +92,6 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
               }}
             />
           )}
-
-          <div className="mt-3">
-            <ShareStatusButton userId={userId} highlight={highPriorityAlerts.length > 0} />
-          </div>
 
           {/* High Priority Alert Banner */}
           {highPriorityAlerts.length > 0 && (

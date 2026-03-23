@@ -5,8 +5,6 @@ import {
   Activity,
   AlertTriangle,
   ChevronRight,
-  Lock,
-  Unlock,
   CheckCircle2,
   Stethoscope,
 } from 'lucide-react';
@@ -46,8 +44,7 @@ type CoachWeekAthleteCard = {
   energy_avg: number | null;
   stress_avg: number | null;
 
-  // 共有（選手主導）
-  is_sharing_active: boolean;
+  // 許可フラグ
   allow_condition: boolean;
   allow_training: boolean;
   allow_body: boolean;
@@ -85,7 +82,6 @@ export function AthleteList({
 }: AthleteListProps) {
   const [search, setSearch] = useState('');
   const [filterRisk, setFilterRisk] = useState<'all' | 'high'>('all');
-  const [filterSharing, setFilterSharing] = useState<'all' | 'on'>('all');
   const [filterRehab, setFilterRehab] = useState(false);
   const displayName = (a: any) => a?.nickname || a?.name || '名前未設定';
 
@@ -118,17 +114,14 @@ export function AthleteList({
       // ✅ 「高リスクのみ」は high のみ（caution を混ぜない）
       const riskMatch = filterRisk === 'all' ? true : riskLevel === 'high';
 
-      const card = weekCardMap[athlete.id];
-      const sharingMatch = filterSharing === 'all' ? true : !!card?.is_sharing_active;
-
       const text = `${displayName(athlete)}`.toLowerCase();
       const searchMatch = s === '' ? true : text.includes(s);
 
       const rehabMatch = !filterRehab || (rehabAthleteIds?.has(athlete.id) ?? false);
 
-      return riskMatch && sharingMatch && searchMatch && rehabMatch;
+      return riskMatch && searchMatch && rehabMatch;
     });
-  }, [athletes, search, filterRisk, filterSharing, filterRehab, athleteACWRMap, weekCardMap, rehabAthleteIds]);
+  }, [athletes, search, filterRisk, filterRehab, athleteACWRMap, weekCardMap, rehabAthleteIds]);
 
   const renderRiskBadge = (riskLevel: RiskLevel) => {
     switch (riskLevel) {
@@ -198,21 +191,6 @@ export function AthleteList({
     return String(Math.round(v));
   };
 
-  const renderSharingBadge = (card?: CoachWeekAthleteCard) => {
-    const on = !!card?.is_sharing_active;
-    return on ? (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <Unlock className="w-3 h-3" />
-        共有ON
-      </span>
-    ) : (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
-        <Lock className="w-3 h-3" />
-        共有OFF
-      </span>
-    );
-  };
-
   return (
     <div className="space-y-4">
       {/* 検索 ＋ フィルタ */}
@@ -252,20 +230,6 @@ export function AthleteList({
           >
             <AlertTriangle className="w-3 h-3" />
             高リスクのみ
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilterSharing(filterSharing === 'on' ? 'all' : 'on')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
-              filterSharing === 'on'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-emerald-50 hover:text-emerald-700'
-            }`}
-            title="共有ONの選手だけ表示"
-          >
-            <Unlock className="w-3 h-3" />
-            共有ONのみ
           </button>
 
           {rehabAthleteIds && rehabAthleteIds.size > 0 && (
@@ -341,23 +305,14 @@ export function AthleteList({
                 : null;
 
             const card = weekCardMap[athlete.id];
-            const shareOn = !!card?.is_sharing_active;
-
-            const disabled = !shareOn;
 
             return (
               <button
                 key={athlete.id}
                 type="button"
-                onClick={() => {
-                  if (disabled) return;
-                  onAthleteSelect(athlete);
-                }}
-                disabled={disabled}
-                className={`w-full flex items-stretch justify-between px-4 sm:px-5 py-3 sm:py-4 text-left transition-colors ${
-                  disabled ? 'opacity-60 cursor-not-allowed bg-white' : 'hover:bg-gray-50'
-                }`}
-                title={disabled ? 'この選手は現在、共有がOFFです（🔒）' : '詳細を開く'}
+                onClick={() => onAthleteSelect(athlete)}
+                className="w-full flex items-stretch justify-between px-4 sm:px-5 py-3 sm:py-4 text-left transition-colors hover:bg-gray-50"
+                title="詳細を開く"
               >
                 {/* 左側：基本情報 */}
                 <div className="flex-1 min-w-0">
@@ -369,7 +324,6 @@ export function AthleteList({
                       <p className="text-xs text-gray-400 truncate">({athlete.name})</p>
                     )}
 
-                    {renderSharingBadge(card)}
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-gray-500">
@@ -381,20 +335,18 @@ export function AthleteList({
                   </div>
 
                   {/* ✅ 直近7日Load（DBのacute_7d） */}
-                  {shareOn && (
-                    <div className="mt-2 text-[11px] sm:text-xs text-gray-600">
-                      直近7日Load： <b>{acute7d != null ? Math.round(acute7d) : '-'}</b>
+                  <div className="mt-2 text-[11px] sm:text-xs text-gray-600">
+                    直近7日Load： <b>{acute7d != null ? Math.round(acute7d) : '-'}</b>
 
-                      {(() => {
-                        return lastDate ? (
-                          <span className="ml-2 text-gray-400">（{formatDate(lastDate)}時点）</span>
-                        ) : null;
-                      })()}
-                    </div>
-                  )}
+                    {(() => {
+                      return lastDate ? (
+                        <span className="ml-2 text-gray-400">（{formatDate(lastDate)}時点）</span>
+                      ) : null;
+                    })()}
+                  </div>
 
-                  {/* 今週サマリー（共有ONの時だけ） */}
-                  {shareOn && card && (
+                  {/* 今週サマリー */}
+                  {card && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
                       {card.action_total > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -417,11 +369,6 @@ export function AthleteList({
                     </div>
                   )}
 
-                  {!shareOn && (
-                    <div className="mt-2 text-[11px] sm:text-xs text-gray-500">
-                      🔒 共有がOFFのため、詳細データは表示できません
-                    </div>
-                  )}
                 </div>
 
                 {/* 右側：ACWR & リスク */}

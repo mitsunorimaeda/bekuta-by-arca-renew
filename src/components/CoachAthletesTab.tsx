@@ -1,6 +1,6 @@
 // src/components/CoachAthletesTab.tsx
 import React from 'react';
-import { Lock, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { AthleteList } from './AthleteList';
 import type { User } from '../lib/supabase';
 import type { AthleteRisk } from '../lib/riskUtils';
@@ -17,7 +17,6 @@ type AthleteACWRInfo = {
 
 type CoachWeekAthleteCard = {
   athlete_user_id: string;
-  is_sharing_active: boolean;
   [key: string]: any;
 };
 
@@ -85,11 +84,9 @@ export function CoachAthletesTab({
 
   return (
     <div>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-        <Lock className="w-3.5 h-3.5" />
-        共有OFFの選手は詳細を開けません
-        {acwrLoading && <span className="ml-1 text-blue-500 dark:text-blue-400">(ACWR取得中...)</span>}
-      </div>
+      {acwrLoading && (
+        <div className="text-xs text-blue-500 dark:text-blue-400 mb-3">(ACWR取得中...)</div>
+      )}
       <AthleteList
         athletes={athletes}
         onAthleteSelect={onAthleteSelect}

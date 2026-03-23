@@ -3,7 +3,6 @@ import React, { Suspense, lazy } from 'react';
 import { AlertTriangle, Sword, ChevronRight } from 'lucide-react';
 import { OnboardingBanner } from '../OnboardingBanner';
 import NutritionOverview from '../NutritionOverview';
-import { ShareStatusButton } from '../ShareStatusButton';
 import { SentryErrorButton } from '../SentryErrorButton';
 import type { TeamPhaseRow } from '../../types/athlete';
 
@@ -331,11 +330,6 @@ export function UnifiedTabContent(props: UnifiedTabContentProps) {
           <SentryErrorButton />
         </div>
       )}
-
-      {/* ✅ スタッフに共有ボタン */}
-      <div className="mt-4">
-        <ShareStatusButton userId={userId} highlight={highPriorityAlerts.length > 0} />
-      </div>
 
       <div className="mt-6">
         <div className="mt-6 min-h-[320px]">

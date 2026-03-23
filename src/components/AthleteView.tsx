@@ -25,7 +25,6 @@ import { MotivationForm } from './MotivationForm';
 import { ConditioningSummaryCard } from './ConditioningSummaryCard';
 import { UnifiedDailyCheckIn } from './UnifiedDailyCheckIn';
 import { FloatingActionButton } from './FloatingActionButton';
-import { ShareStatusButton } from './ShareStatusButton';
 import { useAthleteDerivedValues } from '../hooks/useAthleteDerivedValues';
 import { DerivedStatsBar } from './DerivedStatsBar';
 import { getRiskLabel, getRiskColor } from '../lib/acwr';

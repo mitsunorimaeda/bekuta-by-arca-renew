@@ -111,7 +111,6 @@ type CoachWeekAthleteCard = {
   action_total: number;
   action_done: number;
   action_done_rate: number;
-  is_sharing_active: boolean;
   allow_condition: boolean;
   allow_training: boolean;
   allow_body: boolean;
@@ -625,11 +624,6 @@ export function StaffView({
   const handleOpenAthleteDetailFromFocus = (it: { user_id: string }) => {
     const target = safeAthletes.find((a) => a.id === it.user_id);
     if (!target) { window.alert('選手情報が見つかりませんでした'); return; }
-    const card = safeWeekCards.find((c) => c.athlete_user_id === target.id);
-    if (card && !card.is_sharing_active) {
-      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
-      return;
-    }
     setSelectedAthlete(target);
   };
 
@@ -649,7 +643,6 @@ export function StaffView({
     if (!safeWeekCards || safeWeekCards.length === 0) return items.slice(0, 5);
 
     safeWeekCards.forEach((c) => {
-      if (!c.is_sharing_active) return;
       const acwr = athleteACWRMap?.[c.athlete_user_id]?.currentACWR;
       if (typeof acwr === 'number' && acwr >= 1.5) {
         items.push({ user_id: c.athlete_user_id, name: c.athlete_name || 'unknown', category: 'risk', reason: 'ACWR高値', meta: `ACWR ${acwr.toFixed(2)}` });
@@ -657,7 +650,6 @@ export function StaffView({
     });
 
     safeWeekCards.forEach((c) => {
-      if (!c.is_sharing_active) return;
       if (c.sleep_hours_avg != null && c.sleep_hours_avg <= 5.5) {
         items.push({ user_id: c.athlete_user_id, name: c.athlete_name || 'unknown', category: 'checkin', reason: '睡眠が短め', meta: `${c.sleep_hours_avg.toFixed(1)}h` });
       }
@@ -726,11 +718,6 @@ export function StaffView({
   }, [safeAthletes, athleteRiskMap, weekCardMap]);
 
   const handleAthleteSelect = (athlete: User) => {
-    const card = safeWeekCards.find((c) => c.athlete_user_id === athlete.id);
-    if (!card?.is_sharing_active) {
-      window.alert('この選手は現在、詳細データの共有がOFFです（🔒）');
-      return;
-    }
     setSelectedAthlete(athlete);
     trackEvent('athlete_detail_opened', { athlete_id: athlete.id, athlete_name: athlete.name });
   };

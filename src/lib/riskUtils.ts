@@ -17,7 +17,6 @@ export type AthleteRisk = {
 
 // StaffView の weekCardMap で使ってる形に合わせる（必要最低限）
 type WeekCard = {
-  is_sharing_active?: boolean;
   sleep_hours_avg?: number | null;
 };
 
@@ -60,8 +59,6 @@ export function calcRiskForAthlete(params: {
 }): AthleteRisk {
   const { id, name, acwrInfo, weekCard, noData, cyclePhase } = params;
 
-  const sharingOn = !!weekCard?.is_sharing_active;
-
   const acwr = acwrInfo?.currentACWR ?? null;
   const sleep = weekCard?.sleep_hours_avg ?? null;
   const daysNoInput = noData?.daysSinceLast ?? null;
@@ -78,12 +75,12 @@ export function calcRiskForAthlete(params: {
     reasons.push('未入力');
   }
 
-  if (sharingOn && typeof acwr === 'number' && acwr >= 1.5) {
+  if (typeof acwr === 'number' && acwr >= 1.5) {
     isHigh = true;
     reasons.push('負荷急増');
   }
 
-  if (sharingOn && typeof sleep === 'number' && sleep <= 5.0) {
+  if (typeof sleep === 'number' && sleep <= 5.0) {
     isHigh = true;
     reasons.push('睡眠↓');
   }
@@ -94,7 +91,7 @@ export function calcRiskForAthlete(params: {
       name,
       riskLevel: 'high',
       reasons: pickTop2(reasons),
-      acwr, // ✅ 追加
+      acwr,
     };
   }
 
@@ -108,22 +105,22 @@ export function calcRiskForAthlete(params: {
     reasons.push('未入力');
   }
 
-  if (sharingOn && typeof acwr === 'number' && acwr >= 1.3) {
+  if (typeof acwr === 'number' && acwr >= 1.3) {
     isCaution = true;
     reasons.push('負荷やや高');
   }
 
-  if (sharingOn && typeof sleep === 'number' && sleep <= 5.5) {
+  if (typeof sleep === 'number' && sleep <= 5.5) {
     isCaution = true;
     reasons.push('睡眠↓');
   }
 
   // 月経周期フェーズによる追加リスク
-  if (sharingOn && cyclePhase === 'luteal' && typeof acwr === 'number' && acwr >= 1.2) {
+  if (cyclePhase === 'luteal' && typeof acwr === 'number' && acwr >= 1.2) {
     isCaution = true;
     reasons.push('黄体期+高負荷');
   }
-  if (sharingOn && cyclePhase === 'menstrual' && typeof sleep === 'number' && sleep <= 6.0) {
+  if (cyclePhase === 'menstrual' && typeof sleep === 'number' && sleep <= 6.0) {
     isCaution = true;
     reasons.push('月経期+睡眠↓');
   }
@@ -187,19 +184,12 @@ export function getRiskLabel(risk?: RiskLevel) {
 export function sortAthletesByRisk<T extends { id: string; name?: string }>(params: {
   athletes: T[];
   riskMap: Record<string, AthleteRisk | undefined>;
-  weekCardMap?: Record<string, { is_sharing_active?: boolean } | undefined>;
+  weekCardMap?: Record<string, Record<string, any> | undefined>;
 }) {
-  const { athletes, riskMap, weekCardMap = {} } = params;
+  const { athletes, riskMap } = params;
 
   return [...athletes].sort((a, b) => {
-    const aSharing = weekCardMap[a.id]?.is_sharing_active ?? true;
-    const bSharing = weekCardMap[b.id]?.is_sharing_active ?? true;
-
-    // ① 共有OFFは最後
-    if (!aSharing && bSharing) return 1;
-    if (aSharing && !bSharing) return -1;
-
-    // ② リスク優先度
+    // ① リスク優先度
     const aRisk = riskMap[a.id]?.riskLevel;
     const bRisk = riskMap[b.id]?.riskLevel;
 

@@ -24,7 +24,7 @@ interface AthleteDetailModalProps {
   athlete: User;
   onClose: () => void;
   risk?: AthleteRisk;
-  weekCard?: { is_sharing_active?: boolean; sleep_hours_avg?: number | null } | undefined;
+  weekCard?: { sleep_hours_avg?: number | null } | undefined;
   currentUserId?: string;
   canFreeze?: boolean;
   onFrozenChange?: () => void;
@@ -413,9 +413,6 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
             {risk.reasons?.length > 0 && risk.reasons.slice(0, 2).map((r) => (
               <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r}</span>
             ))}
-            {weekCard?.is_sharing_active === false && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">共有OFF</span>
-            )}
           </div>
         )}
 
@@ -516,7 +513,7 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
               </div>
 
               {/* 月経周期フェーズ（女性のみ） */}
-              {isFemale && weekCard?.is_sharing_active && cyclePhaseInfo && (() => {
+              {isFemale && cyclePhaseInfo && (() => {
                 const colors = getCyclePhaseColorUtil(cyclePhaseInfo.phase);
                 return (
                   <div className={`${colors.bg} border ${colors.border} rounded-xl p-4 flex items-center gap-3`}>
