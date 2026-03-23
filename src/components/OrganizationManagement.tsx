@@ -520,18 +520,31 @@ function EditOrganizationModal({
 
 function CreateTeamModal({
   organizationId,
-  onClose
+  onClose,
+  teamsLimit,
+  currentTeamCount,
 }: {
   organizationId: string;
   onClose: () => void;
+  teamsLimit?: number | null;
+  currentTeamCount?: number;
 }) {
   const { createTeam } = useOrganizationTeams(organizationId);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [limitError, setLimitError] = useState('');
+
+  const isAtTeamLimit = teamsLimit !== null && teamsLimit !== undefined
+    && currentTeamCount !== undefined && currentTeamCount >= teamsLimit;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    if (isAtTeamLimit) {
+      setLimitError(`チーム数が上限（${teamsLimit}チーム）に達しています。プランをアップグレードしてください。`);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -570,6 +583,16 @@ function CreateTeamModal({
         <form onSubmit={handleSubmit}>
           <div className="p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">チームを追加</h3>
+            {isAtTeamLimit && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                チーム数が上限（{teamsLimit}チーム）に達しています。プランをアップグレードすると追加できます。
+              </div>
+            )}
+            {limitError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                {limitError}
+              </div>
+            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -583,6 +606,7 @@ function CreateTeamModal({
                   placeholder="例: U-15サッカーチーム"
                   required
                   autoFocus
+                  disabled={isAtTeamLimit}
                 />
               </div>
             </div>
@@ -599,9 +623,9 @@ function CreateTeamModal({
             <button
               type="submit"
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-              disabled={submitting || !name.trim()}
+              disabled={submitting || !name.trim() || isAtTeamLimit}
             >
-              {submitting ? '作成中...' : '作成'}
+              {submitting ? '作成中...' : isAtTeamLimit ? '上限到達' : '作成'}
             </button>
           </div>
         </form>
