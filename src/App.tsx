@@ -443,6 +443,66 @@ function App() {
           );
         }
   
+        // ✅ メール未確認チェック（24時間経過後にブロック）
+        const emailVerifiedAt = (userProfile as any).email_verified_at;
+        const registeredVia = user?.user_metadata?.registered_via;
+        if (registeredVia === 'self_signup' && !emailVerifiedAt) {
+          const createdAt = new Date(userProfile.created_at || Date.now());
+          const hoursSinceCreation = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
+
+          if (hoursSinceCreation > 24) {
+            // 24時間超過 → ブロック
+            return (
+              <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 max-w-md w-full text-center">
+                  <div className="text-5xl mb-4">📧</div>
+                  <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                    メールアドレスの確認が必要です
+                  </h1>
+                  <p className="text-gray-600 dark:text-gray-300 text-sm mt-2">
+                    ご登録時に送信した確認メールのリンクをクリックしてください。
+                    メールが届いていない場合は、迷惑メールフォルダをご確認ください。
+                  </p>
+                  <div className="mt-6 space-y-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          // 確認メール再送信
+                          const res = await fetch(
+                            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resend-verification`,
+                            {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${session?.access_token}`,
+                              },
+                            }
+                          );
+                          if (res.ok) {
+                            alert('確認メールを再送信しました');
+                          }
+                        } catch {
+                          alert('再送信に失敗しました');
+                        }
+                      }}
+                      className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      確認メールを再送信
+                    </button>
+                    <button
+                      onClick={signOut}
+                      className="w-full py-2 border border-gray-300 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                    >
+                      ログアウト
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+        }
+
         if (showConsentModal) {
           return (
             <ConsentModal
