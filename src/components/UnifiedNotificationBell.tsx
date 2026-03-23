@@ -167,7 +167,7 @@ export function UnifiedNotificationBell({
       <button
         type="button"
         onClick={() => { setOpen((v) => !v); setShowHistory(false); }}
-        className="relative p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+        className="relative p-2 rounded-lg text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
         aria-label="通知・アラート"
         title="通知・アラート"
       >
