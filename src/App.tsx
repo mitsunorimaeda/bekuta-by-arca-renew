@@ -334,8 +334,12 @@ function App() {
   }
 
   if (!user) {
-    // ログインページ
-    if (currentPage === 'login') {
+    // PWA（スタンドアロン）モードで開いた場合はLPスキップ→直接ログイン画面
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone === true;
+
+    // ログインページ（またはPWAモード）
+    if (currentPage === 'login' || (isPWA && currentPage !== 'signup')) {
       return (
         <LoginForm
           onLogin={signIn}
