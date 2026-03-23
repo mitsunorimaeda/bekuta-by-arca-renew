@@ -2,7 +2,7 @@
 // 選手向けの通知受信ボックス（ヘッダーのベルアイコンから開く）
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Bell, Check, X } from 'lucide-react';
+import { Bell, Check, X, History } from 'lucide-react';
 
 interface UserNotification {
   id: string;
@@ -21,15 +21,21 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // 未読通知のみカウント
   const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  // 表示する通知（未読のみ or 全件）
+  const displayedNotifications = showHistory
+    ? notifications
+    : notifications.filter((n) => !n.is_read);
 
   const fetchNotifications = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
-      // 30日以内の通知を最大50件取得
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('user_notifications')
@@ -62,22 +68,29 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
     const handleClick = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setShowHistory(false);
       }
     };
     if (open) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
+  // 個別既読（タップで即リストから消える）
   const markAsRead = async (id: string) => {
-    await supabase.from('user_notifications').update({ is_read: true }).eq('id', id);
+    // UIから即座に消す
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    // DBに反映
+    await supabase.from('user_notifications').update({ is_read: true }).eq('id', id);
   };
 
+  // 全件既読（一括クリア）
   const markAllAsRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
-    await supabase.from('user_notifications').update({ is_read: true }).in('id', unreadIds);
+    // UIから即座に全部消す
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    // DBに反映
+    await supabase.from('user_notifications').update({ is_read: true }).in('id', unreadIds);
   };
 
   const relativeTime = (iso: string) => {
@@ -97,7 +110,7 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
       {/* ベルアイコン */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); setShowHistory(false); }}
         className="relative p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
         aria-label="通知"
         title="通知"
@@ -115,13 +128,16 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
         <div className="fixed left-4 right-4 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-80 max-h-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
           {/* ヘッダー */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">通知</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+              {showHistory ? '過去の通知' : '通知'}
+            </h3>
             <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
+              {!showHistory && unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                 >
+                  <Check className="w-3 h-3" />
                   すべて既読
                 </button>
               )}
@@ -132,34 +148,37 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
           </div>
 
           {/* 通知リスト */}
-          <div className="overflow-y-auto max-h-[320px]">
+          <div className="overflow-y-auto max-h-[280px]">
             {loading && notifications.length === 0 ? (
               <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
               </div>
-            ) : notifications.length === 0 ? (
-              <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
-                通知はありません
+            ) : displayedNotifications.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {showHistory ? '過去の通知はありません' : '新しい通知はありません'}
+                </p>
+                {!showHistory && (
+                  <p className="text-xs text-gray-400 mt-1">🎉</p>
+                )}
               </div>
             ) : (
-              notifications.map((n) => (
-                <button
+              displayedNotifications.map((n) => (
+                <div
                   key={n.id}
-                  type="button"
-                  onClick={() => { if (!n.is_read) markAsRead(n.id); }}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors ${
+                  className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-all ${
                     n.is_read
                       ? 'bg-white dark:bg-gray-800'
-                      : 'bg-blue-50 dark:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/40'
+                      : 'bg-blue-50 dark:bg-blue-900/20'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     {/* 未読ドット */}
                     <div className="flex-shrink-0 pt-1.5">
-                      <div className={`w-2 h-2 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-blue-500'}`} />
+                      <div className={`w-2 h-2 rounded-full ${n.is_read ? 'bg-gray-300' : 'bg-blue-500'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className={`text-sm ${n.is_read ? 'text-gray-700 dark:text-gray-300' : 'text-gray-900 dark:text-white font-medium'}`}>
+                      <p className={`text-sm ${n.is_read ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white font-medium'}`}>
                         {n.title}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
@@ -172,11 +191,34 @@ export function NotificationInbox({ userId }: NotificationInboxProps) {
                         <span className="text-[10px] text-gray-400">{relativeTime(n.created_at)}</span>
                       </div>
                     </div>
+                    {/* 既読ボタン（未読のみ表示） */}
+                    {!n.is_read && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); markAsRead(n.id); }}
+                        className="flex-shrink-0 p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        title="既読にする"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>
+
+          {/* フッター: 過去の通知を表示/非表示切替 */}
+          {notifications.length > 0 && (
+            <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-2">
+              <button
+                onClick={() => setShowHistory((v) => !v)}
+                className="w-full text-xs text-gray-500 hover:text-blue-600 flex items-center justify-center gap-1 py-1 transition-colors"
+              >
+                <History className="w-3 h-3" />
+                {showHistory ? '未読のみ表示' : '過去の通知を見る'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
