@@ -360,39 +360,45 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
     return data.filter((d: any) => d.rawDate >= startStr);
   }, [loadWeightMergedData, trendPeriod]);
 
-  // ===== データ推移タブ：動的Y軸ドメイン =====
+  // ===== データ推移タブ：軸グループ分け =====
+  // 左軸: 大きい数値（負荷、体重、練習時間）
+  // 右軸: 小さい数値（RPE 0-10、ACWR 0-3）
+  const hasLeftMetrics = trendMetrics.has('load') || trendMetrics.has('weight') || trendMetrics.has('duration');
+  const hasRightMetrics = trendMetrics.has('rpe') || trendMetrics.has('acwr');
+
+  // 常に2軸表示（指標が1グループだけでも、左右両方の軸を使う）
   const trendAxisDomains = useMemo(() => {
     const data = filteredTrendData;
-    // 左軸: load (bar)
-    const leftMax = Math.max(1, ...data.map((d: any) => d.load ?? 0));
 
-    // 右軸: 選択された指標の最大値に基づく
-    let rightMax = 0;
-    if (trendMetrics.has('rpe')) rightMax = Math.max(rightMax, 10);
+    // 左軸: 負荷 / 体重 / 練習時間
+    let leftMax = 1;
+    let leftMin = 0;
+    if (trendMetrics.has('load')) leftMax = Math.max(leftMax, ...data.map((d: any) => d.load ?? 0));
+    if (trendMetrics.has('weight')) {
+      const weights = data.filter((d: any) => d.weight != null).map((d: any) => d.weight);
+      if (weights.length > 0) {
+        leftMax = Math.max(leftMax, ...weights);
+        leftMin = Math.floor(Math.min(...weights) * 0.95);
+      }
+    }
+    if (trendMetrics.has('duration')) leftMax = Math.max(leftMax, ...data.map((d: any) => d.duration ?? 0));
+
+    // 左軸に負荷と体重が混在する場合はゼロから
+    if (trendMetrics.has('load') && trendMetrics.has('weight')) leftMin = 0;
+    if (trendMetrics.has('load') && trendMetrics.has('duration')) leftMin = 0;
+
+    // 右軸: RPE / ACWR（スケール 0-10）
+    let rightMax = 10;
     if (trendMetrics.has('acwr')) {
       const maxAcwr = Math.max(0, ...data.map((d: any) => d.acwr ?? 0));
-      rightMax = Math.max(rightMax, maxAcwr * 1.2);
-    }
-    if (trendMetrics.has('weight')) {
-      const maxW = Math.max(0, ...data.map((d: any) => d.weight ?? 0));
-      rightMax = Math.max(rightMax, maxW * 1.05);
-    }
-    if (trendMetrics.has('duration')) {
-      const maxD = Math.max(0, ...data.map((d: any) => d.duration ?? 0));
-      rightMax = Math.max(rightMax, maxD * 1.1);
-    }
-    if (rightMax === 0) rightMax = 10;
-
-    // 右軸の最小値（体重が選択されている場合はゼロから始めると見づらい）
-    let rightMin = 0;
-    if (trendMetrics.has('weight') && !trendMetrics.has('rpe') && !trendMetrics.has('acwr') && !trendMetrics.has('duration')) {
-      const minW = Math.min(Infinity, ...data.filter((d: any) => d.weight != null).map((d: any) => d.weight));
-      if (Number.isFinite(minW)) rightMin = Math.floor(minW * 0.95);
+      rightMax = Math.max(rightMax, Math.ceil(maxAcwr * 1.2));
     }
 
+    // 左軸のみの場合、右軸もRPEスケールでダミー表示
+    // 右軸のみの場合、左軸もダミー表示
     return {
-      leftDomain: [0, Math.ceil(leftMax * 1.1)] as [number, number],
-      rightDomain: [rightMin, Math.ceil(rightMax)] as [number, number],
+      leftDomain: [leftMin, Math.ceil(leftMax * 1.1)] as [number, number],
+      rightDomain: [0, rightMax] as [number, number],
     };
   }, [filteredTrendData, trendMetrics]);
 
@@ -677,29 +683,27 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                       <CartesianGrid strokeDasharray="3 3" opacity={0.5} />
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
 
-                      {/* 左軸: 負荷 (Bar) */}
-                      {trendMetrics.has('load') && (
-                        <YAxis
-                          yAxisId="left"
-                          orientation="left"
-                          tick={{ fontSize: 10 }}
-                          domain={trendAxisDomains.leftDomain}
-                          tickFormatter={(v: number) => `${Math.round(v)}`}
-                          width={35}
-                        />
-                      )}
+                      {/* 左軸: 大きい数値（負荷/体重/練習時間） — 常に表示 */}
+                      <YAxis
+                        yAxisId="left"
+                        orientation="left"
+                        tick={{ fontSize: 10 }}
+                        domain={hasLeftMetrics ? trendAxisDomains.leftDomain : [0, 100]}
+                        tickFormatter={(v: number) => `${Math.round(v)}`}
+                        width={40}
+                        hide={!hasLeftMetrics}
+                      />
 
-                      {/* 右軸: その他のLine指標 */}
-                      {(trendMetrics.has('rpe') || trendMetrics.has('acwr') || trendMetrics.has('weight') || trendMetrics.has('duration')) && (
-                        <YAxis
-                          yAxisId="right"
-                          orientation={trendMetrics.has('load') ? 'right' : 'left'}
-                          tick={{ fontSize: 10 }}
-                          domain={trendAxisDomains.rightDomain}
-                          tickFormatter={(v: number) => v >= 10 ? `${Math.round(v)}` : v.toFixed(1)}
-                          width={35}
-                        />
-                      )}
+                      {/* 右軸: 小さい数値（RPE/ACWR） — 常に表示 */}
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 10 }}
+                        domain={hasRightMetrics ? trendAxisDomains.rightDomain : [0, 10]}
+                        tickFormatter={(v: number) => v >= 10 ? `${Math.round(v)}` : v.toFixed(1)}
+                        width={35}
+                        hide={!hasRightMetrics}
+                      />
 
                       <Tooltip
                         contentStyle={{ fontSize: 11, padding: '6px 10px' }}
@@ -714,7 +718,7 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                       />
                       <Legend wrapperStyle={{ fontSize: 10 }} />
 
-                      {/* Bar: 日次負荷 */}
+                      {/* Bar: 日次負荷 → 左軸 */}
                       {trendMetrics.has('load') && (
                         <Bar
                           yAxisId="left"
@@ -726,10 +730,10 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                         />
                       )}
 
-                      {/* Line: 体重 */}
+                      {/* Line: 体重 → 左軸（大きい数値グループ） */}
                       {trendMetrics.has('weight') && (
                         <Line
-                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          yAxisId="left"
                           type="monotone"
                           dataKey="weight"
                           name="体重"
@@ -741,40 +745,10 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                         />
                       )}
 
-                      {/* Line: RPE */}
-                      {trendMetrics.has('rpe') && (
-                        <Line
-                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
-                          type="monotone"
-                          dataKey="rpe"
-                          name="RPE"
-                          stroke="#f97316"
-                          strokeWidth={2}
-                          dot={{ r: 2, fill: '#f97316' }}
-                          activeDot={{ r: 4 }}
-                          connectNulls
-                        />
-                      )}
-
-                      {/* Line: ACWR */}
-                      {trendMetrics.has('acwr') && (
-                        <Line
-                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
-                          type="monotone"
-                          dataKey="acwr"
-                          name="ACWR"
-                          stroke="#a855f7"
-                          strokeWidth={2}
-                          dot={{ r: 2, fill: '#a855f7' }}
-                          activeDot={{ r: 4 }}
-                          connectNulls
-                        />
-                      )}
-
-                      {/* Line: 練習時間 */}
+                      {/* Line: 練習時間 → 左軸（大きい数値グループ） */}
                       {trendMetrics.has('duration') && (
                         <Line
-                          yAxisId={trendMetrics.has('load') ? 'right' : 'right'}
+                          yAxisId="left"
                           type="monotone"
                           dataKey="duration"
                           name="時間"
@@ -786,11 +760,41 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                         />
                       )}
 
-                      {/* ACWR リファレンスライン */}
+                      {/* Line: RPE → 右軸（0-10スケール） */}
+                      {trendMetrics.has('rpe') && (
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="rpe"
+                          name="RPE"
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#f97316' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
+
+                      {/* Line: ACWR → 右軸（0-10スケール） */}
+                      {trendMetrics.has('acwr') && (
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="acwr"
+                          name="ACWR"
+                          stroke="#a855f7"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#a855f7' }}
+                          activeDot={{ r: 4 }}
+                          connectNulls
+                        />
+                      )}
+
+                      {/* ACWR リファレンスライン → 右軸 */}
                       {trendMetrics.has('acwr') && (
                         <>
-                          <ReferenceLine yAxisId={trendMetrics.has('load') ? 'right' : 'right'} y={0.8} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
-                          <ReferenceLine yAxisId={trendMetrics.has('load') ? 'right' : 'right'} y={1.3} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
+                          <ReferenceLine yAxisId="right" y={0.8} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
+                          <ReferenceLine yAxisId="right" y={1.3} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1} ifOverflow="extendDomain" />
                         </>
                       )}
                     </ComposedChart>
