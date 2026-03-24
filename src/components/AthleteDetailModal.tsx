@@ -31,6 +31,7 @@ interface AthleteDetailModalProps {
   onOpenMessage?: (athleteId: string) => void;
   onOpenRehabAssign?: (athleteId: string, injuryId?: string, purpose?: string) => void;
   onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
+  onOpenKarte?: (athleteId: string) => void;
 }
 
 const AthletePerformanceProfileLazy = lazy(() => import('./AthletePerformanceProfile'));
@@ -105,7 +106,7 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage, onOpenRehabAssign, onOpenPrescription }: AthleteDetailModalProps) {
+export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUserId, canFreeze, onFrozenChange, onOpenMessage, onOpenRehabAssign, onOpenPrescription, onOpenKarte }: AthleteDetailModalProps) {
   const td = useTrainingData(athlete.id);
   const wd = useWeightData(athlete.id);
 
@@ -824,6 +825,15 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
 
           {/* --- リハビリタブ --- */}
           {activeTab === 'rehab' && onOpenRehabAssign && (
+            <>
+            {onOpenKarte && (
+              <button
+                onClick={() => { onClose(); onOpenKarte(athlete.id); }}
+                className="w-full mb-4 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <Stethoscope size={16} /> カルテを開く
+              </button>
+            )}
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-64">
@@ -840,6 +850,7 @@ export function AthleteDetailModal({ athlete, onClose, risk, weekCard, currentUs
                 } : undefined}
               />
             </Suspense>
+            </>
           )}
         </div>
       </div>

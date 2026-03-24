@@ -237,6 +237,7 @@ export function StaffView({
   const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
   const [activeMainTab, setActiveMainTab] = useState<'athletes' | 'analysis' | 'communication' | 'management'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
+  const [karteAthleteId, setKarteAthleteId] = useState<string | null>(null);
 
   // メインタブ変更時にサブタブも連動
   const handleMainTabChange = (mainTab: typeof activeMainTab) => {
@@ -1148,7 +1149,8 @@ export function StaffView({
                         teamId={selectedTeam.id}
                         teamName={selectedTeam.name}
                         athletes={safeAthletes.map(a => ({ id: a.id, name: a.name }))}
-                        onBack={() => setActiveTab('athletes')}
+                        initialAthleteId={karteAthleteId}
+                        onBack={() => { setActiveTab('athletes'); setKarteAthleteId(null); }}
                         onOpenAssign={(athleteId, injuryId, purpose) => {
                           const athlete = safeAthletes.find(a => a.id === athleteId);
                           if (athlete) setSelectedAthlete(athlete);
@@ -1188,6 +1190,12 @@ export function StaffView({
           onOpenPrescription={canAccessRehab(user.staff_type) ? (prescriptionId, athleteId) => {
             setSelectedAthlete(null);
             setFullscreenView({ type: 'view-prescription', prescriptionId, athleteId });
+          } : undefined}
+          onOpenKarte={canAccessRehab(user.staff_type) ? (athleteId) => {
+            setSelectedAthlete(null);
+            setKarteAthleteId(athleteId);
+            setActiveMainTab('management');
+            setActiveTab('rehab-programs');
           } : undefined}
         />
       )}

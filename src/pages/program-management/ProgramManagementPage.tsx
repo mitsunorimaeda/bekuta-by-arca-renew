@@ -13,6 +13,7 @@ interface ProgramManagementPageProps {
   teamId: string;
   teamName: string;
   athletes: { id: string; name: string }[];
+  initialAthleteId?: string | null;
   onBack: () => void;
   onOpenAssign: (athleteId: string, injuryId?: string, purpose?: string) => void;
   onOpenPrescription?: (prescriptionId: string, athleteId: string) => void;
@@ -22,12 +23,13 @@ export function ProgramManagementPage({
   teamId,
   teamName,
   athletes,
+  initialAthleteId,
   onBack,
   onOpenAssign,
   onOpenPrescription,
 }: ProgramManagementPageProps) {
-  const [view, setView] = useState<'dashboard' | 'karte'>('dashboard');
-  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
+  const [view, setView] = useState<'dashboard' | 'karte'>(initialAthleteId ? 'karte' : 'dashboard');
+  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(initialAthleteId || null);
 
   const selectedAthlete = athletes.find(a => a.id === selectedAthleteId);
 
