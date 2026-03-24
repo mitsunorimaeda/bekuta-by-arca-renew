@@ -59,10 +59,10 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
     try {
       setLoading(true);
 
-      // Get team athletes
+      // Get team athletes (same view as StaffView athlete list)
       const { data: teamMembers } = await supabase
-        .from('team_member_assignments')
-        .select('user_id, users!inner(id, name)')
+        .from('staff_team_athletes_with_activity' as any)
+        .select('*')
         .eq('team_id', teamId);
 
       if (!teamMembers || teamMembers.length === 0) {
@@ -70,8 +70,8 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
         return;
       }
 
-      const athleteIds = teamMembers.map((m: any) => m.user_id);
-      const athleteMap = new Map(teamMembers.map((m: any) => [m.user_id, (m.users as any)?.name || '不明']));
+      const athleteIds = teamMembers.map((m: any) => m.id);
+      const athleteMap = new Map(teamMembers.map((m: any) => [m.id, m.name || '不明']));
 
       // Get active prescriptions
       const { data: prescriptions } = await supabase
