@@ -13,6 +13,9 @@ export interface TeamACWRData {
   // team_training_daily（view）から
   averageRPE?: number | null;
   averageLoad?: number | null;
+  averageDuration?: number | null;
+  averageArrowScore?: number | null;
+  averageSignalScore?: number | null;
 }
 
 export interface AthleteACWRInfo {
@@ -60,6 +63,9 @@ type TeamTrainingDailyRow = {
   average_rpe: number | string | null;
   average_load: number | string | null;
   athlete_count: number | string | null;
+  average_duration: number | string | null;
+  average_arrow_score: number | string | null;
+  average_signal_score: number | string | null;
 };
 
 export function useTeamACWR(teamId: string | null) {
@@ -137,7 +143,7 @@ export function useTeamACWR(teamId: string | null) {
         try {
           const { data: dailyRows, error: dailyErr } = await supabase
             .from('team_training_daily')
-            .select('team_id,date,average_rpe,average_load,athlete_count')
+            .select('team_id,date,average_rpe,average_load,athlete_count,average_duration,average_arrow_score,average_signal_score')
             .eq('team_id', teamId)
             .gte('date', fromKey)
             .lte('date', toKey)
@@ -156,6 +162,9 @@ export function useTeamACWR(teamId: string | null) {
               ...row,
               averageRPE: toNum(add?.average_rpe) ?? null,
               averageLoad: toNum(add?.average_load) ?? null,
+              averageDuration: toNum(add?.average_duration) ?? null,
+              averageArrowScore: toNum(add?.average_arrow_score) ?? null,
+              averageSignalScore: toNum(add?.average_signal_score) ?? null,
             };
           });
         } catch {

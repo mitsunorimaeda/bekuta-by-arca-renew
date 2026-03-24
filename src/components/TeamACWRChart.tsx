@@ -37,7 +37,7 @@ interface TeamACWRChartProps {
 }
 
 type TrendPeriod = '1w' | '2w' | '1m' | '3m' | 'all';
-type TrendMetric = 'acwr' | 'rpe' | 'load';
+type TrendMetric = 'acwr' | 'rpe' | 'load' | 'duration' | 'arrow' | 'signal';
 
 const pickAvgRPE = (d: TeamACWRData) => d.averageRPE ?? d.avg_rpe ?? d.rpe_avg ?? null;
 const pickAvgLoad = (d: TeamACWRData) => d.averageLoad ?? d.avg_load ?? d.load_avg ?? null;
@@ -87,35 +87,43 @@ export function TeamACWRChart({
   const chartData = useMemo(() => {
     return (filteredData || [])
       .filter((d: any) => d && typeof d.date === 'string' && typeof d.averageACWR === 'number' && Number.isFinite(d.averageACWR))
-      .map((d) => ({
-        ...d,
-        averageACWR: Math.max(0, d.averageACWR),
-        avgRPE: (() => { const v = pickAvgRPE(d); return typeof v === 'number' && Number.isFinite(v) ? v : null; })(),
-        avgLoad: (() => { const v = pickAvgLoad(d); return typeof v === 'number' && Number.isFinite(v) ? v : null; })(),
-      }));
+      .map((d) => {
+        const safeNum = (v: any) => typeof v === 'number' && Number.isFinite(v) ? v : null;
+        return {
+          ...d,
+          averageACWR: Math.max(0, d.averageACWR),
+          avgRPE: safeNum(pickAvgRPE(d)),
+          avgLoad: safeNum(pickAvgLoad(d)),
+          avgDuration: safeNum((d as any).averageDuration),
+          avgArrow: safeNum((d as any).averageArrowScore),
+          avgSignal: safeNum((d as any).averageSignalScore),
+        };
+      });
   }, [filteredData]);
 
   const hasRPE = useMemo(() => chartData.some((d: any) => typeof d.avgRPE === 'number'), [chartData]);
   const hasLoad = useMemo(() => chartData.some((d: any) => typeof d.avgLoad === 'number'), [chartData]);
+  const hasDuration = useMemo(() => chartData.some((d: any) => typeof d.avgDuration === 'number'), [chartData]);
+  const hasArrow = useMemo(() => chartData.some((d: any) => typeof d.avgArrow === 'number'), [chartData]);
+  const hasSignal = useMemo(() => chartData.some((d: any) => typeof d.avgSignal === 'number'), [chartData]);
 
-  // 軸グループ: 左=ACWR/RPE（小さい数値）、右=Load（大きい数値）
-  const hasLeftMetrics = metrics.has('acwr') || metrics.has('rpe');
-  const hasRightMetrics = metrics.has('load');
+  // 軸グループ:
+  // 左軸 = ACWR, RPE, 成長実感, 理解度（0-10スケール）
+  // 右軸 = 負荷, 時間（大きい数値）
+  const hasLeftMetrics = metrics.has('acwr') || metrics.has('rpe') || metrics.has('arrow') || metrics.has('signal');
+  const hasRightMetrics = metrics.has('load') || metrics.has('duration');
 
   const axisDomains = useMemo(() => {
-    // 左軸: ACWR (0-2.5) + RPE (0-10) → 0-10スケール
     let leftMax = 2;
     if (metrics.has('acwr')) {
       const maxA = Math.max(0, ...chartData.map((d: any) => d.averageACWR ?? 0));
       leftMax = Math.max(leftMax, maxA);
     }
-    if (metrics.has('rpe')) leftMax = Math.max(leftMax, 10);
+    if (metrics.has('rpe') || metrics.has('arrow') || metrics.has('signal')) leftMax = Math.max(leftMax, 10);
 
-    // 右軸: Load（大きい数値）
     let rightMax = 100;
-    if (metrics.has('load')) {
-      rightMax = Math.max(rightMax, ...chartData.map((d: any) => d.avgLoad ?? 0));
-    }
+    if (metrics.has('load')) rightMax = Math.max(rightMax, ...chartData.map((d: any) => d.avgLoad ?? 0));
+    if (metrics.has('duration')) rightMax = Math.max(rightMax, ...chartData.map((d: any) => d.avgDuration ?? 0));
 
     return {
       leftDomain: [0, Math.ceil(leftMax * 1.2)] as [number, number],
@@ -176,8 +184,26 @@ export function TeamACWRChart({
             )}
             {metrics.has('load') && (
               <p className="flex justify-between gap-4">
-                <span>平均Load:</span>
+                <span>平均負荷:</span>
                 <span className="font-semibold">{typeof row?.avgLoad === 'number' ? Math.round(row.avgLoad) : '-'}</span>
+              </p>
+            )}
+            {metrics.has('duration') && (
+              <p className="flex justify-between gap-4">
+                <span>平均時間:</span>
+                <span className="font-semibold">{typeof row?.avgDuration === 'number' ? `${Math.round(row.avgDuration)}分` : '-'}</span>
+              </p>
+            )}
+            {metrics.has('arrow') && (
+              <p className="flex justify-between gap-4">
+                <span>成長実感:</span>
+                <span className="font-semibold">{typeof row?.avgArrow === 'number' ? row.avgArrow.toFixed(1) : '-'}</span>
+              </p>
+            )}
+            {metrics.has('signal') && (
+              <p className="flex justify-between gap-4">
+                <span>理解度:</span>
+                <span className="font-semibold">{typeof row?.avgSignal === 'number' ? row.avgSignal.toFixed(1) : '-'}</span>
               </p>
             )}
             <p className="flex justify-between gap-4">
@@ -245,7 +271,10 @@ export function TeamACWRChart({
         {([
           { key: 'acwr' as TrendMetric, label: 'ACWR', color: '#8B5CF6', bgA: 'bg-purple-100', textA: 'text-purple-700', borderA: 'border-purple-300', available: true },
           { key: 'rpe' as TrendMetric, label: 'RPE', color: '#0EA5E9', bgA: 'bg-sky-100', textA: 'text-sky-700', borderA: 'border-sky-300', available: hasRPE },
-          { key: 'load' as TrendMetric, label: 'Load', color: '#22C55E', bgA: 'bg-green-100', textA: 'text-green-700', borderA: 'border-green-300', available: hasLoad },
+          { key: 'load' as TrendMetric, label: '負荷', color: '#22C55E', bgA: 'bg-green-100', textA: 'text-green-700', borderA: 'border-green-300', available: hasLoad },
+          { key: 'duration' as TrendMetric, label: '時間', color: '#06b6d4', bgA: 'bg-cyan-100', textA: 'text-cyan-700', borderA: 'border-cyan-300', available: hasDuration },
+          { key: 'arrow' as TrendMetric, label: '成長実感', color: '#f59e0b', bgA: 'bg-amber-100', textA: 'text-amber-700', borderA: 'border-amber-300', available: hasArrow },
+          { key: 'signal' as TrendMetric, label: '理解度', color: '#ec4899', bgA: 'bg-pink-100', textA: 'text-pink-700', borderA: 'border-pink-300', available: hasSignal },
         ]).map(({ key, label, color, bgA, textA, borderA, available }) => {
           const isActive = metrics.has(key);
           return (
@@ -339,15 +368,60 @@ export function TeamACWRChart({
               />
             )}
 
-            {/* Load → 右軸（大きい数値） */}
+            {/* 負荷 → 右軸（大きい数値） */}
             {metrics.has('load') && hasLoad && (
               <Bar
                 dataKey="avgLoad"
-                name="Load"
+                name="負荷"
                 yAxisId="right"
                 fill="#22C55E"
                 opacity={0.5}
                 radius={[2, 2, 0, 0]}
+              />
+            )}
+
+            {/* 時間 → 右軸（大きい数値） */}
+            {metrics.has('duration') && hasDuration && (
+              <Line
+                type="monotone"
+                dataKey="avgDuration"
+                name="時間"
+                yAxisId="right"
+                stroke="#06b6d4"
+                strokeWidth={2}
+                dot={{ r: 2, fill: '#06b6d4' }}
+                activeDot={{ r: 4 }}
+                connectNulls
+              />
+            )}
+
+            {/* 成長実感 → 左軸（0-10スケール） */}
+            {metrics.has('arrow') && hasArrow && (
+              <Line
+                type="monotone"
+                dataKey="avgArrow"
+                name="成長実感"
+                yAxisId="left"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                dot={{ r: 2, fill: '#f59e0b' }}
+                activeDot={{ r: 4 }}
+                connectNulls
+              />
+            )}
+
+            {/* 理解度 → 左軸（0-10スケール） */}
+            {metrics.has('signal') && hasSignal && (
+              <Line
+                type="monotone"
+                dataKey="avgSignal"
+                name="理解度"
+                yAxisId="left"
+                stroke="#ec4899"
+                strokeWidth={2}
+                dot={{ r: 2, fill: '#ec4899' }}
+                activeDot={{ r: 4 }}
+                connectNulls
               />
             )}
           </ComposedChart>
