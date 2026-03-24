@@ -330,7 +330,7 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
 
 // Program Card Component with swipe-to-archive
 function ProgramCard({
-  program: p,
+  program,
   onOpenKarte,
   onArchive,
   getDaysSince,
@@ -346,11 +346,11 @@ function ProgramCard({
   const [startX, setStartX] = useState<number | null>(null);
   const [showArchive, setShowArchive] = useState(false);
 
-  const config = PURPOSE_CONFIG[p.purpose as keyof typeof PURPOSE_CONFIG] || PURPOSE_CONFIG.rehab;
+  const config = PURPOSE_CONFIG[program.purpose as keyof typeof PURPOSE_CONFIG] || PURPOSE_CONFIG.rehab;
   const Icon = config.icon;
-  const maxPhase = p.phaseDetails ? (typeof p.phaseDetails === 'object' ? Object.keys(p.phaseDetails).length : 1) : 1;
-  const progress = maxPhase > 0 ? (p.currentPhase / maxPhase) * 100 : 0;
-  const daysSince = getDaysSince(p.injuryDate);
+  const maxPhase = program.phaseDetails ? (typeof program.phaseDetails === 'object' ? Object.keys(program.phaseDetails).length : 1) : 1;
+  const progress = maxPhase > 0 ? (program.currentPhase / maxPhase) * 100 : 0;
+  const daysSince = getDaysSince(program.injuryDate);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setStartX(e.touches[0].clientX);
@@ -372,7 +372,7 @@ function ProgramCard({
       {/* Archive button (behind the card) */}
       <div className="absolute inset-y-0 right-0 w-20 bg-amber-500 flex items-center justify-center rounded-r-xl">
         <button
-          onClick={(e) => { e.stopPropagation(); onArchive(p.prescriptionId); }}
+          onClick={(e) => { e.stopPropagation(); onArchive(program.prescriptionId); }}
           className="flex flex-col items-center gap-1 text-white"
         >
           <Archive size={18} />
@@ -385,7 +385,7 @@ function ProgramCard({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onClick={() => { if (!showArchive) onOpenKarte(p.athleteId, p.injuryId || undefined); }}
+        onClick={() => { if (!showArchive) onOpenKarte(program.athleteId, program.injuryId || undefined); }}
         className="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 flex items-center gap-3 text-left hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all group cursor-pointer"
         style={{ transform: `translateX(-${showArchive ? 80 : swipeX}px)`, transition: startX !== null ? 'none' : 'transform 0.2s ease' }}
       >
@@ -397,22 +397,22 @@ function ProgramCard({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{p.athleteName}</span>
-            {p.latestPainLevel != null && p.purpose === 'rehab' && (
+            <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{program.athleteName}</span>
+            {program.latestPainLevel != null && program.purpose === 'rehab' && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                p.latestPainLevel >= 7 ? 'bg-red-100 text-red-600' :
-                p.latestPainLevel >= 4 ? 'bg-orange-100 text-orange-600' :
+                program.latestPainLevel >= 7 ? 'bg-red-100 text-red-600' :
+                program.latestPainLevel >= 4 ? 'bg-orange-100 text-orange-600' :
                 'bg-green-100 text-green-600'
               }`}>
-                NRS {p.latestPainLevel}
+                NRS {program.latestPainLevel}
               </span>
             )}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-            {p.diagnosis ? (
-              <>{getSideLabel(p.side)}{p.diagnosis} · {daysSince}日</>
+            {program.diagnosis ? (
+              <>{getSideLabel(program.side)}{program.diagnosis} · {daysSince}日</>
             ) : (
-              p.prescriptionTitle
+              program.prescriptionTitle
             )}
           </div>
           {/* Progress bar */}
@@ -420,20 +420,20 @@ function ProgramCard({
             <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${
-                  p.purpose === 'rehab' ? 'bg-red-500' :
-                  p.purpose === 'performance' ? 'bg-blue-500' : 'bg-green-500'
+                  program.purpose === 'rehab' ? 'bg-red-500' :
+                  program.purpose === 'performance' ? 'bg-blue-500' : 'bg-green-500'
                 }`}
                 style={{ width: `${Math.min(progress, 100)}%` }}
               />
             </div>
-            <span className="text-[10px] font-bold text-gray-400">P{p.currentPhase}/{maxPhase}</span>
+            <span className="text-[10px] font-bold text-gray-400">P{program.currentPhase}/{maxPhase}</span>
           </div>
         </div>
 
         {/* PC: hover archive button + Arrow */}
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={(e) => { e.stopPropagation(); onArchive(p.prescriptionId); }}
+            onClick={(e) => { e.stopPropagation(); onArchive(program.prescriptionId); }}
             className="hidden sm:group-hover:flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
             title="アーカイブ"
           >
