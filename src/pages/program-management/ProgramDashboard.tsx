@@ -4,8 +4,9 @@ import { getBodyPartLabel } from '../../lib/rehabConstants';
 import {
   Stethoscope, Zap, Activity, Users, Search,
   ChevronRight, AlertTriangle, CheckCircle, Filter,
-  Plus, ArrowLeft
+  Plus, ArrowLeft, Archive
 } from 'lucide-react';
+import { supabase as sb } from '../../lib/supabase';
 
 type PurposeFilter = 'all' | 'rehab' | 'performance' | 'conditioning';
 
@@ -198,6 +199,19 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
     return side === 'left' ? '左' : side === 'right' ? '右' : '両側';
   };
 
+  const handleArchive = async (prescriptionId: string) => {
+    if (!window.confirm('このプログラムをアーカイブしますか？（復元可能）')) return;
+    try {
+      await supabase.schema('rehab').from('prescriptions')
+        .update({ status: 'archived' })
+        .eq('id', prescriptionId);
+      setPrograms(prev => prev.filter(p => p.prescriptionId !== prescriptionId));
+    } catch (e) {
+      console.error('[Archive]', e);
+      alert('アーカイブに失敗しました');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -291,7 +305,7 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
               </h4>
               <div className="space-y-1.5">
                 {items.map(p => (
-                  <ProgramCard key={p.prescriptionId} program={p} onOpenKarte={onOpenKarte} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
+                  <ProgramCard key={p.prescriptionId} program={p} onOpenKarte={onOpenKarte} onArchive={handleArchive} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
                 ))}
               </div>
             </div>
@@ -309,74 +323,112 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
   );
 }
 
-// Program Card Component
+// Program Card Component with swipe-to-archive
 function ProgramCard({
   program: p,
   onOpenKarte,
+  onArchive,
   getDaysSince,
   getSideLabel,
 }: {
   program: AthleteProgram;
   onOpenKarte: (athleteId: string, injuryId?: string) => void;
+  onArchive: (prescriptionId: string) => void;
   getDaysSince: (d: string | null) => number | null;
   getSideLabel: (s: string | null) => string;
 }) {
+  const [swipeX, setSwipeX] = useState(0);
+  const [startX, setStartX] = useState<number | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
+
   const config = PURPOSE_CONFIG[p.purpose as keyof typeof PURPOSE_CONFIG] || PURPOSE_CONFIG.rehab;
   const Icon = config.icon;
-  const maxPhase = Array.isArray(p.phaseDetails) ? p.phaseDetails.length : 1;
+  const maxPhase = p.phaseDetails ? (typeof p.phaseDetails === 'object' ? Object.keys(p.phaseDetails).length : 1) : 1;
   const progress = maxPhase > 0 ? (p.currentPhase / maxPhase) * 100 : 0;
   const daysSince = getDaysSince(p.injuryDate);
-  const daysAgoLog = getDaysSince(p.latestLogDate);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setStartX(e.touches[0].clientX);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startX === null) return;
+    const diff = startX - e.touches[0].clientX;
+    if (diff > 0) setSwipeX(Math.min(diff, 80));
+    else setSwipeX(0);
+  };
+  const handleTouchEnd = () => {
+    if (swipeX > 50) setShowArchive(true);
+    else { setShowArchive(false); setSwipeX(0); }
+    setStartX(null);
+  };
 
   return (
-    <button
-      onClick={() => onOpenKarte(p.athleteId, p.injuryId || undefined)}
-      className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 flex items-center gap-3 text-left hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all group"
-    >
-      {/* Icon */}
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${config.bgLight}`}>
-        <Icon size={18} className={config.textColor} />
+    <div className="relative overflow-hidden rounded-xl">
+      {/* Archive button (behind the card) */}
+      <div className="absolute inset-y-0 right-0 w-20 bg-amber-500 flex items-center justify-center rounded-r-xl">
+        <button
+          onClick={(e) => { e.stopPropagation(); onArchive(p.prescriptionId); }}
+          className="flex flex-col items-center gap-1 text-white"
+        >
+          <Archive size={18} />
+          <span className="text-[10px] font-bold">アーカイブ</span>
+        </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{p.athleteName}</span>
-          {p.latestPainLevel != null && p.purpose === 'rehab' && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-              p.latestPainLevel >= 7 ? 'bg-red-100 text-red-600' :
-              p.latestPainLevel >= 4 ? 'bg-orange-100 text-orange-600' :
-              'bg-green-100 text-green-600'
-            }`}>
-              NRS {p.latestPainLevel}
-            </span>
-          )}
+      {/* Main card */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={() => { if (!showArchive) onOpenKarte(p.athleteId, p.injuryId || undefined); }}
+        className="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 flex items-center gap-3 text-left hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all group cursor-pointer"
+        style={{ transform: `translateX(-${showArchive ? 80 : swipeX}px)`, transition: startX !== null ? 'none' : 'transform 0.2s ease' }}
+      >
+        {/* Icon */}
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${config.bgLight}`}>
+          <Icon size={18} className={config.textColor} />
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-          {p.diagnosis ? (
-            <>{getSideLabel(p.side)}{p.diagnosis} · {daysSince}日</>
-          ) : (
-            p.prescriptionTitle
-          )}
-        </div>
-        {/* Progress bar */}
-        <div className="flex items-center gap-2 mt-1.5">
-          <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                p.purpose === 'rehab' ? 'bg-red-500' :
-                p.purpose === 'performance' ? 'bg-blue-500' : 'bg-green-500'
-              }`}
-              style={{ width: `${Math.min(progress, 100)}%` }}
-            />
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{p.athleteName}</span>
+            {p.latestPainLevel != null && p.purpose === 'rehab' && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                p.latestPainLevel >= 7 ? 'bg-red-100 text-red-600' :
+                p.latestPainLevel >= 4 ? 'bg-orange-100 text-orange-600' :
+                'bg-green-100 text-green-600'
+              }`}>
+                NRS {p.latestPainLevel}
+              </span>
+            )}
           </div>
-          <span className="text-[10px] font-bold text-gray-400">P{p.currentPhase}/{maxPhase}</span>
+          <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+            {p.diagnosis ? (
+              <>{getSideLabel(p.side)}{p.diagnosis} · {daysSince}日</>
+            ) : (
+              p.prescriptionTitle
+            )}
+          </div>
+          {/* Progress bar */}
+          <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  p.purpose === 'rehab' ? 'bg-red-500' :
+                  p.purpose === 'performance' ? 'bg-blue-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(progress, 100)}%` }}
+              />
+            </div>
+            <span className="text-[10px] font-bold text-gray-400">P{p.currentPhase}/{maxPhase}</span>
+          </div>
         </div>
-      </div>
 
-      {/* Arrow */}
-      <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
-    </button>
+        {/* Arrow */}
+        <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
+      </div>
+    </div>
   );
 }
 
