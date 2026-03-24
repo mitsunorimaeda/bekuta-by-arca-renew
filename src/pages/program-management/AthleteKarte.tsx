@@ -231,6 +231,12 @@ export function AthleteKarte({
     }
   };
 
+  // ====== Helpers (タイムラインより前に定義) ======
+  const getDaysSince = (d: string | null) => d ? Math.ceil(Math.abs(Date.now() - new Date(d).getTime()) / 86400000) : null;
+  const getSideLabel = (s: string | null) => s === 'left' ? '左' : s === 'right' ? '右' : s === 'both' ? '両側' : '';
+  const activeInjuries = injuries.filter(i => i.status === 'active' || i.status === 'conditioning');
+  const completedInjuries = injuries.filter(i => i.status === 'completed');
+
   // ====== Timeline ======
   const timeline: TimelineEvent[] = (() => {
     const events: TimelineEvent[] = [];
@@ -289,12 +295,6 @@ export function AthleteKarte({
 
     return events.sort((a, b) => b.date.localeCompare(a.date));
   })();
-
-  // ====== Helpers ======
-  const getDaysSince = (d: string | null) => d ? Math.ceil(Math.abs(Date.now() - new Date(d).getTime()) / 86400000) : null;
-  const getSideLabel = (s: string | null) => s === 'left' ? '左' : s === 'right' ? '右' : s === 'both' ? '両側' : '';
-  const activeInjuries = injuries.filter(i => i.status === 'active' || i.status === 'conditioning');
-  const completedInjuries = injuries.filter(i => i.status === 'completed');
 
   const TABS: { key: KarteTab; label: string; icon: React.ReactNode; count?: number }[] = [
     { key: 'injuries', label: '怪我', icon: <Stethoscope size={14} />, count: activeInjuries.length },
