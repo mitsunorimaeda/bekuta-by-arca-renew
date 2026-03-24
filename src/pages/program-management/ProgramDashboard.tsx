@@ -6,7 +6,7 @@ import {
   ChevronRight, AlertTriangle, CheckCircle, Filter,
   Plus, ArrowLeft, Archive
 } from 'lucide-react';
-import { supabase as sb } from '../../lib/supabase';
+// removed duplicate import
 
 type PurposeFilter = 'all' | 'rehab' | 'performance' | 'conditioning';
 
@@ -202,13 +202,18 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
   const handleArchive = async (prescriptionId: string) => {
     if (!window.confirm('このプログラムをアーカイブしますか？（復元可能）')) return;
     try {
-      await supabase.schema('rehab').from('prescriptions')
+      const { error } = await supabase.schema('rehab').from('prescriptions')
         .update({ status: 'archived' })
         .eq('id', prescriptionId);
+      if (error) {
+        console.error('[Archive] DB error:', error);
+        alert(`アーカイブに失敗しました: ${error.message}`);
+        return;
+      }
       setPrograms(prev => prev.filter(p => p.prescriptionId !== prescriptionId));
-    } catch (e) {
+    } catch (e: any) {
       console.error('[Archive]', e);
-      alert('アーカイブに失敗しました');
+      alert(`アーカイブに失敗しました: ${e.message || '不明なエラー'}`);
     }
   };
 
@@ -425,8 +430,17 @@ function ProgramCard({
           </div>
         </div>
 
-        {/* Arrow */}
-        <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors flex-shrink-0" />
+        {/* PC: hover archive button + Arrow */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(p.prescriptionId); }}
+            className="hidden sm:group-hover:flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+            title="アーカイブ"
+          >
+            <Archive size={14} />
+          </button>
+          <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+        </div>
       </div>
     </div>
   );
