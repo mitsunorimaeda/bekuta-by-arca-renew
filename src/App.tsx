@@ -122,7 +122,7 @@ function App() {
   const [showAlertPanel, setShowAlertPanel] = React.useState(false);
   const [showConsentModal, setShowConsentModal] = React.useState(false);
   const [currentPage, setCurrentPage] =
-    React.useState<'app' | 'landing' | 'login' | 'signup' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join'>('app');
+    React.useState<'app' | 'landing' | 'login' | 'signup' | 'privacy' | 'terms' | 'commercial' | 'help' | 'reset-password' | 'auth-callback' | 'invite-expired' | 'welcome' | 'join' | 'shared-rehab'>('app');
 
   const [dashboardMode, setDashboardMode] = React.useState<'staff' | 'org-admin'>('staff');
   const [termsAcceptedLocally, setTermsAcceptedLocally] = React.useState(false);
@@ -144,6 +144,11 @@ function App() {
 
     if (pathname.startsWith('/join')) {
       setCurrentPage('join');
+      return;
+    }
+
+    if (pathname.startsWith('/shared/rehab')) {
+      setCurrentPage('shared-rehab');
       return;
     }
 
@@ -252,6 +257,17 @@ function App() {
           window.history.replaceState({}, '', '/');
         }}
       />
+    );
+  }
+
+  if (currentPage === 'shared-rehab') {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || window.location.pathname.split('/shared/rehab/')[1] || '';
+    const SharedRehabView = lazy(() => import('./pages/SharedRehabView'));
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
+        <SharedRehabView token={token} />
+      </Suspense>
     );
   }
 
