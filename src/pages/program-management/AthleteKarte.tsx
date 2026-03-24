@@ -5,7 +5,7 @@ import {
   ArrowLeft, Stethoscope, ClipboardList, FileText, Clock,
   Plus, X, Save, ChevronDown, ChevronUp, ChevronRight,
   AlertTriangle, MapPin, Calendar as CalendarIcon, User,
-  Building2, Zap, Activity, TrendingUp, Share2
+  Building2, Zap, Activity, TrendingUp, Share2, CheckCircle2
 } from 'lucide-react';
 
 // ====== Types ======
