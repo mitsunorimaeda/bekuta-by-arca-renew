@@ -233,8 +233,8 @@ export function StaffView({
   // rehabAthleteIds の state だけここで宣言（useEffect は safeAthletes 定義後に配置）
   const [rehabAthleteIds, setRehabAthleteIds] = useState<Set<string>>(new Set());
 
-  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'team-analysis' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
-  const [activeMainTab, setActiveMainTab] = useState<'athletes' | 'trends' | 'analysis' | 'communication' | 'management'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'team-trends' | 'frozen' | 'rankings' | 'reports' | 'settings' | 'performance' | 'notifications' | 'messages' | 'rehab-programs'>('athletes');
+  const [activeMainTab, setActiveMainTab] = useState<'athletes' | 'analysis' | 'communication' | 'management'>('athletes');
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
   // メインタブ変更時にサブタブも連動
@@ -242,8 +242,7 @@ export function StaffView({
     setActiveMainTab(mainTab);
     const defaultSubTabs: Record<typeof activeMainTab, typeof activeTab> = {
       athletes: 'athletes',
-      trends: 'team-trends',
-      analysis: 'team-analysis',
+      analysis: 'team-trends',
       communication: 'messages',
       management: 'settings',
     };
@@ -905,7 +904,6 @@ export function StaffView({
                   <nav className="hidden sm:flex px-4 sm:px-6 overflow-x-auto scrollbar-hide">
                     {([
                       { key: 'athletes' as const, icon: Activity, label: '選手' },
-                      { key: 'trends' as const, icon: BarChart3, label: 'トレンド' },
                       { key: 'analysis' as const, icon: Target, label: '分析' },
                       { key: 'communication' as const, icon: MessageSquare, label: 'コミュニケーション', badge: unreadMessageCount },
                       { key: 'management' as const, icon: Settings2, label: '管理' },
@@ -918,7 +916,7 @@ export function StaffView({
                             ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
                         }`}
-                        data-tutorial={key === 'athletes' ? 'athletes-tab' : key === 'trends' ? 'team-average-tab' : undefined}
+                        data-tutorial={key === 'athletes' ? 'athletes-tab' : key === 'analysis' ? 'team-average-tab' : undefined}
                       >
                         <div className="flex items-center gap-2 relative">
                           <Icon className="w-4 h-4" />
@@ -938,7 +936,6 @@ export function StaffView({
                     <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                       {([
                         { key: 'athletes' as const, label: '選手' },
-                        { key: 'trends' as const, label: 'トレンド' },
                         { key: 'analysis' as const, label: '分析' },
                         { key: 'communication' as const, label: 'コミュニケーション', badge: unreadMessageCount },
                         { key: 'management' as const, label: '管理' },
@@ -968,22 +965,10 @@ export function StaffView({
                 {activeMainTab !== 'athletes' && (
                   <div className="border-b border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-800/50">
                     <nav className="flex px-4 sm:px-6 overflow-x-auto scrollbar-hide">
-                      {activeMainTab === 'trends' && (
-                        <button
-                          onClick={() => setActiveTab('team-trends')}
-                          className={`py-2.5 px-3 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
-                            activeTab === 'team-trends'
-                              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                          }`}
-                        >
-                          チーム傾向
-                        </button>
-                      )}
-
                       {activeMainTab === 'analysis' && (
                         <>
                           {[
+                            { key: 'team-trends' as const, label: 'チーム傾向', locked: false },
                             { key: 'rankings' as const, label: 'ランキング', locked: !planLimits.canUseRankings },
                             { key: 'performance' as const, label: 'パフォーマンス', locked: !planLimits.canUsePerformanceTesting },
                             { key: 'reports' as const, label: 'レポート', locked: !planLimits.canGenerateReports },
