@@ -72,7 +72,7 @@ const MessagingPanel = lazy(() =>
 
 // Rehab components (lazy)
 const RehabTemplateList = lazy(() => import('./rehab/RehabTemplateList'));
-const ProgramDashboard = lazy(() => import('../pages/program-management/ProgramDashboard').then(m => ({ default: m.ProgramDashboard })));
+const ProgramManagementPage = lazy(() => import('../pages/program-management/ProgramManagementPage').then(m => ({ default: m.ProgramManagementPage })));
 const RehabProgramEditor = lazy(() => import('./rehab/RehabProgramEditor'));
 const RehabPrescriptionAssign = lazy(() => import('./rehab/RehabPrescriptionAssign'));
 const RehabPrescriptionView = lazy(() => import('./rehab/RehabPrescriptionView'));
@@ -1144,21 +1144,19 @@ export function StaffView({
                   {activeTab === 'rehab-programs' && selectedTeam && (
                     <UpgradeGate allowed={planLimits.canUseRehab} featureName="プログラム管理">
                     <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
-                      <ProgramDashboard
+                      <ProgramManagementPage
                         teamId={selectedTeam.id}
                         teamName={selectedTeam.name}
-                        onOpenKarte={(athleteId, injuryId) => {
+                        athletes={safeAthletes.map(a => ({ id: a.id, name: a.name }))}
+                        onBack={() => setActiveTab('athletes')}
+                        onOpenAssign={(athleteId, injuryId, purpose) => {
                           const athlete = safeAthletes.find(a => a.id === athleteId);
                           if (athlete) setSelectedAthlete(athlete);
-                        }}
-                        onCreateProgram={(athleteId) => {
-                          if (athleteId) {
-                            const athlete = safeAthletes.find(a => a.id === athleteId);
-                            if (athlete) setSelectedAthlete(athlete);
-                          }
                           setFullscreenView({ type: 'assign' });
                         }}
-                        onBack={() => setActiveTab('athletes')}
+                        onOpenPrescription={(prescriptionId, athleteId) => {
+                          setFullscreenView({ type: 'prescription-view', prescriptionId, athleteId });
+                        }}
                       />
                     </Suspense>
                     </UpgradeGate>
