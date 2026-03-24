@@ -61,7 +61,7 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
 
       // Get team athletes
       const { data: teamMembers } = await supabase
-        .from('team_members')
+        .from('team_member_assignments')
         .select('user_id, users!inner(id, name)')
         .eq('team_id', teamId);
 
