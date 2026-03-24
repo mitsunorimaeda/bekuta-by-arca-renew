@@ -984,7 +984,6 @@ export function StaffView({
                       {activeMainTab === 'analysis' && (
                         <>
                           {[
-                            { key: 'team-analysis' as const, label: 'チーム分析', locked: !planLimits.canUseAdvancedTeamAnalysis },
                             { key: 'rankings' as const, label: 'ランキング', locked: !planLimits.canUseRankings },
                             { key: 'performance' as const, label: 'パフォーマンス', locked: !planLimits.canUsePerformanceTesting },
                             { key: 'reports' as const, label: 'レポート', locked: !planLimits.canGenerateReports },
@@ -1128,25 +1127,6 @@ export function StaffView({
                       organizationId={currentOrganizationId}
                       allowOrgFilter={false}
                       presetTeamId={selectedTeam?.id}
-                    />
-                    </UpgradeGate>
-                  )}
-
-                  {activeTab === 'team-analysis' && selectedTeam && (
-                    <UpgradeGate allowed={planLimits.canUseAdvancedTeamAnalysis} featureName="チーム分析">
-                    <CoachTeamTrendsTab
-                      teamId={selectedTeam.id}
-                      teamName={selectedTeam.name}
-                      teamACWRData={safeTeamACWRData}
-                      teamACWRLoading={teamACWRLoading}
-                      showAvgRPE={showAvgRPE}
-                      showAvgLoad={showAvgLoad}
-                      cycleBaseDate={cycleBaseDate}
-                      onCycleBaseDateChange={setCycleBaseDate}
-                      cycleLoading={cycleLoading}
-                      cycleError={cycleError}
-                      teamDaily={teamDaily}
-                      cycleWeekLabel={`${cycleWeekRange.start} 〜 ${cycleWeekRange.end}`}
                     />
                     </UpgradeGate>
                   )}
