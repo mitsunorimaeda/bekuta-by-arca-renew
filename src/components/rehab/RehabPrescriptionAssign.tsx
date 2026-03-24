@@ -83,7 +83,8 @@ export default function RehabPrescriptionAssign({
         .from('prescriptions')
         .select('id, title, description')
         .eq('type', 'template')
-        .order('created_at', { ascending: false });
+        .eq('status', 'active')
+        .order('title', { ascending: true });
       if (error) throw error;
       setTemplates(data || []);
     } catch (err: any) { console.error(err.message); }
@@ -123,16 +124,32 @@ export default function RehabPrescriptionAssign({
     if (!window.confirm("現在の編集内容は上書きされます。よろしいですか？")) return;
 
     setSelectedTemplateId(newId);
-    const selectedTmpl = templates.find(t => t.id === newId);
-    if (selectedTmpl) {
-      setForm(prev => ({ ...prev, title: selectedTmpl.title, description: selectedTmpl.description }));
-      const { data: templateItems } = await supabase.schema('rehab').from('prescription_items').select('*').eq('prescription_id', newId).order('phase', { ascending: true }).order('item_index', { ascending: true });
-      if (templateItems) {
-        setItems(templateItems.map(item => ({
-          name: item.name, quantity: item.quantity, sets: item.sets,
-          phase: item.phase, xp: item.xp, icon_type: item.icon_type, video_url: item.video_url || ''
-        })));
+
+    // テンプレートの処方データ（phase_details含む）を取得
+    const { data: tmplData } = await supabase.schema('rehab').from('prescriptions')
+      .select('title, description, phase_details')
+      .eq('id', newId).single();
+
+    if (tmplData) {
+      setForm(prev => ({ ...prev, title: tmplData.title || '', description: tmplData.description || '' }));
+
+      // フェーズメタデータを適用
+      if (tmplData.phase_details && typeof tmplData.phase_details === 'object') {
+        setPhaseMetadata(prev => ({ ...prev, ...tmplData.phase_details }));
       }
+    }
+
+    // テンプレートのエクササイズを取得
+    const { data: templateItems } = await supabase.schema('rehab').from('prescription_items').select('*').eq('prescription_id', newId).order('phase', { ascending: true }).order('item_index', { ascending: true });
+    if (templateItems && templateItems.length > 0) {
+      setItems(templateItems.map(item => ({
+        name: item.name, quantity: item.quantity, sets: item.sets,
+        phase: item.phase, xp: item.xp, icon_type: item.icon_type, video_url: item.video_url || '',
+        input_type: item.input_type || 'check',
+        intensity: item.intensity || '', rep_range: item.rep_range || '',
+        target_rpe: item.target_rpe || '', tempo: item.tempo || '',
+        rest_seconds: item.rest_seconds || '', sub_exercise: item.sub_exercise || '',
+      })));
     }
   };
 
