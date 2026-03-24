@@ -72,6 +72,7 @@ const MessagingPanel = lazy(() =>
 
 // Rehab components (lazy)
 const RehabTemplateList = lazy(() => import('./rehab/RehabTemplateList'));
+const ProgramDashboard = lazy(() => import('../pages/program-management/ProgramDashboard').then(m => ({ default: m.ProgramDashboard })));
 const RehabProgramEditor = lazy(() => import('./rehab/RehabProgramEditor'));
 const RehabPrescriptionAssign = lazy(() => import('./rehab/RehabPrescriptionAssign'));
 const RehabPrescriptionView = lazy(() => import('./rehab/RehabPrescriptionView'));
@@ -1019,7 +1020,7 @@ export function StaffView({
                           {[
                             { key: 'settings' as const, label: 'フェーズ設定', locked: false },
                             { key: 'frozen' as const, label: '凍結選手', locked: false },
-                            ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, label: 'リハビリ', locked: !planLimits.canUseRehab }] : []),
+                            ...(canAccessRehab(user.staff_type) ? [{ key: 'rehab-programs' as const, label: 'プログラム', locked: !planLimits.canUseRehab }] : []),
                           ].map(({ key, label, locked }) => (
                             <button
                               key={key}
@@ -1140,19 +1141,24 @@ export function StaffView({
                     </Suspense>
                   )}
 
-                  {activeTab === 'rehab-programs' && (
+                  {activeTab === 'rehab-programs' && selectedTeam && (
                     <UpgradeGate allowed={planLimits.canUseRehab} featureName="プログラム管理">
                     <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
-                      <RehabTemplateList
-                        onOpenEditor={(templateId) => setFullscreenView({ type: 'editor', templateId })}
-                        onBack={() => setActiveTab('athletes')}
-                        showToast={showToast}
-                        onAthleteSelect={(athleteId) => {
+                      <ProgramDashboard
+                        teamId={selectedTeam.id}
+                        teamName={selectedTeam.name}
+                        onOpenKarte={(athleteId, injuryId) => {
                           const athlete = safeAthletes.find(a => a.id === athleteId);
                           if (athlete) setSelectedAthlete(athlete);
                         }}
-                        teamAthleteIds={teamAthleteIds}
-                        onBulkAssign={() => setFullscreenView({ type: 'bulk-assign' })}
+                        onCreateProgram={(athleteId) => {
+                          if (athleteId) {
+                            const athlete = safeAthletes.find(a => a.id === athleteId);
+                            if (athlete) setSelectedAthlete(athlete);
+                          }
+                          setFullscreenView({ type: 'assign' });
+                        }}
+                        onBack={() => setActiveTab('athletes')}
                       />
                     </Suspense>
                     </UpgradeGate>
