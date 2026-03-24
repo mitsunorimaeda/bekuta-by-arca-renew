@@ -63,10 +63,11 @@ interface DailyLog {
 
 interface TimelineEvent {
   date: string;
-  type: 'injury' | 'prescription' | 'note' | 'evaluation' | 'phase_change';
+  type: 'injury' | 'prescription' | 'note' | 'evaluation' | 'phase_change' | 'daily_log';
   title: string;
   detail: string;
   color: string;
+  icon?: string;
 }
 
 type KarteTab = 'injuries' | 'prescriptions' | 'notes' | 'timeline';
@@ -233,15 +234,59 @@ export function AthleteKarte({
   // ====== Timeline ======
   const timeline: TimelineEvent[] = (() => {
     const events: TimelineEvent[] = [];
+
+    // 怪我イベント
     injuries.forEach(inj => {
-      events.push({ date: inj.injury_date || inj.created_at.slice(0, 10), type: 'injury', title: `怪我: ${inj.diagnosis}`, detail: `${getBodyPartLabel(inj.body_part_key)} ${inj.side === 'left' ? '左' : inj.side === 'right' ? '右' : ''}`, color: 'red' });
+      events.push({
+        date: inj.injury_date || inj.created_at.slice(0, 10),
+        type: 'injury',
+        title: `怪我: ${inj.diagnosis}`,
+        detail: `${getBodyPartLabel(inj.body_part_key)} ${getSideLabel(inj.side)}`,
+        color: 'red',
+        icon: '🩹',
+      });
     });
-    prescriptions.forEach(p => {
-      events.push({ date: p.created_at.slice(0, 10), type: 'prescription', title: `処方: ${p.title}`, detail: `${p.purpose === 'rehab' ? 'リハビリ' : p.purpose === 'performance' ? 'パフォーマンス' : 'コンディショニング'} Phase ${p.current_phase}`, color: p.purpose === 'rehab' ? 'red' : p.purpose === 'performance' ? 'blue' : 'green' });
+
+    // 処方イベント
+    prescriptions.forEach(prog => {
+      const purposeLabel = prog.purpose === 'rehab' ? 'リハビリ' : prog.purpose === 'performance' ? 'パフォーマンス' : 'コンディショニング';
+      events.push({
+        date: prog.created_at.slice(0, 10),
+        type: 'prescription',
+        title: `処方開始: ${prog.title}`,
+        detail: `${purposeLabel} Phase ${prog.current_phase}`,
+        color: prog.purpose === 'rehab' ? 'red' : prog.purpose === 'performance' ? 'blue' : 'green',
+        icon: '📋',
+      });
     });
+
+    // ノートイベント
     notes.forEach(n => {
-      events.push({ date: n.created_at.slice(0, 10), type: 'note', title: n.note_type === 'soap' ? 'SOAPノート' : 'メモ', detail: n.subjective?.slice(0, 40) || n.body?.slice(0, 40) || '', color: 'purple' });
+      events.push({
+        date: n.created_at.slice(0, 10),
+        type: 'note',
+        title: n.note_type === 'soap' ? 'SOAPノート' : 'メモ',
+        detail: n.subjective?.slice(0, 50) || n.body?.slice(0, 50) || '',
+        color: 'purple',
+        icon: '📝',
+      });
     });
+
+    // 日次実施ログ（直近30件）
+    const prescriptionMap = new Map(prescriptions.map(prog => [prog.id, prog.title]));
+    logs.forEach(log => {
+      const progTitle = prescriptionMap.get(log.prescription_id) || '不明';
+      const painText = log.pain_level != null ? `NRS ${log.pain_level}` : '';
+      events.push({
+        date: log.log_date,
+        type: 'daily_log',
+        title: `実施記録`,
+        detail: `${progTitle}${painText ? ` · ${painText}` : ''}`,
+        color: log.pain_level != null && log.pain_level >= 7 ? 'red' : log.pain_level != null && log.pain_level >= 4 ? 'orange' : 'gray',
+        icon: '✅',
+      });
+    });
+
     return events.sort((a, b) => b.date.localeCompare(a.date));
   })();
 
@@ -665,25 +710,43 @@ export function AthleteKarte({
               {/* Vertical line */}
               <div className="absolute left-2.5 top-2 bottom-2 w-0.5 bg-gray-200 dark:bg-gray-700" />
 
-              {timeline.map((event, idx) => (
-                <div key={idx} className="relative pb-4">
-                  {/* Dot */}
-                  <div className={`absolute -left-3.5 top-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-900 ${
-                    event.color === 'red' ? 'bg-red-500' :
-                    event.color === 'blue' ? 'bg-blue-500' :
-                    event.color === 'green' ? 'bg-green-500' :
-                    'bg-purple-500'
-                  }`} />
+              {timeline.map((event, idx) => {
+                const dotColor =
+                  event.color === 'red' ? 'bg-red-500' :
+                  event.color === 'blue' ? 'bg-blue-500' :
+                  event.color === 'green' ? 'bg-green-500' :
+                  event.color === 'orange' ? 'bg-orange-500' :
+                  event.color === 'purple' ? 'bg-purple-500' :
+                  'bg-gray-400';
 
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 ml-2">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-semibold text-gray-900 dark:text-white">{event.title}</span>
-                      <span className="text-[10px] text-gray-400">{event.date}</span>
+                const borderColor =
+                  event.type === 'daily_log' ? 'border-gray-100 dark:border-gray-700/50' :
+                  'border-gray-200 dark:border-gray-700';
+
+                const bgColor =
+                  event.type === 'daily_log' ? 'bg-gray-50 dark:bg-gray-800/50' :
+                  'bg-white dark:bg-gray-800';
+
+                return (
+                  <div key={idx} className="relative pb-3">
+                    {/* Dot */}
+                    <div className={`absolute -left-3.5 top-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-900 ${dotColor}`} />
+
+                    <div className={`${bgColor} border ${borderColor} rounded-lg p-3 ml-2`}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {event.icon && <span className="text-xs">{event.icon}</span>}
+                          <span className={`font-semibold ${event.type === 'daily_log' ? 'text-[11px] text-gray-600 dark:text-gray-400' : 'text-xs text-gray-900 dark:text-white'}`}>{event.title}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">{event.date}</span>
+                      </div>
+                      {event.detail && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">{event.detail}</p>
+                      )}
                     </div>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400">{event.detail}</p>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
