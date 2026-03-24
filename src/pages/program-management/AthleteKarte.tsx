@@ -133,9 +133,9 @@ export function AthleteKarte({
           .select('*').eq('athlete_user_id', athleteId)
           .order('created_at', { ascending: false }),
         supabase.schema('rehab').from('prescription_daily_logs')
-          .select('log_date, pain_level, prescription_id')
+          .select('log_date, pain_level, rpe, prescription_id, completed_items, item_results')
           .eq('athlete_user_id', athleteId)
-          .order('log_date', { ascending: false }).limit(30),
+          .order('log_date', { ascending: false }).limit(60),
       ]);
       setInjuries(injRes.data || []);
       setPrescriptions(presRes.data || []);
@@ -564,7 +564,7 @@ export function AthleteKarte({
               <h4 className="text-xs font-bold text-red-500 mb-2 flex items-center gap-1"><Stethoscope size={12} /> リハビリ</h4>
               <div className="space-y-1.5">
                 {prescriptions.filter(p => p.purpose === 'rehab' && p.status === 'active').map(p => (
-                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} />
+                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} logs={logs} />
                 ))}
               </div>
             </div>
@@ -576,7 +576,7 @@ export function AthleteKarte({
               <h4 className="text-xs font-bold text-blue-500 mb-2 flex items-center gap-1"><Zap size={12} /> パフォーマンス</h4>
               <div className="space-y-1.5">
                 {prescriptions.filter(p => p.purpose === 'performance' && p.status === 'active').map(p => (
-                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} />
+                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} logs={logs} />
                 ))}
               </div>
             </div>
@@ -588,7 +588,7 @@ export function AthleteKarte({
               <h4 className="text-xs font-bold text-green-500 mb-2 flex items-center gap-1"><Activity size={12} /> コンディショニング</h4>
               <div className="space-y-1.5">
                 {prescriptions.filter(p => p.purpose === 'conditioning' && p.status === 'active').map(p => (
-                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} />
+                  <PrescriptionCard key={p.id} prescription={p} onOpen={() => onOpenPrescription?.(p.id, athleteId)} onPhaseChange={handlePhaseChange} logs={logs} />
                 ))}
               </div>
             </div>
@@ -755,35 +755,96 @@ export function AthleteKarte({
   );
 }
 
-// ====== Prescription Card ======
-function PrescriptionCard({ prescription: p, onOpen, onPhaseChange }: {
+// ====== Prescription Card with Activity Log ======
+function PrescriptionCard({ prescription: pres, onOpen, onPhaseChange, logs: presLogs }: {
   prescription: Prescription;
   onOpen: () => void;
   onPhaseChange: (id: string, current: number, dir: 'up' | 'down') => void;
+  logs?: DailyLog[];
 }) {
-  const maxPhase = Array.isArray(p.phase_details) ? p.phase_details.length : 1;
-  const progress = maxPhase > 0 ? (p.current_phase / maxPhase) * 100 : 0;
-  const purposeColor = p.purpose === 'rehab' ? 'red' : p.purpose === 'performance' ? 'blue' : 'green';
+  const [showLogs, setShowLogs] = useState(false);
+  const maxPhase = pres.phase_details ? (typeof pres.phase_details === 'object' ? Object.keys(pres.phase_details).length : 1) : 1;
+  const progress = maxPhase > 0 ? (pres.current_phase / maxPhase) * 100 : 0;
+  const purposeColor = pres.purpose === 'rehab' ? 'red' : pres.purpose === 'performance' ? 'blue' : 'green';
+  const isRehab = pres.purpose === 'rehab';
+
+  // この処方のログのみ
+  const myLogs = (presLogs || []).filter(l => l.prescription_id === pres.id).slice(0, 14);
+  const logCount = myLogs.length;
+  const lastLog = myLogs[0];
+  const lastLogDaysAgo = lastLog ? Math.ceil(Math.abs(Date.now() - new Date(lastLog.log_date).getTime()) / 86400000) : null;
 
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
-      <div onClick={onOpen} className="flex items-center justify-between cursor-pointer group">
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors truncate">{p.title}</div>
-          {p.goal && <div className="text-[10px] text-gray-400 mt-0.5 truncate">目標: {p.goal}</div>}
-          <div className="flex items-center gap-2 mt-1.5">
-            <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full bg-${purposeColor}-500`} style={{ width: `${Math.min(progress, 100)}%` }} />
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+      <div className="p-3">
+        <div onClick={onOpen} className="flex items-center justify-between cursor-pointer group">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors truncate">{pres.title}</div>
+            {pres.goal && <div className="text-[10px] text-gray-400 mt-0.5 truncate">目標: {pres.goal}</div>}
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full bg-${purposeColor}-500`} style={{ width: `${Math.min(progress, 100)}%` }} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400">P{pres.current_phase}/{maxPhase}</span>
             </div>
-            <span className="text-[10px] font-bold text-gray-400">P{p.current_phase}/{maxPhase}</span>
+          </div>
+          <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 ml-2" />
+        </div>
+
+        {/* フェーズ変更ボタン */}
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => onPhaseChange(pres.id, pres.current_phase, 'down')} disabled={pres.current_phase <= 1} className="flex-1 py-1.5 text-[10px] font-semibold text-orange-600 bg-orange-50 dark:bg-orange-900/10 rounded-lg disabled:opacity-30 transition-colors">← リグレ</button>
+          <button onClick={() => onPhaseChange(pres.id, pres.current_phase, 'up')} disabled={pres.current_phase >= maxPhase} className="flex-1 py-1.5 text-[10px] font-semibold text-blue-600 bg-blue-50 dark:bg-blue-900/10 rounded-lg disabled:opacity-30 transition-colors">プログレ →</button>
+        </div>
+
+        {/* 実施状況サマリー */}
+        {logCount > 0 && (
+          <button onClick={() => setShowLogs(!showLogs)} className="w-full mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-[10px] text-gray-400 hover:text-gray-600 transition-colors">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={12} className="text-green-500" />
+              <span>直近実施: {lastLogDaysAgo === 0 ? '今日' : lastLogDaysAgo === 1 ? '昨日' : `${lastLogDaysAgo}日前`}</span>
+              {lastLog && (
+                <span className={`px-1.5 py-0.5 rounded font-bold ${
+                  isRehab
+                    ? (lastLog.pain_level >= 7 ? 'bg-red-100 text-red-600' : lastLog.pain_level >= 4 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600')
+                    : 'bg-blue-100 text-blue-600'
+                }`}>
+                  {isRehab ? `NRS ${lastLog.pain_level}` : lastLog.rpe ? `RPE ${lastLog.rpe}` : ''}
+                </span>
+              )}
+              <span>計{logCount}回実施</span>
+            </div>
+            <ChevronDown size={12} className={`transition-transform ${showLogs ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      {/* 展開: 直近ログ一覧 */}
+      {showLogs && myLogs.length > 0 && (
+        <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 px-3 py-2">
+          <div className="space-y-1">
+            {myLogs.map((log, idx) => {
+              const completedCount = log.completed_items ? (Array.isArray(log.completed_items) ? log.completed_items.length : 0) : 0;
+              return (
+                <div key={idx} className="flex items-center justify-between text-[10px] py-1">
+                  <span className="text-gray-500 font-medium w-16">{log.log_date.slice(5)}</span>
+                  <span className="text-gray-400">{completedCount}項目完了</span>
+                  {isRehab && log.pain_level != null && (
+                    <span className={`px-1.5 py-0.5 rounded font-bold ${
+                      log.pain_level >= 7 ? 'bg-red-100 text-red-600' :
+                      log.pain_level >= 4 ? 'bg-orange-100 text-orange-600' :
+                      'bg-green-100 text-green-600'
+                    }`}>NRS {log.pain_level}</span>
+                  )}
+                  {!isRehab && log.rpe != null && (
+                    <span className="px-1.5 py-0.5 rounded font-bold bg-blue-100 text-blue-600">RPE {log.rpe}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
-        <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 ml-2" />
-      </div>
-      <div className="flex gap-2 mt-2">
-        <button onClick={() => onPhaseChange(p.id, p.current_phase, 'down')} disabled={p.current_phase <= 1} className="flex-1 py-1.5 text-[10px] font-semibold text-orange-600 bg-orange-50 dark:bg-orange-900/10 rounded-lg disabled:opacity-30 transition-colors">← リグレ</button>
-        <button onClick={() => onPhaseChange(p.id, p.current_phase, 'up')} disabled={p.current_phase >= maxPhase} className="flex-1 py-1.5 text-[10px] font-semibold text-blue-600 bg-blue-50 dark:bg-blue-900/10 rounded-lg disabled:opacity-30 transition-colors">プログレ →</button>
-      </div>
+      )}
     </div>
   );
 }
