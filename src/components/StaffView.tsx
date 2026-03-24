@@ -1157,7 +1157,7 @@ export function StaffView({
                           setFullscreenView({ type: 'assign' });
                         }}
                         onOpenPrescription={(prescriptionId, athleteId) => {
-                          setFullscreenView({ type: 'prescription-view', prescriptionId, athleteId });
+                          setFullscreenView({ type: 'view-prescription', prescriptionId, athleteId });
                         }}
                       />
                     </Suspense>
