@@ -309,8 +309,8 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
                 <span>{items.length}名</span>
               </h4>
               <div className="space-y-1.5">
-                {items.map(p => (
-                  <ProgramCard key={p.prescriptionId} program={p} onOpenKarte={onOpenKarte} onArchive={handleArchive} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
+                {items.map(prog => (
+                  <ProgramCard key={prog.prescriptionId} program={prog} onOpenKarte={onOpenKarte} onArchive={handleArchive} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
                 ))}
               </div>
             </div>
@@ -319,8 +319,8 @@ export function ProgramDashboard({ teamId, teamName, onOpenKarte, onCreateProgra
       ) : (
         // All / Performance / Conditioning: flat list
         <div className="space-y-1.5">
-          {filteredPrograms.map(p => (
-            <ProgramCard key={p.prescriptionId} program={p} onOpenKarte={onOpenKarte} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
+          {filteredPrograms.map(prog => (
+            <ProgramCard key={prog.prescriptionId} program={prog} onOpenKarte={onOpenKarte} onArchive={handleArchive} getDaysSince={getDaysSince} getSideLabel={getSideLabel} />
           ))}
         </div>
       )}
