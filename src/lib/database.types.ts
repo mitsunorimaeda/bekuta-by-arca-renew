@@ -6248,6 +6248,7 @@ export type Database = {
           organization_id: string | null
           phone_number: string | null
           role: string
+          share_cycle_data_with_coaches: boolean
           status: string
           frozen_at: string | null
           frozen_by: string | null
@@ -6272,6 +6273,7 @@ export type Database = {
           organization_id?: string | null
           phone_number?: string | null
           role: string
+          share_cycle_data_with_coaches?: boolean
           status?: string
           frozen_at?: string | null
           frozen_by?: string | null
@@ -6296,6 +6298,7 @@ export type Database = {
           organization_id?: string | null
           phone_number?: string | null
           role?: string
+          share_cycle_data_with_coaches?: boolean
           status?: string
           frozen_at?: string | null
           frozen_by?: string | null

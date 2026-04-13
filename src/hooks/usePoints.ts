@@ -32,6 +32,7 @@ export function usePoints(userId: string | null | undefined, options: Options = 
 
   const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };

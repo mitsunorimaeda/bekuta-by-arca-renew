@@ -31,14 +31,27 @@ export function StreakDisplay({ streak, label, icon, compact = false }: StreakDi
     return 'border-blue-200 dark:border-blue-800';
   };
 
+  const getDaysDiffFromToday = () => {
+    if (!streak?.last_recorded_date) return null;
+    // YYYY-MM-DD文字列をTZ非依存で比較
+    const [ly, lm, ld] = streak.last_recorded_date.split('-').map(Number);
+    const lastDateNum = ly * 10000 + lm * 100 + ld;
+    const now = new Date();
+    // JSTで今日の日付を取得
+    const jstOffset = 9 * 60;
+    const jstNow = new Date(now.getTime() + (jstOffset - now.getTimezoneOffset()) * 60000);
+    const todayNum = jstNow.getFullYear() * 10000 + (jstNow.getMonth() + 1) * 100 + jstNow.getDate();
+    return todayNum - lastDateNum;
+  };
+
   const isAtRisk = () => {
-    if (!streak || !streak.last_recorded_date) return false;
-    const lastDate = new Date(streak.last_recorded_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-    return daysDiff >= 1;
+    const diff = getDaysDiffFromToday();
+    return diff !== null && diff >= 1;
+  };
+
+  const isFreezeProtected = () => {
+    const diff = getDaysDiffFromToday();
+    return diff === 1 && (streak?.streak_freeze_count ?? 0) > 0;
   };
 
   if (compact) {
@@ -65,15 +78,32 @@ export function StreakDisplay({ streak, label, icon, compact = false }: StreakDi
             <span className="text-sm text-gray-600 dark:text-gray-400">日連続</span>
           </div>
         </div>
-        <div className={`p-3 rounded-lg ${getStreakBgColor()}`}>
-          {icon || <Flame className={`w-6 h-6 ${getStreakColor()}`} />}
+        <div className="flex flex-col items-end gap-2">
+          <div className={`p-3 rounded-lg ${getStreakBgColor()}`}>
+            {icon || <Flame className={`w-6 h-6 ${getStreakColor()}`} />}
+          </div>
+          {(streak?.streak_freeze_count ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              🧊 ×{streak!.streak_freeze_count}
+            </span>
+          )}
         </div>
       </div>
 
       {isAtRisk() && (
-        <div className="flex items-center space-x-2 mb-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-xs text-red-600 dark:text-red-400">今日記録しないとストリークが途切れます！</p>
+        <div className={`flex items-center space-x-2 mb-3 p-2 border rounded-lg ${
+          isFreezeProtected()
+            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+        }`}>
+          <AlertCircle className={`w-4 h-4 flex-shrink-0 ${isFreezeProtected() ? 'text-blue-500' : 'text-red-500'}`} />
+          {isFreezeProtected() ? (
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              🧊 ストリークフリーズ残り{streak!.streak_freeze_count}回 — 今日記録しなくても1回スキップできます
+            </p>
+          ) : (
+            <p className="text-xs text-red-600 dark:text-red-400">今日記録しないとストリークが途切れます！</p>
+          )}
         </div>
       )}
 

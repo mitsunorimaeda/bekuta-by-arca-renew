@@ -15,9 +15,12 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
-  // 簡易認証: Authorization ヘッダーでservice_role_keyを確認
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.includes(serviceKey)) {
+  // 認証: service_role_key または CRON_SECRET（pg_cron用）を確認
+  const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const isValidService = authHeader.includes(serviceKey);
+  const isValidCron = cronSecret.length > 0 && authHeader === `Bearer ${cronSecret}`;
+  if (!isValidService && !isValidCron) {
     return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401 });
   }
 
@@ -93,9 +96,9 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           user_id: userId,
-          title: "コンディション記録",
-          body: "今日のコンディションを記録しましょう",
-          url: "/",
+          title: "📝 コンディション記録",
+          body: "今日のコンディションをまだ記録していません。記録しましょう！",
+          url: "/athlete",
         }),
       });
       if (res.ok) {

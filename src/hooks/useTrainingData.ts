@@ -96,8 +96,8 @@ function buildAcwrFromTrainingRecords(records: TrainingRecordRow[]): ACWRPoint[]
     // chronic は「28日合計 / 4」で週平均に
     const chronic = chronicSum / 4;
 
-    const acwr =
-      chronic > 0 ? acute / chronic : null;
+    // 28日未満のデータでは信頼性が低いためnullを返す（DB優先・フォールバック時も一貫した挙動）
+    const acwr = (chronic > 0 && chronicDays >= 28) ? acute / chronic : null;
 
     points.push({
       date,

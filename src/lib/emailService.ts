@@ -86,11 +86,7 @@ export async function sendAlertEmail(
   userName: string,
   alert: Alert & { recommendations?: string[] }
 ): Promise<SendEmailResult> {
-  console.info('[sendAlertEmail] 現在フロント側からのアラートメール送信は停止中です', {
-    userEmail,
-    userName,
-    alert,
-  });
+  console.info('[sendAlertEmail] Email notification skipped (type: alert) - frontend sending is disabled');
 
   // 実際のメール送信は行わない
   return {
@@ -115,11 +111,7 @@ export async function sendWeeklySummaryEmail(
     insights?: string[];
   }
 ): Promise<SendEmailResult> {
-  console.info('[sendWeeklySummaryEmail] 現在この機能は停止中です', {
-    userEmail,
-    userName,
-    summaryData,
-  });
+  console.info('[sendWeeklySummaryEmail] Email notification skipped (type: weekly_summary) - feature is disabled');
 
   // sendEmail は呼ばないので、実際のメール送信は発生しない
   return {

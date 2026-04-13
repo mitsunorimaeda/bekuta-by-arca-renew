@@ -7,12 +7,13 @@ import { TutorialController } from './TutorialController';
 import { useTutorialContext } from '../contexts/TutorialContext';
 import { getTutorialSteps } from '../lib/tutorialContent';
 import { isGlobalAdmin } from '../lib/permissions';
-import { Building2, Users, UserPlus, AlertTriangle, BarChart3, X, HelpCircle, CreditCard, Sliders, UserCog, UsersRound, Layout, ShieldCheck, Menu, Shield, FileText } from 'lucide-react';
+import { Building2, Users, UserPlus, AlertTriangle, BarChart3, X, HelpCircle, CreditCard, Sliders, UserCog, UsersRound, Layout, ShieldCheck, Menu, Shield, FileText, FolderKanban } from 'lucide-react';
 import { OrganizationOverview } from './OrganizationOverview';
 import { SubscriptionSettings } from './SubscriptionSettings';
 import { OrganizationSettings } from './OrganizationSettings';
 import { TeamAccessRequestManagement } from './TeamAccessRequestManagement';
 import { AthleteTransferManagement } from './AthleteTransferManagement';
+import { TeamManagementPanel } from './TeamManagementPanel';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 import { InviteLinkGenerator } from './InviteLinkGenerator';
 import { PendingStaffApproval } from './PendingStaffApproval';
@@ -33,7 +34,7 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'organization'>('overview');
   const [usersSubTab, setUsersSubTab] = useState<'invite' | 'manage' | 'pending'>('invite');
-  const [organizationSubTab, setOrganizationSubTab] = useState<'members' | 'settings' | 'subscription' | 'transfers' | 'team-access'>('members');
+  const [organizationSubTab, setOrganizationSubTab] = useState<'members' | 'settings' | 'subscription' | 'transfers' | 'team-access' | 'teams'>('members');
   // inviteSubTab removed - share link only
   const [loading, setLoading] = useState(true);
   const [showAlertPanel, setShowAlertPanel] = useState(false);
@@ -330,6 +331,17 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                         <UsersRound className="w-3.5 h-3.5" />
                         <span>チームアクセス</span>
                       </button>
+                      <button
+                        onClick={() => setOrganizationSubTab('teams')}
+                        className={`py-3 px-4 border-b-2 font-medium text-xs flex items-center space-x-2 ml-4 whitespace-nowrap ${
+                          organizationSubTab === 'teams'
+                            ? 'border-orange-500 text-orange-700 dark:text-orange-400'
+                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <FolderKanban className="w-3.5 h-3.5" />
+                        <span>チーム管理</span>
+                      </button>
                     </>
                   )}
                 </nav>
@@ -391,6 +403,8 @@ export function OrganizationAdminView({ user, alerts, organizationId, organizati
                       organizationId={organizationId}
                       isAdmin={true}
                     />
+                  ) : organizationSubTab === 'teams' ? (
+                    <TeamManagementPanel organizationId={organizationId} />
                   ) : null}
                 </div>
               ) : null}

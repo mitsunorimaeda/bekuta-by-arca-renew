@@ -36,6 +36,7 @@ export function useStreaks(userId: string, options: Options = {}) {
 
   const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -219,27 +220,29 @@ export function useStreaks(userId: string, options: Options = {}) {
     [userId, fetchStreaks]
   );
 
+  // YYYY-MM-DD文字列をTZ非依存でJST当日との差分日数として返す
+  const calcDaysDiffJST = useCallback((lastRecordedDate: string): number => {
+    const [ly, lm, ld] = lastRecordedDate.split('-').map(Number);
+    const lastDateNum = ly * 10000 + lm * 100 + ld;
+    const now = new Date();
+    const jstOffset = 9 * 60;
+    const jstNow = new Date(now.getTime() + (jstOffset - now.getTimezoneOffset()) * 60000);
+    const todayNum = jstNow.getFullYear() * 10000 + (jstNow.getMonth() + 1) * 100 + jstNow.getDate();
+    return todayNum - lastDateNum;
+  }, []);
+
   const isStreakAtRisk = useCallback((streak: Streak | null) => {
     if (!streak?.last_recorded_date) return false;
-    const lastDate = new Date(streak.last_recorded_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
-    return daysDiff >= 1;
-  }, []);
+    return calcDaysDiffJST(streak.last_recorded_date) >= 1;
+  }, [calcDaysDiffJST]);
 
   const getStreakStatus = useCallback((streak: Streak | null): "safe" | "at_risk" | "broken" => {
     if (!streak?.last_recorded_date) return "broken";
-    const lastDate = new Date(streak.last_recorded_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
+    const daysDiff = calcDaysDiffJST(streak.last_recorded_date);
     if (daysDiff === 0) return "safe";
     if (daysDiff === 1) return "at_risk";
     return "broken";
-  }, []);
+  }, [calcDaysDiffJST]);
 
   return {
     streaks,

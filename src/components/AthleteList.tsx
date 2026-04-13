@@ -3,10 +3,12 @@ import React, { useState, useMemo } from 'react';
 import { User } from '../lib/supabase';
 import {
   Activity,
-  AlertTriangle,
+  ArrowUpDown,
   ChevronRight,
   CheckCircle2,
+  SlidersHorizontal,
   Stethoscope,
+  X,
 } from 'lucide-react';
 import { ConditionPhaseBadge } from './ConditionPhaseBadge';
 import type { CyclePhase } from '../lib/cyclePhaseUtils';
@@ -77,6 +79,35 @@ interface AthleteListProps {
 // ACWR 分析を始めるまでに必要な日数
 const MIN_DAYS_FOR_ACWR = 21;
 
+type SortKey = 'lastRecord' | 'name' | 'acwrDesc' | 'risk';
+type FilterKey = 'all' | 'noRecord3d' | 'noRecord7d' | 'caution' | 'high';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  lastRecord: '最終記録順',
+  name:       '名前順',
+  acwrDesc:   'ACWR高い順',
+  risk:       'リスク順',
+};
+
+const FILTER_LABELS: Record<FilterKey, string> = {
+  all:        '全員',
+  noRecord3d: '3日以上未記録',
+  noRecord7d: '7日以上未記録',
+  caution:    '要注意以上',
+  high:       '高リスクのみ',
+};
+
+const RISK_ORDER: Record<RiskLevel, number> = {
+  high: 0, caution: 1, good: 2, low: 3, unknown: 4,
+};
+
+function daysSince(dateStr: string | null | undefined): number {
+  if (!dateStr) return 9999;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export function AthleteList({
   athletes,
   onAthleteSelect,
@@ -86,47 +117,77 @@ export function AthleteList({
   rehabAthleteIds,
 }: AthleteListProps) {
   const [search, setSearch] = useState('');
-  const [filterRisk, setFilterRisk] = useState<'all' | 'high'>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('lastRecord');
+  const [filterKey, setFilterKey] = useState<FilterKey>('all');
   const [filterRehab, setFilterRehab] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const displayName = (a: any) => a?.nickname || a?.name || '名前未設定';
 
   const filteredAthletes = useMemo(() => {
     const s = search.trim().toLowerCase();
 
-    return athletes.filter((athlete) => {
+    const filtered = athletes.filter((athlete) => {
       const key =
         (athlete as any)?.id ??
         (athlete as any)?.user_id ??
         (athlete as any)?.athlete_user_id;
-    
+
       const acwrInfo = key ? (athleteACWRMap as any)[key] : undefined;
-    
+
       const daysOfData =
         typeof acwrInfo?.daysOfData === 'number' && Number.isFinite(acwrInfo.daysOfData)
           ? acwrInfo.daysOfData
           : null;
-    
+
       const acwrNum =
         typeof acwrInfo?.currentACWR === 'number' && Number.isFinite(acwrInfo.currentACWR)
           ? acwrInfo.currentACWR
           : null;
-    
+
       const hasValue = acwrNum != null && Number.isFinite(acwrNum) && acwrNum > 0;
       const hasACWR = hasValue && (daysOfData == null ? true : daysOfData >= MIN_DAYS_FOR_ACWR);
-    
       const riskLevel: RiskLevel = hasACWR ? (acwrInfo?.riskLevel ?? 'unknown') : 'unknown';
 
-      // ✅ 「高リスクのみ」は high のみ（caution を混ぜない）
-      const riskMatch = filterRisk === 'all' ? true : riskLevel === 'high';
+      const text = displayName(athlete).toLowerCase();
+      if (s && !text.includes(s)) return false;
+      if (filterRehab && !(rehabAthleteIds?.has(athlete.id) ?? false)) return false;
 
-      const text = `${displayName(athlete)}`.toLowerCase();
-      const searchMatch = s === '' ? true : text.includes(s);
+      const days = daysSince(athlete.last_training_date ?? acwrInfo?.lastDate);
 
-      const rehabMatch = !filterRehab || (rehabAthleteIds?.has(athlete.id) ?? false);
-
-      return riskMatch && searchMatch && rehabMatch;
+      switch (filterKey) {
+        case 'noRecord3d': return days >= 3;
+        case 'noRecord7d': return days >= 7;
+        case 'caution':    return riskLevel === 'caution' || riskLevel === 'high';
+        case 'high':       return riskLevel === 'high';
+        default:           return true;
+      }
     });
-  }, [athletes, search, filterRisk, filterRehab, athleteACWRMap, weekCardMap, rehabAthleteIds]);
+
+    return [...filtered].sort((a, b) => {
+      const acwrA = (athleteACWRMap as any)[a.id];
+      const acwrB = (athleteACWRMap as any)[b.id];
+
+      switch (sortKey) {
+        case 'lastRecord': {
+          const dA = daysSince(a.last_training_date ?? acwrA?.lastDate);
+          const dB = daysSince(b.last_training_date ?? acwrB?.lastDate);
+          return dA - dB;
+        }
+        case 'name':
+          return displayName(a).localeCompare(displayName(b), 'ja');
+        case 'acwrDesc': {
+          const aA = typeof acwrA?.currentACWR === 'number' ? acwrA.currentACWR : -1;
+          const aB = typeof acwrB?.currentACWR === 'number' ? acwrB.currentACWR : -1;
+          return aB - aA;
+        }
+        case 'risk': {
+          const rA = RISK_ORDER[acwrA?.riskLevel ?? 'unknown'];
+          const rB = RISK_ORDER[acwrB?.riskLevel ?? 'unknown'];
+          return rA - rB;
+        }
+      }
+    });
+  }, [athletes, search, filterKey, filterRehab, sortKey, athleteACWRMap, rehabAthleteIds]);
 
   const renderRiskBadge = (riskLevel: RiskLevel) => {
     switch (riskLevel) {
@@ -198,61 +259,110 @@ export function AthleteList({
 
   return (
     <div className="space-y-4">
-      {/* 検索 ＋ フィルタ */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* 検索 ＋ 並び替え・絞り込みトグル */}
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="名前で検索"
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
           />
           <Activity className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setFilterRisk('all')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filterRisk === 'all'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            全員表示
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilterRisk('high')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
-              filterRisk === 'high'
-                ? 'bg-red-50 text-red-700 border-red-200'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-red-50 hover:text-red-700'
-            }`}
-          >
-            <AlertTriangle className="w-3 h-3" />
-            高リスクのみ
-          </button>
-
-          {rehabAthleteIds && rehabAthleteIds.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setFilterRehab(!filterRehab)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
-                filterRehab
-                  ? 'bg-orange-50 text-orange-700 border-orange-200'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-700'
-              }`}
-            >
-              <Stethoscope className="w-3 h-3" />
-              リハビリ中 ({rehabAthleteIds.size})
+          {search && (
+            <button type="button" onClick={() => setSearch('')} className="absolute right-2.5 top-2.5">
+              <X className="w-3.5 h-3.5 text-gray-400" />
             </button>
           )}
         </div>
+
+        {(filterKey !== 'all' || filterRehab || search) && (
+          <button
+            type="button"
+            onClick={() => { setFilterKey('all'); setFilterRehab(false); setSearch(''); }}
+            className="text-xs px-2 py-1.5 rounded-md text-blue-600 hover:bg-blue-50 whitespace-nowrap"
+          >
+            解除
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowControls((v) => !v)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+            showControls
+              ? 'bg-green-50 text-green-700 border-green-200'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          並び替え・絞り込み
+        </button>
       </div>
+
+      {/* コントロールパネル */}
+      {showControls && (
+        <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
+          {/* 並び替え */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
+              <ArrowUpDown className="w-3 h-3" /> 並び替え
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSortKey(key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    sortKey === key
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  {SORT_LABELS[key]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 絞り込み */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-1.5">絞り込み</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilterKey(key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    filterKey === key
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  {FILTER_LABELS[key]}
+                </button>
+              ))}
+              {rehabAthleteIds && rehabAthleteIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterRehab((v) => !v)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors inline-flex items-center gap-1 ${
+                    filterRehab
+                      ? 'bg-orange-500 text-white border-orange-500'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  <Stethoscope className="w-3 h-3" />
+                  リハビリ中 ({rehabAthleteIds.size})
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* リスト本体 */}
       <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl bg-white">

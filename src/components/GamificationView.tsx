@@ -156,7 +156,8 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
   // ✅ ポイント履歴モーダル
   const [showPointHistory, setShowPointHistory] = useState(false);
 
-  // ✅ 全体ローディング（rankings は画面全体のローディングには含めない）
+  // 全体ローディング（rankings は含めない）
+  // NOTE: セクションごとに段階表示するため、グローバルブロックには使わない
   const loading = streaksLoading || pointsLoading || badgesLoading;
 
   const levelProgress = useMemo(() => {
@@ -307,12 +308,7 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
       title="ゲーミフィケーションの表示に失敗しました"
       description="この画面だけ復旧できます。再表示を試してください。"
     >
-      {loading ? (
-        <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-        </div>
-      ) : (
-        <div className="space-y-6">
+      <div className="space-y-6">
           <ErrorBoundary compact title="チュートリアルの表示でエラー">
             <TutorialController
               steps={getTutorialSteps("gamification")}
@@ -341,16 +337,28 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <ErrorBoundary compact title="ストリーク表示でエラー">
-              <StreakDisplay
-                streak={getTotalStreak()}
-                label="総合ストリーク"
-                icon={<Flame className="w-6 h-6" />}
-              />
+              {streaksLoading ? (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex items-center justify-center h-24">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500" />
+                </div>
+              ) : (
+                <StreakDisplay
+                  streak={getTotalStreak()}
+                  label="総合ストリーク"
+                  icon={<Flame className="w-6 h-6" />}
+                />
+              )}
             </ErrorBoundary>
 
             <ErrorBoundary compact title="レベル表示でエラー">
               <div className="space-y-3">
-                <LevelProgressCard userPoints={userPoints} levelProgress={levelProgress} showDetails={false} />
+                {pointsLoading ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex items-center justify-center h-24">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-500" />
+                  </div>
+                ) : (
+                  <LevelProgressCard userPoints={userPoints} levelProgress={levelProgress} showDetails={false} />
+                )}
               </div>
             </ErrorBoundary>
 
@@ -359,30 +367,38 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
               className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all text-left"
               data-tutorial="badges-card"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">バッジコレクション</p>
-                  <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{badgeProgress.earned}</p>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">/ {badgeProgress.total}</span>
+              {badgesLoading ? (
+                <div className="flex items-center justify-center h-16">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-500" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">バッジコレクション</p>
+                      <div className="flex items-baseline space-x-2">
+                        <p className="text-3xl font-bold text-gray-900 dark:text-white">{badgeProgress.earned}</p>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">/ {badgeProgress.total}</span>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                      <Award className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                    </div>
                   </div>
-                </div>
-                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                  <Award className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
-                </div>
-              </div>
 
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full transition-all duration-500"
-                  style={{ width: `${badgeProgress.percentage}%` }}
-                />
-              </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full transition-all duration-500"
+                      style={{ width: `${badgeProgress.percentage}%` }}
+                    />
+                  </div>
 
-              {newBadges.length > 0 && (
-                <div className="mt-2 flex items-center space-x-1 text-xs text-red-600 dark:text-red-400 font-semibold animate-pulse">
-                  <span>新しいバッジ: {newBadges.length}個</span>
-                </div>
+                  {newBadges.length > 0 && (
+                    <div className="mt-2 flex items-center space-x-1 text-xs text-red-600 dark:text-red-400 font-semibold animate-pulse">
+                      <span>新しいバッジ: {newBadges.length}個</span>
+                    </div>
+                  )}
+                </>
               )}
             </button>
           </div>
@@ -396,12 +412,18 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
                 </h3>
 
                 <ErrorBoundary compact title="ストリーク詳細でエラー">
-                  <div className="space-y-4">
-                    <StreakDisplay streak={getStreakByType("training")} label="練習記録" />
-                    <StreakDisplay streak={getStreakByType("weight")} label="体重記録" />
-                    <StreakDisplay streak={getStreakByType("sleep")} label="睡眠記録" />
-                    <StreakDisplay streak={getStreakByType("motivation")} label="モチベーション記録" />
-                  </div>
+                  {streaksLoading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500" />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <StreakDisplay streak={getStreakByType("training")} label="練習記録" />
+                      <StreakDisplay streak={getStreakByType("weight")} label="体重記録" />
+                      <StreakDisplay streak={getStreakByType("sleep")} label="睡眠記録" />
+                      <StreakDisplay streak={getStreakByType("motivation")} label="モチベーション記録" />
+                    </div>
+                  )}
                 </ErrorBoundary>
               </div>
 
@@ -412,23 +434,29 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
                 </h3>
 
                 <ErrorBoundary compact title="レベル進捗の表示でエラー">
-                  <LevelProgressCard
-                    userPoints={userPoints}
-                    levelProgress={levelProgress}
-                    showDetails={true}
-                    actions={
-                      <button
-                        onClick={openPointHistory}
-                        className="w-full sm:w-auto px-3 py-2 rounded-lg text-sm
-                                   bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
-                                   hover:bg-gray-50 dark:hover:bg-gray-700
-                                   text-gray-900 dark:text-white transition-colors"
-                        title="ポイント履歴を表示"
-                      >
-                        ポイント履歴
-                      </button>
-                    }
-                  />
+                  {pointsLoading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-500" />
+                    </div>
+                  ) : (
+                    <LevelProgressCard
+                      userPoints={userPoints}
+                      levelProgress={levelProgress}
+                      showDetails={true}
+                      actions={
+                        <button
+                          onClick={openPointHistory}
+                          className="w-full sm:w-auto px-3 py-2 rounded-lg text-sm
+                                     bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+                                     hover:bg-gray-50 dark:hover:bg-gray-700
+                                     text-gray-900 dark:text-white transition-colors"
+                          title="ポイント履歴を表示"
+                        >
+                          ポイント履歴
+                        </button>
+                      }
+                    />
+                  )}
                 </ErrorBoundary>
               </div>
             </div>
@@ -531,7 +559,6 @@ export function GamificationView({ userId, userTeamId }: GamificationViewProps) 
             onReload={reloadPointHistory}
           />
         </div>
-      )}
     </ErrorBoundary>
   );
 }

@@ -158,22 +158,33 @@ export function OverviewTabContent(props: OverviewTabContentProps) {
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">現在のACWR</h3>
                 <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 dark:text-gray-500" />
               </div>
-              <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
-                  {latestACWRValue != null ? latestACWRValue.toFixed(2) : '--'}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</div>
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                    <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">急性負荷</p>
-                    <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.acuteLoad}</p>
+              {latestACWRValue != null ? (
+                <div className="text-center">
+                  <div className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: getRiskColor(latestACWR.riskLevel) }}>
+                    {latestACWRValue.toFixed(2)}
                   </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
-                    <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">慢性負荷</p>
-                    <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.chronicLoad}</p>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">{getRiskLabel(latestACWR.riskLevel ?? 'unknown')}</div>
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 text-sm">
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                      <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">急性負荷</p>
+                      <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.acuteLoad}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 transition-colors">
+                      <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">慢性負荷</p>
+                      <p className="font-semibold text-sm sm:text-base dark:text-white">{latestACWR.chronicLoad}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-base font-medium text-blue-600 dark:text-blue-400 mb-1">
+                    計測中
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    28日分の記録でACWRが計算されます
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

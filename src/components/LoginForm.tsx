@@ -40,9 +40,7 @@ export function LoginForm({ onLogin, onNavigateToLanding }: LoginFormProps) {
       trackEvent('login_success');
     } catch (err: any) {
       trackEvent('login_failed', { error: err.message });
-      console.error('❌ Login error:', err);
-      console.error('Error message:', err.message);
-      console.error('Error details:', err);
+      console.error('❌ Login error:', err?.message ?? 'Unknown error');
 
       if (
         err.message?.includes('Invalid login credentials') ||

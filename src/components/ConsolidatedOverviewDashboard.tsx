@@ -352,6 +352,8 @@ export function ConsolidatedOverviewDashboard({
             <div className="text-lg font-bold">
               {typeof (latestACWR as any)?.acwr === 'number'
                 ? (latestACWR as any).acwr.toFixed(2)
+                : latestACWR
+                ? '計測中'
                 : '-'}
             </div>
           </div>
@@ -416,43 +418,54 @@ export function ConsolidatedOverviewDashboard({
 
           {latestACWR ? (
             <>
-              <div className="mb-4">
-                <div className="flex items-baseline space-x-2">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-300">
-                    {typeof (latestACWR as any)?.acwr === 'number'
-                      ? (latestACWR as any).acwr.toFixed(2)
-                      : '不明'}
+              {typeof (latestACWR as any)?.acwr === 'number' ? (
+                <>
+                  <div className="mb-4">
+                    <div className="flex items-baseline space-x-2">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-300">
+                        {(latestACWR as any).acwr.toFixed(2)}
+                      </div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">ACWR</span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 mt-1">
+                      {(latestACWR as any).riskLevel === 'high' && (
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                      )}
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {(latestACWR as any).riskLevel === 'good' && '理想的な負荷'}
+                        {(latestACWR as any).riskLevel === 'caution' && '負荷がやや高め'}
+                        {(latestACWR as any).riskLevel === 'high' && '怪我リスク警告'}
+                        {(latestACWR as any).riskLevel === 'low' && '負荷がやや低め'}
+                      </p>
+                    </div>
                   </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">ACWR</span>
-                </div>
 
-                <div className="flex items-center space-x-2 mt-1">
-                  {(latestACWR as any).riskLevel === 'high' && (
-                    <AlertTriangle className="w-4 h-4 text-red-600" />
-                  )}
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {(latestACWR as any).riskLevel === 'good' && '理想的な負荷'}
-                    {(latestACWR as any).riskLevel === 'caution' && '負荷がやや高め'}
-                    {(latestACWR as any).riskLevel === 'high' && '怪我リスク警告'}
-                    {(latestACWR as any).riskLevel === 'low' && '負荷がやや低め'}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">急性負荷</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {(latestACWR as any).acuteLoad ?? '-'}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">慢性負荷</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {(latestACWR as any).chronicLoad ?? '-'}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="py-4">
+                  <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">
+                    計測中
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    28日分の記録でACWRが計算されます
                   </p>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">急性負荷</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {(latestACWR as any).acuteLoad ?? '-'}
-                  </p>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">慢性負荷</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {(latestACWR as any).chronicLoad ?? '-'}
-                  </p>
-                </div>
-              </div>
+              )}
 
               {latestTraining && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">

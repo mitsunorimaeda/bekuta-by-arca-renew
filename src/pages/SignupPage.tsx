@@ -20,8 +20,8 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   // Step 2
   const [organizationName, setOrganizationName] = useState('');
@@ -36,6 +36,7 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
     if (!/\S+@\S+\.\S+/.test(email)) return '正しいメールアドレスを入力してください';
     if (password.length < 8) return 'パスワードは8文字以上で設定してください';
     if (password !== passwordConfirm) return 'パスワードが一致しません';
+    if (!ageConfirmed) return '13歳以上であることを確認してください';
     return null;
   };
 
@@ -205,6 +206,16 @@ export function SignupPage({ onLoginSuccess, onNavigateToLogin, onNavigateToLand
                     placeholder="もう一度入力"
                   />
                 </div>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={ageConfirmed}
+                    onChange={(e) => setAgeConfirmed(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">私は13歳以上です</span>
+                </label>
               </div>
 
               {error && (

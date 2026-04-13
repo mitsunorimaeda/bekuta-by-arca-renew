@@ -190,12 +190,12 @@ export function useBadges(userId: string, options: Options = {}) {
       try {
         if (mountedRef.current) setLoading(true);
 
-        if (!badgesLoadedRef.current) {
-          await fetchBadges();
-          badgesLoadedRef.current = true;
-        }
+        // badges と user_badges を並列取得
+        const badgesPromise = badgesLoadedRef.current
+          ? Promise.resolve()
+          : fetchBadges().then(() => { badgesLoadedRef.current = true; });
 
-        await fetchUserBadges();
+        await Promise.all([badgesPromise, fetchUserBadges()]);
       } catch (e: any) {
         if (mountedRef.current) {
           setError(e?.message ?? "バッジの取得に失敗しました");
