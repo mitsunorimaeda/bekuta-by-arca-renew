@@ -37,10 +37,9 @@ export function StreakDisplay({ streak, label, icon, compact = false }: StreakDi
     const [ly, lm, ld] = streak.last_recorded_date.split('-').map(Number);
     const lastDateNum = ly * 10000 + lm * 100 + ld;
     const now = new Date();
-    // JSTで今日の日付を取得
-    const jstOffset = 9 * 60;
-    const jstNow = new Date(now.getTime() + (jstOffset - now.getTimezoneOffset()) * 60000);
-    const todayNum = jstNow.getFullYear() * 10000 + (jstNow.getMonth() + 1) * 100 + jstNow.getDate();
+    // JSTで今日の日付を取得（UTC+9 固定 → getUTC* で読む）
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const todayNum = jstNow.getUTCFullYear() * 10000 + (jstNow.getUTCMonth() + 1) * 100 + jstNow.getUTCDate();
     return todayNum - lastDateNum;
   };
 
