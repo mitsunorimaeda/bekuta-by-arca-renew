@@ -181,6 +181,7 @@ Deno.serve(async (req: Request) => {
         email,
         role: inviteToken.role,
         team_id: inviteToken.role === 'athlete' ? inviteToken.team_id : null,
+        organization_id: inviteToken.organization_id ?? null,
         is_active: isActiveOnCreate,
       });
 
@@ -190,10 +191,13 @@ Deno.serve(async (req: Request) => {
         return json(500, { error: 'プロフィール作成に失敗しました' });
       }
     } else {
-      // トリガーで作られた場合は is_active だけ更新
+      // トリガーで作られた場合は organization_id と is_active を更新
       await supabaseAdmin
         .from('users')
-        .update({ is_active: isActiveOnCreate })
+        .update({
+          is_active: isActiveOnCreate,
+          organization_id: inviteToken.organization_id ?? null,
+        })
         .eq('id', authUser.user.id);
     }
 
