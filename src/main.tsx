@@ -13,7 +13,7 @@ import * as Sentry from "@sentry/react";
 import { initPostHog } from "./lib/posthog";
 
 Sentry.init({
-  dsn: "https://ef38d8a37ebc8c6e3960fbe47f15123b@o4510731847008256.ingest.us.sentry.io/4510731981881344",
+  dsn: "https://1e622d201cd4336c39c9297d1da12dad@o4510731847008256.ingest.us.sentry.io/4511252835008512",
 
   // ✅ これがソースマップに必須（vite plugin の release と揃える）
   release: import.meta.env.VITE_SENTRY_RELEASE,
@@ -31,7 +31,7 @@ Sentry.init({
 
   tracesSampleRate: 0.2,
   sendDefaultPii: false,
-  environment: import.meta.env.MODE,
+  environment: import.meta.env.PROD ? "bekuta-legacy" : import.meta.env.MODE,
 });
 
 // ✅✅ ここに差し込み（createRoot より前）
