@@ -5,6 +5,7 @@ import App from "./App";
 import "./index.css";
 
 import { RealtimeHubProvider } from "./hooks/useRealtimeHub";
+import { MigrationBanner } from "./components/MigrationBanner";
 
 // ✅ Sentry
 import * as Sentry from "@sentry/react";
@@ -170,6 +171,7 @@ root.render(
   <StrictMode>
     <RealtimeHubProvider>
       <App />
+      <MigrationBanner />
     </RealtimeHubProvider>
   </StrictMode>
 );

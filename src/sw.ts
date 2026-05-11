@@ -1,112 +1,38 @@
-// src/sw.ts — Bekuta Service Worker
-// vite-plugin-pwa (injectManifest) がビルド時にプリキャッシュマニフェストを注入する
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
-import { registerRoute, NavigationRoute, setCatchHandler } from 'workbox-routing';
-import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
-import { CacheableResponsePlugin } from 'workbox-cacheable-response';
-import { ExpirationPlugin } from 'workbox-expiration';
+// src/sw.ts — Bekuta v1 cutover SW (tombstone)
+//
+// v2 への in-place 切替前に v1 が precache していた旧 chunk を退場させるための
+// 最小 SW。fetch ハンドラを持たず、全リクエストはネットワークに素通しする。
+// 旧 workbox-precache 系キャッシュは activate 時に全削除する。
+// push 通知購読を維持するため、push / notificationclick だけは残す。
+// D-day（2026-05-19）に v2 ビルドが同一オリジンで配信され、ブラウザは
+// 同じ /sw.js を更新検出して v2 の SW に置き換える。
 
 declare const self: ServiceWorkerGlobalScope;
 
-// =============================================
-// 1. プリキャッシュ（ビルド時に自動生成されるマニフェスト）
-//    全JS/CSS/HTMLバンドルが含まれる
-// =============================================
-precacheAndRoute(self.__WB_MANIFEST);
-cleanupOutdatedCaches();
+// vite-plugin-pwa の injectManifest は、ビルド出力に `self.__WB_MANIFEST` の
+// 文字列が存在することを要求する（マニフェスト配列に置換される）。
+// `void` 等で消費するとミニファイで除去されてビルドが失敗するため、
+// グローバルプロパティへ代入することで副作用化し、トリーシェイク耐性を持たせる。
+// 値自体は使わない（precache しない）。
+(self as unknown as { __bekutaManifestRef: unknown }).__bekutaManifestRef = (
+  self as unknown as { __WB_MANIFEST: unknown }
+).__WB_MANIFEST;
 
-// =============================================
-// 2. ランタイムキャッシュ戦略
-// =============================================
-
-// Supabase API → NetworkOnly
-registerRoute(
-  ({ url }) => url.hostname.includes('supabase.co'),
-  new NetworkOnly()
-);
-
-// Sentry → NetworkOnly
-registerRoute(
-  ({ url }) => url.hostname.includes('sentry.io'),
-  new NetworkOnly()
-);
-
-// PostHog → NetworkOnly
-registerRoute(
-  ({ url }) => url.hostname.includes('posthog.com'),
-  new NetworkOnly()
-);
-
-// ナビゲーション（HTML）→ NetworkFirst（3秒タイムアウト）
-const navigationHandler = new NetworkFirst({
-  cacheName: 'bekuta-navigations',
-  networkTimeoutSeconds: 3,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })],
+self.addEventListener('install', () => {
+  self.skipWaiting();
 });
 
-registerRoute(
-  new NavigationRoute(navigationHandler, {
-    denylist: [/\/auth\/callback/],
-  })
-);
-
-// 画像 → CacheFirst
-registerRoute(
-  ({ request, url }) =>
-    url.origin === self.location.origin && request.destination === 'image',
-  new CacheFirst({
-    cacheName: 'bekuta-images',
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 }),
-    ],
-  })
-);
-
-// フォント → CacheFirst
-registerRoute(
-  ({ request }) => request.destination === 'font',
-  new CacheFirst({
-    cacheName: 'bekuta-fonts',
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 365 * 24 * 60 * 60 }),
-    ],
-  })
-);
-
-// =============================================
-// 3. オフラインフォールバック
-//    ナビゲーション失敗時はプリキャッシュのindex.htmlを返す
-// =============================================
-setCatchHandler(async ({ request }) => {
-  if (request.destination === 'document') {
-    // プリキャッシュからindex.htmlを返す（Workboxが自動的にハッシュ付きで管理）
-    const cache = await caches.match('/index.html');
-    if (cache) return cache;
-    // Workboxのプリキャッシュ用キャッシュ名でも試す
-    const allCaches = await caches.keys();
-    for (const cacheName of allCaches) {
-      if (cacheName.startsWith('workbox-precache')) {
-        const c = await caches.open(cacheName);
-        const keys = await c.keys();
-        const htmlEntry = keys.find(k => k.url.endsWith('/index.html'));
-        if (htmlEntry) {
-          const response = await c.match(htmlEntry);
-          if (response) return response;
-        }
-      }
-    }
-  }
-  return Response.error();
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
-// =============================================
-// 4. プッシュ通知
-// =============================================
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
-    let data: any = {};
+    let data: { title?: string; body?: string; icon?: string; badge?: string; url?: string } = {};
     try {
       data = event.data ? event.data.json() : {};
     } catch {
@@ -128,7 +54,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification?.data as any)?.url || '/';
+  const url = (event.notification?.data as { url?: string } | undefined)?.url || '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
@@ -139,15 +65,6 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       return self.clients.openWindow(url);
-    })
+    }),
   );
-});
-
-// SW即座にアクティブ化
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
 });
