@@ -65,6 +65,7 @@ revoke all on public.inbody_sync_runs from anon, authenticated;
 
 -- 3) 外部テーブルを ② の新しい配信ビューに差し替え
 drop foreign table if exists bf_remote.v_inbody_export;
+drop foreign table if exists bf_remote.v_bekuta_feed;
 import foreign schema arca limit to (v_bekuta_feed) from server bf_srv into bf_remote;
 revoke all on all tables in schema bf_remote from anon, authenticated;
 
@@ -73,7 +74,9 @@ revoke all on all tables in schema bf_remote from anon, authenticated;
 --    ・生年月日が両方にあって食い違う場合は取り込まない（電話番号の打ち間違い対策）
 --    ・同じ日に複数回測った場合は最後の 1 回を採用（Bekuta は 1 日 1 行）
 --    ・衝突は「電話番号 + 日付」で判定し、既存行（CSV 取込など）は上書きして充実させる
-create or replace function public.sync_inbody_from_bf()
+--    旧関数は戻り値の型が違う（integer）ため、先に削除してから作り直す
+drop function if exists public.sync_inbody_from_bf();
+create function public.sync_inbody_from_bf()
 returns jsonb
 language plpgsql
 security definer
